@@ -1,0 +1,124 @@
+/**
+ * TileInspectorHUD.tsx
+ * Inspector contextual no intrusivo al hacer clic en cualquier casilla del tablero 3D.
+ */
+
+import React from 'react';
+import { MapPin, X } from 'lucide-react';
+import { Character, GoodType, Speculator, Tile } from '../../types/game';
+import { playSound } from '../../utils/audio';
+
+interface TileInspectorHUDProps {
+  tile: Tile | null;
+  players: Character[];
+  speculators: Speculator[];
+  onClose: () => void;
+}
+
+const GOOD_LABELS: Record<GoodType, string> = {
+  HEALTH: 'Salud',
+  URBAN: 'Urbano',
+  KNOWLEDGE: 'Conocimiento',
+  ENVIRONMENT: 'Medioambiente'
+};
+
+export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
+  tile,
+  players,
+  speculators,
+  onClose
+}) => {
+  if (!tile) return null;
+
+  const occupants = players.filter(p => p.position === tile.id);
+  const specOccupants = speculators.filter(s => s.position === tile.id);
+
+  const stateLabel =
+    tile.category === 'INALIENABLE_COMMON'
+      ? 'Común Inalienable'
+      : tile.state === 'COMMON'
+      ? 'Bien Común'
+      : tile.state === 'PUBLIC'
+      ? 'Gestión Pública'
+      : tile.state === 'PRIVATE'
+      ? 'Propiedad Privada'
+      : tile.category === 'AGORA_CENTER'
+      ? 'Asamblea Central'
+      : 'Casilla Especial';
+
+  const stateColor =
+    tile.category === 'INALIENABLE_COMMON'
+      ? 'text-pink-300'
+      : tile.state === 'COMMON'
+      ? 'text-emerald-300'
+      : tile.state === 'PUBLIC'
+      ? 'text-sky-300'
+      : tile.state === 'PRIVATE'
+      ? 'text-rose-300'
+      : 'text-teal-300';
+
+  return (
+    <div
+      role="region"
+      aria-label={`Inspector de casilla ${tile.name}`}
+      className="pointer-events-auto fixed bottom-28 md:bottom-24 left-1/2 -translate-x-1/2 z-30 w-[90vw] max-w-sm bg-slate-900/95 border border-teal-700/70 rounded-2xl shadow-2xl px-4 py-3 text-slate-100"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+            <MapPin className="w-3 h-3 text-teal-400 shrink-0" />
+            <span className={`font-bold uppercase tracking-wider ${stateColor}`}>
+              {stateLabel}
+            </span>
+            {tile.goodType && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{GOOD_LABELS[tile.goodType]}</span>
+              </>
+            )}
+          </div>
+
+          <h4 className="text-sm font-extrabold text-white truncate mt-0.5">
+            {tile.name}
+          </h4>
+
+          <p className="text-[11px] text-slate-300 leading-snug mt-1">
+            {tile.description}
+          </p>
+
+          {(occupants.length > 0 || specOccupants.length > 0) && (
+            <div className="flex items-center gap-2 flex-wrap mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-300">
+              {occupants.map(p => (
+                <span key={p.id} className="inline-flex items-center gap-1">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: p.color }}
+                  />
+                  <span>{p.name}</span>
+                </span>
+              ))}
+              {specOccupants.map(s => (
+                <span key={s.id} className="inline-flex items-center gap-1 text-rose-300">
+                  <span className="w-2 h-2 rounded-full bg-white shrink-0" />
+                  <span>{s.name}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            playSound.uiClick();
+            onClose();
+          }}
+          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+          aria-label="Cerrar inspector de casilla"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,6 @@
+{
+  "name": "Commonspoly - Edición Verde",
+  "description": "Videojuego cooperativo 3D de gestión de bienes comunes y recursos públicos basado en la Edición Verde de Commonspoly.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
