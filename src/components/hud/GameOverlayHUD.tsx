@@ -8,6 +8,7 @@
  */
 
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import { 
   Dices, 
   Sparkles, 
@@ -31,7 +32,10 @@ import {
   Save,
   Check,
   Home,
-  X
+  X,
+  Radar,
+  BarChart3,
+  AlertTriangle
 } from 'lucide-react';
 import { GameEngineState, AmbientMode, WeatherMode, TimeOfDayMode } from '../../types/game';
 import { BitacoraHUD } from './BitacoraHUD';
@@ -47,9 +51,14 @@ import { GameHistorySidebar } from './GameHistorySidebar';
 import { GameToastHUD } from './GameToastHUD';
 import { AchievementNotificationHUD } from './AchievementNotificationHUD';
 import { CommonsEvolutionHUD } from './CommonsEvolutionHUD';
+import { AudioVisualizer } from './AudioVisualizer';
+import { WeatherOverlay } from './WeatherOverlay';
+import { MeteorologicalInsightHUD } from './MeteorologicalInsightHUD';
+import { CollectiveImpactHUD } from './CollectiveImpactHUD';
 import { playSound, audioManager } from '../../utils/audio';
 import { resolveWeather } from '../../utils/weather';
 import { hapticsManager } from '../../utils/haptics';
+import { getEffectiveResourceReward, getEffectiveUnlockCost } from '../../utils/crisisEngine';
 
 interface GameOverlayHUDProps {
   state: GameEngineState;
@@ -62,6 +71,7 @@ interface GameOverlayHUDProps {
   onRollDice: () => void;
   onUnlockTile: () => void;
   onPassTile: () => void;
+  onTurnTimeout?: () => void;
   onTryEnterAgora: () => void;
   onStayInAgora?: () => void;
   onOpenDetentionRescue?: () => void;
@@ -99,6 +109,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   onRollDice,
   onUnlockTile,
   onPassTile,
+  onTurnTimeout,
   onTryEnterAgora,
   onStayInAgora,
   onOpenDetentionRescue,
@@ -130,6 +141,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const [showTutorial, setShowTutorial] = useState<boolean | undefined>(undefined);
   const [internalTutorialVisible, setInternalTutorialVisible] = useState(false);
   const [isAudioMixerOpen, setIsAudioMixerOpen] = useState(false);
+  const [isMeteorologicalInsightOpen, setIsMeteorologicalInsightOpen] = useState(false);
+  const [isCollectiveImpactOpen, setIsCollectiveImpactOpen] = useState(false);
   const [spatialEnabled, setSpatialEnabled] = useState(() => audioManager.isSpatialEnabled());
   const [ambientVol, setAmbientVol] = useState(() => audioManager.getAmbientVolume());
   const [sfxVol, setSfxVol] = useState(() => audioManager.getSfxVolume());
@@ -166,6 +179,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   };
 
   const handleToggleEvolution = () => {
+    setIsMeteorologicalInsightOpen(false);
+    setIsCollectiveImpactOpen(false);
     if (onToggleEvolution) {
       onToggleEvolution();
     } else {
@@ -181,8 +196,44 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     }
   };
 
+  const handleToggleMeteorologicalInsight = () => {
+    setIsMeteorologicalInsightOpen(prev => {
+      const next = !prev;
+      playSound.uiToggle(next);
+      if (next) {
+        setIsCollectiveImpactOpen(false);
+        if (isEvolutionOpen) handleCloseEvolution();
+      }
+      return next;
+    });
+  };
+
+  const handleToggleCollectiveImpact = () => {
+    setIsCollectiveImpactOpen(prev => {
+      const next = !prev;
+      playSound.uiToggle(next);
+      if (next) {
+        setIsMeteorologicalInsightOpen(false);
+        if (isEvolutionOpen) handleCloseEvolution();
+      }
+      return next;
+    });
+  };
+
   const activeSoundscape = audioManager.resolveSoundscapeFromState(state);
-  const activeWeather = resolveWeather(state.tiles, state.weatherMode, state.weatherIntensity ?? 0.85);
+  const activeWeather = resolveWeather(
+    state.tiles,
+    state.weatherMode,
+    state.weatherIntensity ?? 0.85,
+    state.round,
+    state.activePlayerIndex
+  );
+  const urbanNatureMix = audioManager.getUrbanNatureMix(
+    activeWeather.type,
+    activeWeather.intensity,
+    activeSoundscape,
+    state.weatherMode
+  );
   const hapticsSupported = hapticsManager.isSupported();
   const hapticsEnabled = state.hapticsEnabled ?? true;
   const postProcessingEnabled = state.postProcessingEnabled ?? true;
@@ -199,14 +250,10 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const requiredLegitimacyForAgora = state.players.length * 10;
   const canEnterAgora = totalLegitimacy >= requiredLegitimacyForAgora && !activePlayer?.inAgora;
 
-  // Cálculo de coste para desbloquear casilla actual
-  let skillPoints = 0;
-  if (currentTile?.goodType === 'HEALTH') skillPoints = activePlayer?.skills.care || 0;
-  if (currentTile?.goodType === 'URBAN') skillPoints = activePlayer?.skills.occupy || 0;
-  if (currentTile?.goodType === 'KNOWLEDGE') skillPoints = activePlayer?.skills.share || 0;
-  if (currentTile?.goodType === 'ENVIRONMENT') skillPoints = activePlayer?.skills.regenerate || 0;
-
-  const neededWellnessToUnlock = Math.max(0, 10 - skillPoints);
+  // Cálculo de coste y recompensa efectivos (incluye modificadores de Crisis Inesperada)
+  const unlockCostInfo = getEffectiveUnlockCost(currentTile, activePlayer, state.activeCrisis);
+  const neededWellnessToUnlock = unlockCostInfo.effectiveCost;
+  const publicPassReward = getEffectiveResourceReward(currentTile, 1, 1, state.activeCrisis);
   const canUnlockCurrentTile =
     currentTile &&
     (currentTile.category === 'RESOURCE' || currentTile.category === 'AGORA_ENTRY') &&
@@ -310,7 +357,14 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               </button>
             </div>
 
-            <div className="relative flex items-center gap-1">
+            <div className="relative flex items-center gap-1.5">
+              <AudioVisualizer
+                soundEnabled={state.soundEnabled}
+                soundscape={activeSoundscape}
+                weatherType={activeWeather.type}
+                className="hidden sm:inline-flex"
+              />
+
               <button
                 onClick={onToggleSound}
                 className={`p-2 rounded-xl transition-colors ${
@@ -377,6 +431,41 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                     <span className="font-semibold text-teal-300">
                       {activeSoundscape === 'NATURE' ? 'Naturaleza' : activeSoundscape === 'AGORA' ? 'Ágora' : 'Urbano'}
                     </span>
+                  </div>
+
+                  <AudioVisualizer
+                    soundEnabled={state.soundEnabled}
+                    soundscape={activeSoundscape}
+                    weatherType={activeWeather.type}
+                    className="w-full"
+                    canvasClassName="w-full h-7"
+                  />
+
+                  {/* Mezcla dinámica Naturaleza Urbana según weatherMode */}
+                  <div className="rounded-xl bg-slate-950/80 border border-slate-800/80 p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span className="font-semibold text-slate-200">Naturaleza Urbana</span>
+                      <span className="tabular-nums text-teal-300">{activeWeather.label}</span>
+                    </div>
+                    {[
+                      { label: 'Pájaros en parques', value: urbanNatureMix.birdsLevel, color: 'bg-emerald-400' },
+                      { label: 'Brisa', value: urbanNatureMix.breezeLevel, color: 'bg-teal-400' },
+                      { label: 'Tráfico lejano', value: urbanNatureMix.trafficLevel, color: 'bg-amber-400' }
+                    ].map(stem => (
+                      <div key={stem.label} className="space-y-0.5">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 tabular-nums">
+                          <span>{stem.label}</span>
+                          <span className="text-slate-300 font-medium">{Math.round(stem.value * 100)}%</span>
+                        </div>
+                        <div className="h-1 w-full rounded-full bg-slate-800 overflow-hidden">
+                          <motion.div
+                            animate={{ scaleX: stem.value }}
+                            transition={{ duration: 0.4, ease: 'easeOut' }}
+                            className={`h-full w-full origin-left rounded-full ${stem.color}`}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
                   <button
@@ -502,15 +591,48 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             </div>
 
             <button
+              type="button"
+              onClick={handleToggleCollectiveImpact}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                isCollectiveImpactOpen
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'text-emerald-300 hover:text-white hover:bg-slate-800'
+              }`}
+              title="Collective Impact: Eficiencia del equipo preservando comunes frente a especuladores"
+              aria-label="Abrir Collective Impact"
+              aria-expanded={isCollectiveImpactOpen}
+            >
+              <BarChart3 className="w-4 h-4 shrink-0" />
+              <span className="hidden xl:inline">Collective Impact</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleToggleMeteorologicalInsight}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                isMeteorologicalInsightOpen
+                  ? 'bg-cyan-600 text-white font-bold'
+                  : 'text-cyan-300 hover:text-white hover:bg-slate-800'
+              }`}
+              title="Meteorological Insight: Análisis estratégico del clima y recursos"
+              aria-label="Abrir Meteorological Insight"
+              aria-expanded={isMeteorologicalInsightOpen}
+            >
+              <Radar className="w-4 h-4 shrink-0" />
+              <span className="hidden xl:inline">Meteorological Insight</span>
+            </button>
+
+            <button
               onClick={() => {
                 playSound.uiToggle(true);
                 setShowTutorial(true);
               }}
-              className="p-2 rounded-xl text-teal-300 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Guía Cooperativa / Tutorial"
-              aria-label="Abrir guía de mecánicas cooperativas"
+              className="px-2.5 py-1.5 rounded-xl text-teal-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+              title="Tutorial Interactivo de Onboarding con Voz"
+              aria-label="Abrir tutorial interactivo de onboarding con narrador de voz"
             >
-              <HelpCircle className="w-4 h-4" />
+              <HelpCircle className="w-4 h-4 text-teal-400 shrink-0" />
+              <span className="hidden lg:inline">Tutorial con Voz</span>
             </button>
 
             <button
@@ -642,6 +764,43 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             />
             {/* REGISTRO DE CHAT Y ACCIONES: Últimos 5 mensajes e historial de bots y jugadores */}
             <GameChatLog state={state} />
+
+            {/* BANNER DE CRISIS INESPERADA ACTIVA */}
+            {state.activeCrisis && (
+              <div
+                role="status"
+                aria-label="Crisis inesperada activa"
+                className={`pointer-events-auto max-w-md rounded-xl border px-3 py-2 shadow-lg text-xs flex items-start gap-2.5 ${
+                  state.activeCrisis.severity === 'OPPORTUNITY'
+                    ? 'bg-emerald-950/90 border-emerald-600/70 text-emerald-100'
+                    : state.activeCrisis.severity === 'WARNING'
+                    ? 'bg-amber-950/90 border-amber-600/70 text-amber-100'
+                    : 'bg-rose-950/90 border-rose-600/70 text-rose-100'
+                }`}
+              >
+                <AlertTriangle
+                  className={`w-4 h-4 shrink-0 mt-0.5 ${
+                    state.activeCrisis.severity === 'OPPORTUNITY'
+                      ? 'text-emerald-400'
+                      : state.activeCrisis.severity === 'WARNING'
+                      ? 'text-amber-400'
+                      : 'text-rose-400'
+                  }`}
+                />
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold truncate">{state.activeCrisis.title}</span>
+                    <span className="px-1.5 py-0.5 rounded bg-slate-950/70 text-[10px] font-bold tabular-nums shrink-0">
+                      {state.activeCrisis.turnsRemaining}{' '}
+                      {state.activeCrisis.turnsRemaining === 1 ? 'turno' : 'turnos'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] opacity-90 leading-snug">
+                    {state.activeCrisis.description}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Top-Right Cluster: Weather Controller & Global Resource Tracker */}
@@ -651,11 +810,15 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               onSetWeatherMode={onSetWeatherMode}
               onSetWeatherIntensity={onSetWeatherIntensity}
               onSetTimeOfDayMode={onSetTimeOfDayMode}
+              isMeteorologicalInsightOpen={isMeteorologicalInsightOpen}
+              onToggleMeteorologicalInsight={handleToggleMeteorologicalInsight}
             />
             <GlobalResourceTracker
               state={state}
               isEvolutionOpen={isEvolutionOpen}
               onToggleEvolution={handleToggleEvolution}
+              isCollectiveImpactOpen={isCollectiveImpactOpen}
+              onToggleCollectiveImpact={handleToggleCollectiveImpact}
             />
           </div>
         </div>
@@ -700,6 +863,9 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         chatMessages={state.chatMessages}
         round={state.round}
         players={state.players}
+        achievements={state.achievements}
+        gameResult={state.gameResult}
+        gameResultDetails={state.gameResultDetails}
         disableEscapeKey={Boolean(onCloseGameHistory)}
       />
 
@@ -708,6 +874,20 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         isOpen={isEvolutionOpen}
         turnHistory={state.turnHistory ?? []}
         onClose={handleCloseEvolution}
+      />
+
+      {/* 5D. METEOROLOGICAL INSIGHT (Análisis estratégico con pronóstico y registros) */}
+      <MeteorologicalInsightHUD
+        isOpen={isMeteorologicalInsightOpen}
+        state={state}
+        onClose={() => setIsMeteorologicalInsightOpen(false)}
+      />
+
+      {/* 5E. COLLECTIVE IMPACT (Dashboard Recharts en tiempo real vs especuladores) */}
+      <CollectiveImpactHUD
+        isOpen={isCollectiveImpactOpen}
+        state={state}
+        onClose={() => setIsCollectiveImpactOpen(false)}
       />
 
       {/* 4. UNIFIED BOTTOM CONTROL DOCK (Centered, collapsible, zero occlusion) */}
@@ -728,10 +908,11 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               Boolean(showTutorial) ||
               internalTutorialVisible
             }
+            durationSeconds={60}
             onTimeout={() => {
-              if (state.phase === 'PLAYER_TURN_READY') {
-                onRollDice();
-              } else if (state.phase === 'TILE_ACTION_DECISION') {
+              if (onTurnTimeout) {
+                onTurnTimeout();
+              } else {
                 onPassTile();
               }
             }}
@@ -844,7 +1025,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 </button>
               )}
 
-              {/* Botón Desbloquear Bien (10 puntos regla) */}
+              {/* Botón Desbloquear Bien (10 pts ± crisis) */}
               {state.phase === 'TILE_ACTION_DECISION' && canUnlockCurrentTile && (
                 <button
                   onClick={onUnlockTile}
@@ -854,7 +1035,12 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   <Sparkles className="w-4 h-4" />
                   <span>
                     Desbloquear a {currentTile?.state === 'PRIVATE' ? 'Público' : 'Común'} 
-                    <span className="text-[10px] opacity-80 ml-1">(-{neededWellnessToUnlock} Bienestar)</span>
+                    <span className="text-[10px] opacity-80 ml-1 tabular-nums">
+                      (-{neededWellnessToUnlock} Bienestar
+                      {unlockCostInfo.crisisDelta !== 0
+                        ? ` · Crisis ${unlockCostInfo.crisisDelta > 0 ? `+${unlockCostInfo.crisisDelta}` : unlockCostInfo.crisisDelta}`
+                        : ''})
+                    </span>
                   </span>
                   {activePlayer?.controller === 'HUMAN' && (
                     <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-slate-950/20 border border-slate-950/30 text-[10px] font-mono font-bold text-slate-950">
@@ -871,7 +1057,11 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   title="Pasar turno (Atajo: P)"
                   className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-2 transition-colors"
                 >
-                  <span>{currentTile?.state === 'PUBLIC' ? 'Pasar (+1 Bienestar/Legitimidad)' : 'Pasar Turno'}</span>
+                  <span>
+                    {currentTile?.state === 'PUBLIC'
+                      ? `Pasar (+${publicPassReward.wellness} Bienestar / +${publicPassReward.legitimacy} Legitimidad)`
+                      : 'Pasar Turno'}
+                  </span>
                   {activePlayer?.controller === 'HUMAN' && (
                     <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-[10px] font-mono font-bold text-slate-300">
                       P
@@ -915,6 +1105,13 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
           setInternalTutorialVisible(visible);
           onTutorialVisibilityChange?.(visible);
         }}
+      />
+
+      {/* 7. CAPA ATMOSFÉRICA CSS SUPERPUESTA SOBRE EL HUD SEGÚN weatherMode */}
+      <WeatherOverlay
+        weatherType={activeWeather.type}
+        weatherMode={state.weatherMode}
+        intensity={activeWeather.intensity}
       />
 
     </div>

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useCommonspolyGame } from './store/gameEngine';
 import { CommonspolyBoard3D } from './components/board3d/CommonspolyBoard3D';
 import { TitleScreen } from './components/TitleScreen';
@@ -22,10 +22,12 @@ import { GameOverModal } from './components/modals/GameOverModal';
 import { RulesModal } from './components/modals/RulesModal';
 import { KeyboardShortcutsModal } from './components/modals/KeyboardShortcutsModal';
 import { AchievementsModal } from './components/modals/AchievementsModal';
+import { NeighborhoodDecisionModal } from './components/modals/NeighborhoodDecisionModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { SetupInitialRolls, Tile } from './types/game';
 import { playSound } from './utils/audio';
 import { resolveWeather } from './utils/weather';
+import { computeCooperativeEfficiency } from './utils/cooperativeEfficiency';
 
 export default function App() {
   const {
@@ -36,6 +38,7 @@ export default function App() {
     rollDiceForCurrentPlayer,
     unlockCurrentTile,
     passCurrentTile,
+    passTurnOnTimeout,
     tryEnterAgora,
     stayInAgora,
     executeInsurrectionForCategory,
@@ -62,7 +65,9 @@ export default function App() {
     resumeSavedGame,
     pauseToTitle,
     clearSavedGame,
-    resetToTitle
+    resetToTitle,
+    triggerNeighborhoodDecision,
+    castNeighborhoodVote
   } = useCommonspolyGame();
 
   const [showRules, setShowRules] = useState(false);
@@ -178,6 +183,16 @@ export default function App() {
 
   const activePlayer = state.players[state.activePlayerIndex];
   const detainedPlayer = state.players.find(p => p.isDetained);
+  const cooperativeEfficiency = useMemo(
+    () =>
+      computeCooperativeEfficiency(
+        state.tiles,
+        state.playerStats,
+        state.round,
+        state.gameResult
+      ),
+    [state.tiles, state.playerStats, state.round, state.gameResult]
+  );
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
@@ -193,12 +208,14 @@ export default function App() {
         phase={state.phase}
         round={state.round}
         gameResult={state.gameResult}
+        cooperativeEfficiency={cooperativeEfficiency.efficiency}
         weatherMode={state.weatherMode}
         weatherIntensity={state.weatherIntensity}
         timeOfDayMode={state.timeOfDayMode}
         currentGlobalCard={state.currentGlobalCard}
         currentSituationCard={state.currentSituationCard}
         activeModal={state.activeModal}
+        neighborhoodDecision={state.neighborhoodDecision}
         postProcessingEnabled={state.postProcessingEnabled}
         onTileClick={(tile) => {
           playSound.uiClick();
@@ -246,6 +263,7 @@ export default function App() {
             onRollDice={rollDiceForCurrentPlayer}
             onUnlockTile={unlockCurrentTile}
             onPassTile={passCurrentTile}
+            onTurnTimeout={passTurnOnTimeout}
             onTryEnterAgora={tryEnterAgora}
             onStayInAgora={stayInAgora}
             onOpenDetentionRescue={openDetentionRescue}
@@ -276,6 +294,7 @@ export default function App() {
               tile={inspectedTile}
               players={state.players}
               speculators={state.speculators}
+              activeCrisis={state.activeCrisis}
               onClose={() => setInspectedTileId(null)}
             />
           )}
@@ -349,6 +368,16 @@ export default function App() {
         />
       )}
 
+      {/* Votación In-Situ para Decisión Barrial */}
+      {state.activeModal === 'NEIGHBORHOOD_DECISION' && activePlayer && (
+        <NeighborhoodDecisionModal
+          decision={state.neighborhoodDecision}
+          activePlayer={activePlayer}
+          tiles={state.tiles}
+          onCastVote={castNeighborhoodVote}
+        />
+      )}
+
       {/* Fin de Juego: Superposición cinematográfica de partículas + Modal Resumen */}
       {state.phase === 'GAME_OVER' && state.gameResult && (
         <>
@@ -356,6 +385,7 @@ export default function App() {
             result={state.gameResult}
             tiles={state.tiles}
             round={state.round}
+            cooperativeEfficiency={cooperativeEfficiency}
             showSummaryModal={showGameOverSummary}
             onToggleSummary={() => setShowGameOverSummary(prev => !prev)}
           />
@@ -370,6 +400,7 @@ export default function App() {
               turnHistory={state.turnHistory}
               playerStats={state.playerStats}
               logs={state.logs}
+              cooperativeEfficiency={cooperativeEfficiency}
               onInspectBoard={() => {
                 playSound.uiClick();
                 setShowGameOverSummary(false);

@@ -16,6 +16,7 @@ import {
   TimeOfDayMode,
   GlobalCard,
   SituationCard,
+  NeighborhoodDecision,
   GameEngineState
 } from '../../types/game';
 import { resolveWeather } from '../../utils/weather';
@@ -32,6 +33,17 @@ import {
   applyGlobalIlluminationShader,
   createAtmosphericSkyDome
 } from './globalIllumination';
+import {
+  CinematicCameraController,
+  resolveBoardNodePath,
+  mapTilePathToCoords
+} from './cinematicCamera';
+import { createTragedyParticleSystem } from './tragedyParticles';
+import {
+  createBoardCleansingSystem,
+  TileSaturationEntry
+} from './boardCleansing';
+import { computeCooperativeEfficiency } from '../../utils/cooperativeEfficiency';
 
 interface Board3DProps {
   tiles: Tile[];
@@ -43,12 +55,14 @@ interface Board3DProps {
   phase?: GamePhase;
   round?: number;
   gameResult?: 'VICTORY' | 'DRAW' | 'DEFEAT';
+  cooperativeEfficiency?: number;
   weatherMode?: WeatherMode;
   weatherIntensity?: number;
   timeOfDayMode?: TimeOfDayMode;
   currentGlobalCard?: GlobalCard | null;
   currentSituationCard?: SituationCard | null;
   activeModal?: GameEngineState['activeModal'];
+  neighborhoodDecision?: NeighborhoodDecision | null;
   postProcessingEnabled?: boolean;
   onTileClick?: (tile: Tile) => void;
 }
@@ -57,6 +71,8 @@ interface Board3DProps {
 const _targetCamPos = new THREE.Vector3();
 const _targetLookAt = new THREE.Vector3();
 const _currentLookAt = new THREE.Vector3(0, 0, 0);
+const _returnCamPos = new THREE.Vector3();
+const _returnLookAt = new THREE.Vector3();
 const _tempColor = new THREE.Color();
 const _atmosphereTargets = createAtmosphereTargets();
 const _raycasterPointer = new THREE.Vector2();
@@ -72,12 +88,14 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
   phase = 'TITLE',
   round = 1,
   gameResult,
+  cooperativeEfficiency,
   weatherMode = 'AUTO',
   weatherIntensity = 0.85,
   timeOfDayMode = 'AUTO',
   currentGlobalCard = null,
   currentSituationCard = null,
   activeModal = null,
+  neighborhoodDecision = null,
   postProcessingEnabled = true,
   onTileClick
 }) => {
@@ -112,12 +130,14 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     phase,
     round,
     gameResult,
+    cooperativeEfficiency,
     weatherMode,
     weatherIntensity,
     timeOfDayMode,
     currentGlobalCard,
     currentSituationCard,
     activeModal,
+    neighborhoodDecision,
     postProcessingEnabled,
     onTileClick
   });
@@ -131,12 +151,14 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     phase,
     round,
     gameResult,
+    cooperativeEfficiency,
     weatherMode,
     weatherIntensity,
     timeOfDayMode,
     currentGlobalCard,
     currentSituationCard,
     activeModal,
+    neighborhoodDecision,
     postProcessingEnabled,
     onTileClick
   };
@@ -252,6 +274,9 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     scene.add(rimLight);
 
     // --- 3. PROCEDURAL TABLE & BOARD BASE ---
+    const tableSatUniform = { value: 1.0 };
+    const feltSatUniform = { value: 1.0 };
+
     // Luxury oak/felt board table surface
     const tableGeo = new THREE.BoxGeometry(27, 1.0, 27);
     const tableMat = new THREE.MeshStandardMaterial({
@@ -259,7 +284,11 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       roughness: 0.6,
       metalness: 0.1
     });
-    applyGlobalIlluminationShader(tableMat, giUniforms, { giWeight: 0.72, wetnessWeight: 0.45 });
+    applyGlobalIlluminationShader(tableMat, giUniforms, {
+      giWeight: 0.72,
+      wetnessWeight: 0.45,
+      saturationUniform: tableSatUniform
+    });
     const tableMesh = new THREE.Mesh(tableGeo, tableMat);
     tableMesh.position.y = -0.55;
     tableMesh.receiveShadow = true;
@@ -272,41 +301,63 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       roughness: 0.85,
       metalness: 0.05
     });
-    applyGlobalIlluminationShader(feltMat, giUniforms, { giWeight: 1.0, wetnessWeight: 0.9 });
+    applyGlobalIlluminationShader(feltMat, giUniforms, {
+      giWeight: 1.0,
+      wetnessWeight: 0.9,
+      saturationUniform: feltSatUniform
+    });
     const feltMesh = new THREE.Mesh(feltGeo, feltMat);
     feltMesh.position.y = 0.05;
     feltMesh.receiveShadow = true;
     scene.add(feltMesh);
 
     // --- 4. BOARD TILES CREATION ---
-    const tileMaterials: Record<string, THREE.MeshStandardMaterial> = {
-      HEALTH: new THREE.MeshStandardMaterial({ color: 0x9333ea, roughness: 0.4 }),        // Morado Salud
-      URBAN: new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.4 }),         // Naranja Urbano
-      KNOWLEDGE: new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.4 }),     // Amarillo Conocimiento
-      ENVIRONMENT: new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.4 }),   // Verde Medioambiental
-      INALIENABLE: new THREE.MeshStandardMaterial({ color: 0xec4899, roughness: 0.35 }),  // Rosa Inalienable
-      SPECIAL: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 }),      // Gris Pizarra Especial
-      SITUATION: new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.4 }),    // Azul Situación
-      CORNER: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 }),       // Esquinas
-      AGORA_ENTRY: new THREE.MeshStandardMaterial({ color: 0x0d9488, roughness: 0.4 }),  // Columnas hacia el Ágora
-      AGORA_CENTER: new THREE.MeshStandardMaterial({ color: 0xd946ef, roughness: 0.25, metalness: 0.2 })
+    const tilePaletteConfig: Record<
+      string,
+      { color: number; roughness: number; metalness?: number }
+    > = {
+      HEALTH: { color: 0x9333ea, roughness: 0.4 },        // Morado Salud
+      URBAN: { color: 0xea580c, roughness: 0.4 },         // Naranja Urbano
+      KNOWLEDGE: { color: 0xeab308, roughness: 0.4 },     // Amarillo Conocimiento
+      ENVIRONMENT: { color: 0x16a34a, roughness: 0.4 },   // Verde Medioambiental
+      INALIENABLE: { color: 0xec4899, roughness: 0.35 },  // Rosa Inalienable
+      SPECIAL: { color: 0x334155, roughness: 0.5 },      // Gris Pizarra Especial
+      SITUATION: { color: 0x0284c7, roughness: 0.4 },    // Azul Situación
+      CORNER: { color: 0x1e293b, roughness: 0.5 },       // Esquinas
+      AGORA_ENTRY: { color: 0x0d9488, roughness: 0.4 },  // Columnas hacia el Ágora
+      AGORA_CENTER: { color: 0xd946ef, roughness: 0.25, metalness: 0.2 }
     };
-    Object.values(tileMaterials).forEach(mat => {
-      applyGlobalIlluminationShader(mat, giUniforms, { giWeight: 0.78, wetnessWeight: 0.55 });
-    });
+
+    const tileMaterialList: THREE.MeshStandardMaterial[] = [];
+    const tileSaturationEntries = new Map<number, TileSaturationEntry>();
 
     const tileGeo = new THREE.BoxGeometry(1.7, 0.25, 1.7);
     const cornerGeo = new THREE.BoxGeometry(2.3, 0.28, 2.3);
 
-    // Render individual tiles
+    // Render individual tiles con material individualizado (misma caché GLSL) para desaturación/limpieza
     propsRef.current.tiles.forEach(tile => {
-      let mat = tileMaterials.SPECIAL;
-      if (tile.category === 'INALIENABLE_COMMON') mat = tileMaterials.INALIENABLE;
-      else if (tile.category === 'SITUATION') mat = tileMaterials.SITUATION;
-      else if (tile.category === 'CORNER') mat = tileMaterials.CORNER;
-      else if (tile.category === 'AGORA_ENTRY') mat = tileMaterials.AGORA_ENTRY;
-      else if (tile.category === 'AGORA_CENTER') mat = tileMaterials.AGORA_CENTER;
-      else if (tile.goodType && tileMaterials[tile.goodType]) mat = tileMaterials[tile.goodType];
+      let matKey = 'SPECIAL';
+      if (tile.category === 'INALIENABLE_COMMON') matKey = 'INALIENABLE';
+      else if (tile.category === 'SITUATION') matKey = 'SITUATION';
+      else if (tile.category === 'CORNER') matKey = 'CORNER';
+      else if (tile.category === 'AGORA_ENTRY') matKey = 'AGORA_ENTRY';
+      else if (tile.category === 'AGORA_CENTER') matKey = 'AGORA_CENTER';
+      else if (tile.goodType && tilePaletteConfig[tile.goodType]) matKey = tile.goodType;
+
+      const cfg = tilePaletteConfig[matKey] ?? tilePaletteConfig.SPECIAL;
+      const satUniform = { value: 1.0 };
+      const mat = new THREE.MeshStandardMaterial({
+        color: cfg.color,
+        roughness: cfg.roughness,
+        metalness: cfg.metalness ?? 0.05
+      });
+      applyGlobalIlluminationShader(mat, giUniforms, {
+        giWeight: 0.78,
+        wetnessWeight: 0.55,
+        saturationUniform: satUniform
+      });
+      tileMaterialList.push(mat);
+      tileSaturationEntries.set(tile.id, { uniform: satUniform, baseY: 0.2 });
 
       const isCorner = tile.category === 'CORNER';
       const geometry = isCorner ? cornerGeo : tileGeo;
@@ -687,6 +738,17 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     let sunWeight = 0;
     let smoothWeatherIntensity = 0.85;
 
+    // --- 9B-2. SISTEMA DE PARTÍCULAS DE TRAGEDIA DE LOS COMUNES (Hojas secas 3D + Ceniza desaturada) ---
+    const tragedyParticles = createTragedyParticleSystem(
+      scene,
+      renderer.capabilities.getMaxAnisotropy()
+    );
+    const boardCleansing = createBoardCleansingSystem(scene);
+    const reducedMotionQuery =
+      typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : null;
+
     // --- 9C. PROCEDURAL COMMONS CELEBRATION PARTICLE SYSTEM (Bienes Comunes) ---
     const COMMONS_PARTICLE_COUNT = 160;
     const commonsPositions = new Float32Array(COMMONS_PARTICLE_COUNT * 3);
@@ -849,6 +911,9 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     let animationFrameId = 0;
     const clock = new THREE.Clock();
     let lastColoredResult: string | undefined;
+    const cinematicCamera = new CinematicCameraController();
+    const pawnWaypointQueues = new Map<string, number[]>();
+    let prevCameraMode = propsRef.current.cameraMode;
 
     const afterDraw = (cb: () => void) => {
       const gl = renderer.getContext() as WebGL2RenderingContext;
@@ -883,10 +948,18 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       if (currPhase === 'GAME_OVER' && prevPhaseRef.current !== 'GAME_OVER') {
         gameOverElapsedRef.current = 0;
         lastColoredResult = undefined;
+        cinematicCamera.cancel();
+        pawnWaypointQueues.clear();
       }
       prevPhaseRef.current = currPhase;
 
-      // Detectar aterrizajes en casillas de Bien Común
+      // Cancelar cámara cinematográfica si el jugador cambia manualmente el modo de cámara
+      if (prevCameraMode !== mode) {
+        prevCameraMode = mode;
+        cinematicCamera.cancel();
+      }
+
+      // Detectar desplazamientos, aterrizajes en Bienes Comunes y cámara cinematográfica para bots
       if (prevPlayerPositionsRef.current.size === 0) {
         currPlayers.forEach(p => prevPlayerPositionsRef.current.set(p.id, p.position));
       } else {
@@ -894,6 +967,36 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           const oldPos = prevPlayerPositionsRef.current.get(p.id);
           if (oldPos !== undefined && oldPos !== p.position) {
             prevPlayerPositionsRef.current.set(p.id, p.position);
+            const nodePath = resolveBoardNodePath(oldPos, p.position);
+
+            if (nodePath.length > 2) {
+              pawnWaypointQueues.set(p.id, nodePath.slice(1));
+            } else {
+              pawnWaypointQueues.delete(p.id);
+            }
+
+            if (p.controller === 'BOT' && currPhase !== 'GAME_OVER') {
+              const nodes = mapTilePathToCoords(nodePath, propsRef.current.tiles);
+              if (mode === 'TOP_DOWN') {
+                _returnCamPos.set(0, 32, 0.01);
+                _returnLookAt.set(0, 0, 0);
+              } else if (mode === 'FOLLOW') {
+                const destCoords = getTileCoords(p.position);
+                _returnCamPos.set(destCoords.x * 0.7, 14, destCoords.z * 0.7 + 10);
+                _returnLookAt.set(destCoords.x, 0.5, destCoords.z);
+              } else {
+                _returnCamPos.set(0, 22, 21);
+                _returnLookAt.set(0, 0, 0);
+              }
+              cinematicCamera.followBotNodes(
+                nodes,
+                camera.position,
+                _currentLookAt,
+                _returnCamPos,
+                _returnLookAt
+              );
+            }
+
             const landedTile = propsRef.current.tiles.find(t => t.id === p.position);
             if (
               landedTile &&
@@ -1024,20 +1127,55 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         }
       }
 
-      // Smooth frame-rate independent camera damping (zero per-frame allocations)
-      const camAlpha = 1 - Math.exp((currPhase === 'GAME_OVER' ? -3.4 : -6) * delta);
-      camera.position.lerp(_targetCamPos, camAlpha);
-      _currentLookAt.lerp(_targetLookAt, camAlpha);
-      camera.lookAt(_currentLookAt);
+      // --- TRANSICIÓN DE DESATURACIÓN & LIMPIEZA PROGRESIVA AL FINAL DE LA PARTIDA ---
+      const isTragedyOfCommonsActive =
+        currPhase !== 'GAME_OVER' && propsRef.current.activeModal === 'TRAGEDY_VOTE';
+      const effectiveEfficiency =
+        propsRef.current.cooperativeEfficiency ??
+        computeCooperativeEfficiency(
+          propsRef.current.tiles,
+          undefined,
+          propsRef.current.round ?? 1,
+          currResult
+        ).efficiency;
+
+      const cleanseState = boardCleansing.update({
+        phase: currPhase,
+        flyT: currPhase === 'GAME_OVER' ? gameOverElapsedRef.current : 0,
+        delta,
+        elapsed,
+        efficiency: effectiveEfficiency,
+        tiles: propsRef.current.tiles,
+        tileEntries: tileSaturationEntries,
+        tileMeshes: tileMeshesRef.current,
+        feltSatUniform,
+        tableSatUniform,
+        giUniforms,
+        isTragedyActive: isTragedyOfCommonsActive,
+        reducedMotion: reducedMotionQuery?.matches ?? false
+      });
+
+      // Smooth frame-rate independent camera damping or GSAP bot cinematic pathing (zero per-frame allocations)
+      if (currPhase !== 'GAME_OVER' && cinematicCamera.isActive()) {
+        cinematicCamera.applyToCamera(camera, _currentLookAt);
+      } else {
+        const camAlpha = 1 - Math.exp((currPhase === 'GAME_OVER' ? -3.4 : -6) * delta);
+        camera.position.lerp(_targetCamPos, camAlpha);
+        _currentLookAt.lerp(_targetLookAt, camAlpha);
+        camera.lookAt(_currentLookAt);
+      }
 
       // Sincronizar oyente del sistema de audio espacial 3D con la cámara
       audioManager.updateListener(camera.position, _currentLookAt, camera.up);
 
-      // Update Player Pawn Positions with smooth lerp
+      // Update Player Pawn Positions with smooth node-by-node stepping and lerp
       currPlayers.forEach((player, idx) => {
         const mesh = playerMeshesRef.current.get(player.id);
         if (mesh) {
-          const coords = getTileCoords(player.position);
+          const waypointQueue = pawnWaypointQueues.get(player.id);
+          const hasQueuedWaypoints = currPhase !== 'GAME_OVER' && waypointQueue && waypointQueue.length > 0;
+          const activeTargetTileId = hasQueuedWaypoints ? waypointQueue[0] : player.position;
+          const coords = getTileCoords(activeTargetTileId);
           const offsetAngle = (idx * (Math.PI * 2)) / 4;
           const offsetX = coords.x === 0 && coords.z === 0 ? Math.cos(offsetAngle) * 0.9 : (idx % 2 === 0 ? -0.25 : 0.25);
           const offsetZ = coords.x === 0 && coords.z === 0 ? Math.sin(offsetAngle) * 0.9 : (idx > 1 ? -0.25 : 0.25);
@@ -1045,6 +1183,14 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           const targetX = coords.x + offsetX;
           const targetZ = coords.z + offsetZ;
           const travelDist = Math.hypot(targetX - mesh.position.x, targetZ - mesh.position.z);
+
+          if (hasQueuedWaypoints && travelDist < 0.55) {
+            waypointQueue.shift();
+            if (waypointQueue.length === 0) {
+              pawnWaypointQueues.delete(player.id);
+            }
+          }
+
           const hopY =
             currPhase !== 'GAME_OVER' && travelDist > 0.08
               ? Math.min(0.62, travelDist * 0.16) * Math.abs(Math.sin(travelDist * 1.4))
@@ -1054,9 +1200,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
               ? (player.inAgora ? 0.65 : 0.35) + Math.abs(Math.sin(elapsed * 3.5 + idx)) * 0.35
               : (player.inAgora ? 0.65 : 0.35) + hopY;
 
-          mesh.position.x = THREE.MathUtils.damp(mesh.position.x, targetX, 10, delta);
-          mesh.position.z = THREE.MathUtils.damp(mesh.position.z, targetZ, 10, delta);
-          mesh.position.y = THREE.MathUtils.damp(mesh.position.y, targetY, 10, delta);
+          const pawnDamp = hasQueuedWaypoints ? 14 : 10;
+          mesh.position.x = THREE.MathUtils.damp(mesh.position.x, targetX, pawnDamp, delta);
+          mesh.position.z = THREE.MathUtils.damp(mesh.position.z, targetZ, pawnDamp, delta);
+          mesh.position.y = THREE.MathUtils.damp(mesh.position.y, targetY, pawnDamp, delta);
 
           if (currPhase === 'GAME_OVER') {
             mesh.rotation.y += delta * (currResult === 'VICTORY' ? 1.5 : 0.35);
@@ -1088,7 +1235,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         }
       });
 
-      // Update Resource Chip Colors & Final-State Dynamic Highlighting
+      // Update Resource Chip Colors & Final-State Dynamic Highlighting synced with Cleansing Wave
       propsRef.current.tiles.forEach((tile, idx) => {
         const chip = chipMeshesRef.current.get(tile.id);
         if (chip && (chip.material as THREE.MeshStandardMaterial)) {
@@ -1098,21 +1245,27 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
 
           if (currPhase === 'GAME_OVER') {
             const wave = 0.5 + 0.5 * Math.sin(elapsed * 4 - idx * 0.25);
+            const localCleanse = cleanseState.tileCleanseProgress.get(tile.id) ?? 0;
+            const tileMeshY = tileMeshesRef.current.get(tile.id)?.position.y ?? 0.2;
+            const tileLiftOffset = tileMeshY - 0.2;
+
             if (tile.state === 'COMMON') {
               mat.emissive.setHex(0x10b981);
-              mat.emissiveIntensity = 0.45 + wave * 0.65;
-              chip.position.y = 0.48 + wave * 0.24;
+              mat.emissiveIntensity = 0.45 + wave * 0.65 + localCleanse * 0.25;
+              chip.position.y = 0.48 + wave * 0.24 + tileLiftOffset;
               chip.scale.setScalar(1.08 + wave * 0.14);
             } else if (tile.state === 'PUBLIC') {
-              mat.emissive.setHex(0x38bdf8);
-              mat.emissiveIntensity = 0.25 + wave * 0.35;
-              chip.position.y = 0.44 + wave * 0.1;
-              chip.scale.setScalar(1.04);
+              _tempColor.setHex(0x38bdf8).lerp(giUniforms.uCleanseWaveColor.value, localCleanse * effectiveEfficiency * 0.65);
+              mat.emissive.copy(_tempColor);
+              mat.emissiveIntensity = 0.25 + wave * 0.35 + localCleanse * effectiveEfficiency * 0.25;
+              chip.position.y = 0.44 + wave * 0.1 + tileLiftOffset;
+              chip.scale.setScalar(1.04 + localCleanse * effectiveEfficiency * 0.06);
             } else {
-              mat.emissive.setHex(0xf43f5e);
+              _tempColor.setHex(0xf43f5e).lerp(giUniforms.uCleanseWaveColor.value, localCleanse * effectiveEfficiency * 0.85);
+              mat.emissive.copy(_tempColor);
               mat.emissiveIntensity = 0.2 + wave * 0.3;
-              chip.position.y = 0.42;
-              chip.scale.setScalar(1.0);
+              chip.position.y = 0.42 + tileLiftOffset;
+              chip.scale.setScalar(1.0 + localCleanse * effectiveEfficiency * 0.06);
             }
           } else {
             mat.emissive.setHex(0x000000);
@@ -1120,6 +1273,21 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
             chip.position.y = 0.42;
             chip.scale.setScalar(1.0);
           }
+        }
+      });
+
+      // Pulso brillante en casillas de urna si hay una Decisión Barrial activa
+      const activeDecision = propsRef.current.neighborhoodDecision;
+      tileMeshesRef.current.forEach((mesh, tileId) => {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (!mat) return;
+        if (activeDecision && activeDecision.targetTileIds.includes(tileId)) {
+          const pulse = 0.5 + 0.5 * Math.sin(elapsed * 6);
+          mat.emissive.setHex(0x14b8a6);
+          mat.emissiveIntensity = 0.4 + pulse * 0.6;
+        } else if (mat.emissiveIntensity !== 0) {
+          mat.emissive.setHex(0x000000);
+          mat.emissiveIntensity = 0;
         }
       });
 
@@ -1456,6 +1624,14 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         auraMesh.visible = false;
       }
 
+      // Actualizar lluvia de hojas secas y ceniza desaturada (solo durante 'Tragedia de los Comunes')
+      tragedyParticles.update(
+        isTragedyOfCommonsActive,
+        delta,
+        elapsed,
+        reducedMotionQuery?.matches ?? false
+      );
+
       const usePostProcessing = Boolean(
         postProcessing && (propsRef.current.postProcessingEnabled ?? true)
       );
@@ -1470,6 +1646,9 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           postShadowTint: _atmosphereTargets.postShadowTint,
           twilightFactor: _atmosphereTargets.twilightFactor,
           nightFactor: _atmosphereTargets.nightFactor,
+          isTragedyOfCommons: isTragedyOfCommonsActive,
+          cooperativeEfficiency: effectiveEfficiency,
+          cleansingProgress: cleanseState.cleansingProgress,
           delta
         });
         postProcessing.composer.render();
@@ -1567,10 +1746,15 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       auraGeo.dispose();
       auraMat.dispose();
       skyDome.dispose();
-      Object.values(tileMaterials).forEach(m => m.dispose());
+      tileMaterialList.forEach(m => m.dispose());
+      tileSaturationEntries.clear();
       tableMat.dispose();
       feltMat.dispose();
       postProcessing?.dispose();
+      tragedyParticles.dispose();
+      boardCleansing.dispose();
+      cinematicCamera.dispose();
+      pawnWaypointQueues.clear();
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }

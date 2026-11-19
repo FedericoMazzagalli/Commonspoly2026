@@ -10,11 +10,13 @@ import { motion } from 'motion/react';
 import { Sparkles, Eye, Trophy, HeartHandshake, AlertCircle, Trees, Layers, Lock } from 'lucide-react';
 import { Tile } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { CooperativeEfficiencyBreakdown } from '../../utils/cooperativeEfficiency';
 
 interface GameOverCinematicOverlayProps {
   result: 'VICTORY' | 'DRAW' | 'DEFEAT';
   tiles: Tile[];
   round: number;
+  cooperativeEfficiency?: CooperativeEfficiencyBreakdown;
   showSummaryModal: boolean;
   onToggleSummary: () => void;
 }
@@ -34,6 +36,7 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
   result,
   tiles,
   round,
+  cooperativeEfficiency,
   showSummaryModal,
   onToggleSummary
 }) => {
@@ -176,8 +179,29 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
           initial={{ y: 30, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.45, ease: 'easeOut' }}
-          className="relative z-10 w-full px-4 pb-6 flex justify-center"
+          className="relative z-10 w-full px-4 pb-6 flex flex-col items-center gap-3"
         >
+          {cooperativeEfficiency && (
+            <div className="pointer-events-auto w-full max-w-md px-4 py-2.5 rounded-2xl bg-slate-950/90 border border-teal-500/40 shadow-xl space-y-1.5">
+              <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
+                <span className="text-teal-300 uppercase tracking-wider">
+                  Limpieza del Tablero · {cooperativeEfficiency.tierLabel}
+                </span>
+                <span className="text-white tabular-nums">
+                  {cooperativeEfficiency.efficiencyPct}% eficiencia
+                </span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
+                <motion.div
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${Math.max(4, cooperativeEfficiency.efficiencyPct)}%` }}
+                  transition={{ duration: 3.8, delay: 0.2, ease: 'easeOut' }}
+                  className="h-full rounded-full bg-gradient-to-r from-amber-400 via-sky-400 to-emerald-400"
+                />
+              </div>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => {

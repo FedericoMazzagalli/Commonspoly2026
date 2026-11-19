@@ -13,7 +13,8 @@ import {
   User, 
   ChevronRight, 
   CheckCircle2, 
-  RefreshCw 
+  RefreshCw,
+  Volume2
 } from 'lucide-react';
 import { OFFICIAL_CHARACTERS } from '../data/characters';
 import { SetupInitialRolls, DifficultyLevel } from '../types/game';
@@ -29,6 +30,7 @@ interface SetupWizardProps {
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }) => {
   const [step, setStep] = useState<1 | 2>(1);
+  const [enableTutorialOnStart, setEnableTutorialOnStart] = useState<boolean>(true);
 
   // Paso 1: Selección de jugadores
   const [selectedChars, setSelectedChars] = useState<
@@ -113,6 +115,14 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
   };
 
   const handleFinish = () => {
+    if (enableTutorialOnStart) {
+      try {
+        localStorage.removeItem('commonspoly_tutorial_dismissed_v2');
+        localStorage.removeItem('commonspoly_tutorial_dont_show_v2');
+      } catch {
+        // Ignorar
+      }
+    }
     const setupData: SetupInitialRolls = {
       health: rolls.health,
       urban: rolls.urban,
@@ -342,6 +352,34 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                 <div className="text-xs text-slate-400">Especuladores</div>
                 <div className="text-2xl font-black text-rose-400 tabular-nums">{speculatorsCount}</div>
               </div>
+            </div>
+
+            {/* Checkbox para activar tutorial de onboarding con voz al iniciar */}
+            <div className="p-3.5 rounded-xl bg-teal-950/40 border border-teal-800/60 flex items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-teal-900/60 border border-teal-700/50 text-teal-300 shrink-0">
+                  <Volume2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white flex items-center gap-2">
+                    <span>Tutorial de Onboarding con Voz Guiada</span>
+                    <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                      Recomendado
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Activa la locución por voz interactiva al comenzar para explicar las mecánicas básicas paso a paso.
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={enableTutorialOnStart}
+                  onChange={(e) => setEnableTutorialOnStart(e.target.checked)}
+                  className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-teal-600 focus:ring-0 focus:outline-none"
+                />
+              </label>
             </div>
           </div>
         )}

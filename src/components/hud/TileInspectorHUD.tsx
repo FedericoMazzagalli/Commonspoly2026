@@ -4,14 +4,22 @@
  */
 
 import React from 'react';
-import { MapPin, X } from 'lucide-react';
-import { Character, GoodType, Speculator, Tile } from '../../types/game';
+import { AlertTriangle, MapPin, X } from 'lucide-react';
+import {
+  Character,
+  GoodType,
+  Speculator,
+  Tile,
+  UnexpectedCrisisEvent
+} from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { doesCrisisAffectTile } from '../../utils/crisisEngine';
 
 interface TileInspectorHUDProps {
   tile: Tile | null;
   players: Character[];
   speculators: Speculator[];
+  activeCrisis?: UnexpectedCrisisEvent | null;
   onClose: () => void;
 }
 
@@ -26,9 +34,11 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
   tile,
   players,
   speculators,
+  activeCrisis = null,
   onClose
 }) => {
   if (!tile) return null;
+  const crisisAffectsTile = doesCrisisAffectTile(tile, activeCrisis);
 
   const occupants = players.filter(p => p.position === tile.id);
   const specOccupants = speculators.filter(s => s.position === tile.id);
@@ -85,6 +95,23 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
           <p className="text-[11px] text-slate-300 leading-snug mt-1">
             {tile.description}
           </p>
+
+          {crisisAffectsTile && activeCrisis && (
+            <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-slate-950/80 border border-amber-700/60 text-[10px] text-amber-200 flex items-center gap-1.5 tabular-nums">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>
+                <strong>{activeCrisis.title}:</strong> coste desbloqueo{' '}
+                {activeCrisis.unlockCostDelta >= 0
+                  ? `+${activeCrisis.unlockCostDelta}`
+                  : activeCrisis.unlockCostDelta}
+                , rendimiento{' '}
+                {activeCrisis.commonYieldDelta >= 0
+                  ? `+${activeCrisis.commonYieldDelta}`
+                  : activeCrisis.commonYieldDelta}{' '}
+                ({activeCrisis.turnsRemaining}t)
+              </span>
+            </div>
+          )}
 
           {(occupants.length > 0 || specOccupants.length > 0) && (
             <div className="flex items-center gap-2 flex-wrap mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-300">

@@ -99,6 +99,30 @@ export interface SituationCard {
   apply: (char: Character, state: GameEngineState) => { charUpdates: Partial<Character>; message: string };
 }
 
+export interface NeighborhoodDecision {
+  id: string;
+  title: string;
+  description: string;
+  targetTileIds: number[];
+  votesCast: string[];
+  rewardSummary: string;
+}
+
+export type CrisisSeverity = 'WARNING' | 'CRITICAL' | 'OPPORTUNITY';
+
+export interface UnexpectedCrisisEvent {
+  id: string;
+  title: string;
+  description: string;
+  affectedGoodType: GoodType | 'ALL';
+  unlockCostDelta: number;
+  commonYieldDelta: number;
+  turnsRemaining: number;
+  totalTurns: number;
+  severity: CrisisSeverity;
+  triggeredAtRound: number;
+}
+
 export type DifficultyLevel = 'MAD_MAX' | 'EN_TRANSICION' | 'COMUNLANDIA';
 
 export interface SetupInitialRolls {
@@ -246,7 +270,10 @@ export interface GameEngineState {
     | 'BUREAUCRACY'
     | 'CROWDFUNDING'
     | 'ACHIEVEMENTS'
-    | 'RULES';
+    | 'RULES'
+    | 'NEIGHBORHOOD_DECISION';
+
+  neighborhoodDecision: NeighborhoodDecision | null;
 
   // Logros de cooperación
   achievements?: CooperativeAchievement[];
@@ -284,6 +311,10 @@ export interface GameEngineState {
   weatherMode: WeatherMode;
   weatherIntensity?: number;
   timeOfDayMode?: TimeOfDayMode;
+
+  // Motor de eventos de crisis inesperada
+  activeCrisis?: UnexpectedCrisisEvent | null;
+  turnsSinceLastCrisis?: number;
 }
 
 export interface PlayerContributionStats {

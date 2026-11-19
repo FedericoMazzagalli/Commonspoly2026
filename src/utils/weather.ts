@@ -83,3 +83,52 @@ export function resolveWeather(
     totalEnvTiles
   };
 }
+
+export interface WeatherForecastStep {
+  turnOffset: number;
+  round: number;
+  activePlayerIndex: number;
+  condition: WeatherCondition;
+  isFavorableForSituationCards: boolean;
+  situationSuccessPercent: number;
+}
+
+export function predictWeatherForecast(
+  tiles: Tile[],
+  mode: WeatherMode = 'AUTO',
+  manualIntensity = 0.85,
+  currentRound = 1,
+  currentPlayerIndex = 0,
+  playerCount = 4,
+  steps = 3
+): WeatherForecastStep[] {
+  const safePlayers = Math.max(1, playerCount);
+  const forecast: WeatherForecastStep[] = [];
+
+  for (let offset = 1; offset <= steps; offset++) {
+    const totalTurns = currentPlayerIndex + offset;
+    const projectedPlayerIdx = totalTurns % safePlayers;
+    const projectedRound = Math.min(20, currentRound + Math.floor(totalTurns / safePlayers));
+    const condition = resolveWeather(
+      tiles,
+      mode,
+      manualIntensity,
+      projectedRound,
+      projectedPlayerIdx
+    );
+    const isFavorableForSituationCards =
+      condition.type === 'RAIN' || condition.type === 'SUNNY' || condition.type === 'TEMPERATE';
+
+    forecast.push({
+      turnOffset: offset,
+      round: projectedRound,
+      activePlayerIndex: projectedPlayerIdx,
+      condition,
+      isFavorableForSituationCards,
+      situationSuccessPercent: isFavorableForSituationCards ? 92 : 68
+    });
+  }
+
+  return forecast;
+}
+

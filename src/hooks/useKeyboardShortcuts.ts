@@ -67,8 +67,14 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcutItem[] = [
   },
   {
     keys: ['G'],
-    label: 'Game History',
-    description: 'Abre o cierra la barra lateral cronológica de la partida.',
+    label: 'Chat y Timeline',
+    description: 'Abre o cierra la barra lateral de chat y timeline cronológico de hitos de la partida.',
+    category: 'MODALS'
+  },
+  {
+    keys: ['T'],
+    label: 'Tutorial con Voz',
+    description: 'Abre o cierra el tutorial interactivo de onboarding narrado con voz.',
     category: 'MODALS'
   },
   {

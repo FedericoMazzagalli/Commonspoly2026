@@ -8,7 +8,7 @@
  *   con modulación gradual de intensidad y micro-eventos procedurales.
  */
 
-import { AmbientSoundscape, GameEngineState, WeatherType } from '../types/game';
+import { AmbientSoundscape, GameEngineState, WeatherMode, WeatherType } from '../types/game';
 
 /**
  * Posición 3D en el espacio del tablero para efectos de audio posicional
@@ -25,18 +25,59 @@ export interface MoveSequenceOptions {
   stepIntervalMs?: number;
 }
 
+export interface AudioVisualizerSnapshot {
+  isActive: boolean;
+  isMuted: boolean;
+  ambientRms: number;
+  sfxRms: number;
+  masterRms: number;
+  waveform: Uint8Array;
+  frequency: Uint8Array;
+  soundscape: AmbientSoundscape;
+  weatherType: WeatherType;
+}
+
+export interface UrbanNatureMix {
+  weatherMode: WeatherMode;
+  weatherType: WeatherType;
+  soundscape: AmbientSoundscape;
+  trafficLevel: number;
+  birdsLevel: number;
+  breezeLevel: number;
+  trafficFilterHz: number;
+  breezeFilterHz: number;
+}
+
 class CommonspolyAudioManager {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private ambientBus: GainNode | null = null;
   private weatherBus: GainNode | null = null;
+  private urbanNatureBus: GainNode | null = null;
   private sfxBus: GainNode | null = null;
+
+  // Analizadores para visualizador reactivo en tiempo real
+  private masterAnalyser: AnalyserNode | null = null;
+  private ambientAnalyser: AnalyserNode | null = null;
+  private sfxAnalyser: AnalyserNode | null = null;
+  private masterTimeBuf = new Uint8Array(128);
+  private masterFreqBuf = new Uint8Array(64);
+  private ambientTimeBuf = new Uint8Array(64);
+  private sfxTimeBuf = new Uint8Array(64);
 
   // Capas de paisaje base
   private natureGain: GainNode | null = null;
   private urbanGain: GainNode | null = null;
   private agoraGain: GainNode | null = null;
   private titleGain: GainNode | null = null;
+
+  // Capas dinámicas de Naturaleza Urbana (tráfico lejano, pájaros en parques, brisa)
+  private distantTrafficGain: GainNode | null = null;
+  private distantTrafficFilter: BiquadFilterNode | null = null;
+  private parkBirdsGain: GainNode | null = null;
+  private urbanBreezeGain: GainNode | null = null;
+  private urbanBreezeFilter: BiquadFilterNode | null = null;
+  private urbanNoiseBuffer: AudioBuffer | null = null;
 
   // Capas ambientales adaptables al clima
   private rainGain: GainNode | null = null;
@@ -51,6 +92,7 @@ class CommonspolyAudioManager {
   private ambientVolume = 0.24;
   private sfxVolume = 0.68;
   private currentSoundscape: AmbientSoundscape = 'TITLE';
+  private currentWeatherMode: WeatherMode = 'AUTO';
   private currentWeatherType: WeatherType = 'SUNNY';
   private currentWeatherIntensity = 0.75;
   private isTitleDucking = true;
@@ -84,19 +126,40 @@ class CommonspolyAudioManager {
 
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.value = this.muted ? 0 : 1;
-      this.masterGain.connect(this.ctx.destination);
+
+      this.masterAnalyser = this.ctx.createAnalyser();
+      this.masterAnalyser.fftSize = 256;
+      this.masterAnalyser.smoothingTimeConstant = 0.76;
+      this.masterTimeBuf = new Uint8Array(this.masterAnalyser.fftSize);
+      this.masterFreqBuf = new Uint8Array(this.masterAnalyser.frequencyBinCount);
+      this.masterGain.connect(this.masterAnalyser);
+      this.masterAnalyser.connect(this.ctx.destination);
 
       this.ambientBus = this.ctx.createGain();
       this.ambientBus.gain.value = this.ambientVolume;
-      this.ambientBus.connect(this.masterGain);
+      this.ambientAnalyser = this.ctx.createAnalyser();
+      this.ambientAnalyser.fftSize = 128;
+      this.ambientAnalyser.smoothingTimeConstant = 0.82;
+      this.ambientTimeBuf = new Uint8Array(this.ambientAnalyser.fftSize);
+      this.ambientBus.connect(this.ambientAnalyser);
+      this.ambientAnalyser.connect(this.masterGain);
 
       this.weatherBus = this.ctx.createGain();
       this.weatherBus.gain.value = this.isTitleDucking ? 0.28 : 1;
       this.weatherBus.connect(this.ambientBus);
 
+      this.urbanNatureBus = this.ctx.createGain();
+      this.urbanNatureBus.gain.value = this.isTitleDucking ? 0.3 : 1;
+      this.urbanNatureBus.connect(this.ambientBus);
+
       this.sfxBus = this.ctx.createGain();
       this.sfxBus.gain.value = this.sfxVolume;
-      this.sfxBus.connect(this.masterGain);
+      this.sfxAnalyser = this.ctx.createAnalyser();
+      this.sfxAnalyser.fftSize = 128;
+      this.sfxAnalyser.smoothingTimeConstant = 0.65;
+      this.sfxTimeBuf = new Uint8Array(this.sfxAnalyser.fftSize);
+      this.sfxBus.connect(this.sfxAnalyser);
+      this.sfxAnalyser.connect(this.masterGain);
     }
 
     if (this.ctx.state === 'suspended') {
@@ -166,10 +229,83 @@ class CommonspolyAudioManager {
     }
   }
 
+  /**
+   * Atenuación dinámica (ducking) de música y sonido ambiental durante la narración por voz
+   */
+  public setVoiceDucking(ducking: boolean): void {
+    if (!this.ctx || !this.ambientBus) return;
+    const now = this.ctx.currentTime;
+    const targetVol = ducking
+      ? Math.max(0.03, this.ambientVolume * 0.25)
+      : this.ambientVolume;
+    this.ambientBus.gain.cancelScheduledValues(now);
+    this.ambientBus.gain.setTargetAtTime(targetVol, now, 0.22);
+  }
+
   public getCurrentWeatherAudio(): { type: WeatherType; intensity: number } {
     return {
       type: this.currentWeatherType,
       intensity: this.currentWeatherIntensity
+    };
+  }
+
+  private computeRmsFromByteBuffer(buf: Uint8Array): number {
+    let sumSq = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const normalized = (buf[i] - 128) / 128;
+      sumSq += normalized * normalized;
+    }
+    return Math.sqrt(sumSq / buf.length);
+  }
+
+  /**
+   * Lee en tiempo real el estado acústico de música ambiental/clima y efectos 3D sin crear AudioContext nuevo
+   */
+  public getVisualizerSnapshot(): AudioVisualizerSnapshot {
+    const isRunning = Boolean(this.ctx && this.ctx.state === 'running');
+    if (!isRunning || this.muted || !this.masterAnalyser) {
+      this.masterTimeBuf.fill(128);
+      this.masterFreqBuf.fill(0);
+      return {
+        isActive: false,
+        isMuted: this.muted,
+        ambientRms: 0,
+        sfxRms: 0,
+        masterRms: 0,
+        waveform: this.masterTimeBuf,
+        frequency: this.masterFreqBuf,
+        soundscape: this.currentSoundscape,
+        weatherType: this.currentWeatherType
+      };
+    }
+
+    this.masterAnalyser.getByteTimeDomainData(this.masterTimeBuf);
+    this.masterAnalyser.getByteFrequencyData(this.masterFreqBuf);
+
+    let ambientRms = 0;
+    if (this.ambientAnalyser) {
+      this.ambientAnalyser.getByteTimeDomainData(this.ambientTimeBuf);
+      ambientRms = Math.min(1, this.computeRmsFromByteBuffer(this.ambientTimeBuf) * 10);
+    }
+
+    let sfxRms = 0;
+    if (this.sfxAnalyser) {
+      this.sfxAnalyser.getByteTimeDomainData(this.sfxTimeBuf);
+      sfxRms = Math.min(1, this.computeRmsFromByteBuffer(this.sfxTimeBuf) * 4.5);
+    }
+
+    const masterRms = Math.min(1, this.computeRmsFromByteBuffer(this.masterTimeBuf) * 6);
+
+    return {
+      isActive: true,
+      isMuted: this.muted,
+      ambientRms,
+      sfxRms,
+      masterRms,
+      waveform: this.masterTimeBuf,
+      frequency: this.masterFreqBuf,
+      soundscape: this.currentSoundscape,
+      weatherType: this.currentWeatherType
     };
   }
 
@@ -339,6 +475,129 @@ class CommonspolyAudioManager {
     return commonCount >= privateCount ? 'NATURE' : 'URBAN';
   }
 
+  public computeUrbanNatureMix(
+    weatherOverride?: WeatherType,
+    intensityOverride?: number,
+    soundscapeOverride?: AmbientSoundscape,
+    weatherModeOverride?: WeatherMode
+  ): UrbanNatureMix {
+    const intensity = intensityOverride ?? this.currentWeatherIntensity;
+    const weather = weatherOverride ?? this.currentWeatherType;
+    const soundscape = soundscapeOverride ?? this.currentSoundscape;
+    const weatherMode = weatherModeOverride ?? this.currentWeatherMode;
+
+    // Base climática para los 3 elementos de Naturaleza Urbana
+    let traffic = 0.55;
+    let birds = 0.7;
+    let breeze = 0.6;
+    let trafficFilterHz = 230;
+    let breezeFilterHz = 560;
+
+    switch (weather) {
+      case 'RAIN':
+        // Lluvia: asfalto húmedo amplifica tráfico lejano, viento mueve copas de árboles y pájaros se refugian
+        traffic = 0.72 + intensity * 0.24;
+        birds = Math.max(0.12, 0.34 - intensity * 0.18);
+        breeze = 0.66 + intensity * 0.28;
+        trafficFilterHz = 290 + intensity * 130;
+        breezeFilterHz = 660 + intensity * 160;
+        break;
+      case 'SNOW':
+        // Nieve: absorción acústica atenúa el tráfico lejano, escasos pájaros invernales y brisa fría hueca
+        traffic = Math.max(0.18, 0.42 - intensity * 0.2);
+        birds = Math.max(0.1, 0.24 - intensity * 0.1);
+        breeze = 0.52 + intensity * 0.24;
+        trafficFilterHz = 135 + (1 - intensity) * 45;
+        breezeFilterHz = 340 + intensity * 90;
+        break;
+      case 'SUNNY':
+        // Soleado: coro vivo de pájaros en parques, brisa templada y tráfico urbano moderado
+        traffic = 0.52;
+        birds = 0.78 + intensity * 0.22;
+        breeze = 0.48 + intensity * 0.16;
+        trafficFilterHz = 235;
+        breezeFilterHz = 520;
+        break;
+      case 'DROUGHT':
+        // Sequía: brisa térmica seca, tráfico árido presente y aves reducidas por calor
+        traffic = 0.64 + intensity * 0.18;
+        birds = Math.max(0.18, 0.42 - intensity * 0.16);
+        breeze = 0.62 + intensity * 0.24;
+        trafficFilterHz = 275;
+        breezeFilterHz = 820 + intensity * 140;
+        break;
+      case 'TEMPERATE':
+      default:
+        // Templado: equilibrio armónico de parque urbano con brisa suave y pájaros activos
+        traffic = 0.46;
+        birds = 0.74 + intensity * 0.14;
+        breeze = 0.7 + intensity * 0.18;
+        trafficFilterHz = 210;
+        breezeFilterHz = 610;
+        break;
+    }
+
+    // Ponderación según el paisaje activo del tablero / modo manual
+    if (soundscape === 'NATURE') {
+      birds = Math.min(1, birds * 1.18);
+      breeze = Math.min(1, breeze * 1.15);
+      traffic *= 0.68;
+    } else if (soundscape === 'URBAN') {
+      traffic = Math.min(1, traffic * 1.22);
+      birds *= 0.72;
+      breeze *= 0.82;
+    } else if (soundscape === 'AGORA') {
+      traffic *= 0.58;
+      birds *= 0.76;
+      breeze *= 0.8;
+    } else if (soundscape === 'TITLE') {
+      traffic *= 0.35;
+      birds *= 0.45;
+      breeze *= 0.55;
+    }
+
+    return {
+      weatherMode,
+      weatherType: weather,
+      soundscape,
+      trafficLevel: Math.min(1, Math.max(0, traffic)),
+      birdsLevel: Math.min(1, Math.max(0, birds)),
+      breezeLevel: Math.min(1, Math.max(0, breeze)),
+      trafficFilterHz,
+      breezeFilterHz
+    };
+  }
+
+  public getUrbanNatureMix(
+    weatherOverride?: WeatherType,
+    intensityOverride?: number,
+    soundscapeOverride?: AmbientSoundscape,
+    weatherModeOverride?: WeatherMode
+  ): UrbanNatureMix {
+    return this.computeUrbanNatureMix(
+      weatherOverride,
+      intensityOverride,
+      soundscapeOverride,
+      weatherModeOverride
+    );
+  }
+
+  private applyUrbanNatureMix(now: number, tau = 0.75): void {
+    if (!this.ctx || !this.isAmbientRunning) return;
+    const mix = this.computeUrbanNatureMix();
+
+    this.urbanNatureBus?.gain.setTargetAtTime(this.isTitleDucking ? 0.32 : 1.0, now, tau);
+    this.distantTrafficGain?.gain.setTargetAtTime(mix.trafficLevel * 0.55, now, tau);
+    if (this.distantTrafficFilter) {
+      this.distantTrafficFilter.frequency.setTargetAtTime(mix.trafficFilterHz, now, tau);
+    }
+    this.parkBirdsGain?.gain.setTargetAtTime(mix.birdsLevel, now, tau);
+    this.urbanBreezeGain?.gain.setTargetAtTime(mix.breezeLevel * 0.42, now, tau);
+    if (this.urbanBreezeFilter) {
+      this.urbanBreezeFilter.frequency.setTargetAtTime(mix.breezeFilterHz, now, tau);
+    }
+  }
+
   public setSoundscape(soundscape: AmbientSoundscape): void {
     if (this.currentSoundscape === soundscape && this.isAmbientRunning) return;
     this.currentSoundscape = soundscape;
@@ -352,17 +611,21 @@ class CommonspolyAudioManager {
     this.urbanGain?.gain.setTargetAtTime(soundscape === 'URBAN' ? 1 : 0, now, tau);
     this.agoraGain?.gain.setTargetAtTime(soundscape === 'AGORA' ? 1 : 0, now, tau);
     this.titleGain?.gain.setTargetAtTime(soundscape === 'TITLE' ? 1 : 0, now, tau);
+
+    this.applyUrbanNatureMix(now, tau);
   }
 
   /**
-   * Adapta suavemente las capas ambientales de fondo al clima seleccionado e intensidad gradual
+   * Adapta suavemente las capas ambientales y de naturaleza urbana al weatherMode e intensidad
    */
   public setWeatherAudio(
     weatherType: WeatherType,
     intensity = 0.8,
-    duckForTitle = false
+    duckForTitle = false,
+    weatherMode: WeatherMode = this.currentWeatherMode
   ): void {
     const clampedIntensity = Math.min(1, Math.max(0.15, intensity));
+    this.currentWeatherMode = weatherMode;
     this.currentWeatherType = weatherType;
     this.currentWeatherIntensity = clampedIntensity;
     this.isTitleDucking = duckForTitle;
@@ -416,6 +679,8 @@ class CommonspolyAudioManager {
       now,
       tau
     );
+
+    this.applyUrbanNatureMix(now, tau);
   }
 
   private createPinkNoiseBuffer(ctx: AudioContext, seconds = 5): AudioBuffer {
@@ -456,11 +721,73 @@ class CommonspolyAudioManager {
 
   private startAmbientLayers(): void {
     const ctx = this.ctx;
-    if (!ctx || !this.ambientBus || !this.weatherBus || this.isAmbientRunning) return;
+    if (!ctx || !this.ambientBus || !this.weatherBus || !this.urbanNatureBus || this.isAmbientRunning) return;
     this.isAmbientRunning = true;
 
     const noiseBuffer = this.createPinkNoiseBuffer(ctx, 5);
     const crispNoiseBuffer = this.createWhiteNoiseBuffer(ctx, 3);
+    this.urbanNoiseBuffer = noiseBuffer;
+
+    // =====================================================================
+    // CAPAS CONTINUAS DE NATURALEZA URBANA (mezcladas según weatherMode)
+    // =====================================================================
+
+    // 0A. TRÁFICO LEJANO (Rumor urbano filtrado adaptable a lluvia/nieve/sol)
+    this.distantTrafficGain = ctx.createGain();
+    this.distantTrafficGain.gain.value = 0.25;
+    this.distantTrafficGain.connect(this.urbanNatureBus);
+
+    const distantTrafficSrc = ctx.createBufferSource();
+    distantTrafficSrc.buffer = noiseBuffer;
+    distantTrafficSrc.loop = true;
+
+    this.distantTrafficFilter = ctx.createBiquadFilter();
+    this.distantTrafficFilter.type = 'lowpass';
+    this.distantTrafficFilter.frequency.value = 230;
+    this.distantTrafficFilter.Q.value = 0.75;
+
+    const trafficSwirlLfo = ctx.createOscillator();
+    trafficSwirlLfo.frequency.value = 0.11;
+    const trafficSwirlGain = ctx.createGain();
+    trafficSwirlGain.gain.value = 55;
+    trafficSwirlLfo.connect(trafficSwirlGain);
+    trafficSwirlGain.connect(this.distantTrafficFilter.frequency);
+
+    distantTrafficSrc.connect(this.distantTrafficFilter);
+    this.distantTrafficFilter.connect(this.distantTrafficGain);
+    distantTrafficSrc.start();
+    trafficSwirlLfo.start();
+
+    // 0B. PÁJAROS EN PARQUES (Bus estéreo dedicado para cantos en copas de árboles)
+    this.parkBirdsGain = ctx.createGain();
+    this.parkBirdsGain.gain.value = 0.7;
+    this.parkBirdsGain.connect(this.urbanNatureBus);
+
+    // 0C. BRISA DE ARBOLADO URBANO (Flujo orgánico de viento entre hojas)
+    this.urbanBreezeGain = ctx.createGain();
+    this.urbanBreezeGain.gain.value = 0.25;
+    this.urbanBreezeGain.connect(this.urbanNatureBus);
+
+    const urbanBreezeSrc = ctx.createBufferSource();
+    urbanBreezeSrc.buffer = noiseBuffer;
+    urbanBreezeSrc.loop = true;
+
+    this.urbanBreezeFilter = ctx.createBiquadFilter();
+    this.urbanBreezeFilter.type = 'bandpass';
+    this.urbanBreezeFilter.frequency.value = 560;
+    this.urbanBreezeFilter.Q.value = 1.25;
+
+    const urbanBreezeLfo = ctx.createOscillator();
+    urbanBreezeLfo.frequency.value = 0.085;
+    const urbanBreezeLfoGain = ctx.createGain();
+    urbanBreezeLfoGain.gain.value = 210;
+    urbanBreezeLfo.connect(urbanBreezeLfoGain);
+    urbanBreezeLfoGain.connect(this.urbanBreezeFilter.frequency);
+
+    urbanBreezeSrc.connect(this.urbanBreezeFilter);
+    this.urbanBreezeFilter.connect(this.urbanBreezeGain);
+    urbanBreezeSrc.start();
+    urbanBreezeLfo.start();
 
     // --- 1. CAPA NATURALEZA (Brisa orgánica + hojas) ---
     this.natureGain = ctx.createGain();
@@ -694,22 +1021,27 @@ class CommonspolyAudioManager {
     droughtSrc.start();
     droughtLfo.start();
 
-    // Aplicar estado inicial de clima ya seleccionado
+    // Aplicar estado inicial de clima y mezcla de Naturaleza Urbana
     this.setWeatherAudio(
       this.currentWeatherType,
       this.currentWeatherIntensity,
-      this.isTitleDucking
+      this.isTitleDucking,
+      this.currentWeatherMode
     );
 
-    // Programador periódico de micro-eventos de paisaje base
+    // Programador periódico de micro-eventos de Naturaleza Urbana (pájaros en parques + tráfico lejano)
     this.schedulerId = window.setInterval(() => {
       if (this.muted || !this.ctx || this.ctx.state !== 'running') return;
-      if (this.currentSoundscape === 'NATURE' && Math.random() < 0.55) {
-        this.triggerBirdOrDrop();
-      } else if (this.currentSoundscape === 'URBAN' && Math.random() < 0.45) {
-        this.triggerDistantUrbanCue();
+      const mix = this.computeUrbanNatureMix();
+
+      if (Math.random() < 0.22 + mix.birdsLevel * 0.58) {
+        this.triggerParkBirdChorus(mix.birdsLevel);
       }
-    }, 3400);
+
+      if (Math.random() < 0.16 + mix.trafficLevel * 0.48) {
+        this.triggerDistantVehiclePass(mix.trafficLevel, mix.trafficFilterHz);
+      }
+    }, 2400);
 
     // Programador periódico de micro-eventos adaptables al clima (gotas/truenos, destellos de escarcha, aves solares)
     this.weatherSchedulerId = window.setInterval(() => {
@@ -819,76 +1151,97 @@ class CommonspolyAudioManager {
     }
   }
 
-  private triggerBirdOrDrop(): void {
+  /**
+   * Coro sutil de pájaros en parques urbanos con panoramización estéreo aleatoria
+   */
+  private triggerParkBirdChorus(birdsLevel = 0.7): void {
     const ctx = this.ctx;
-    if (!ctx || !this.natureGain) return;
+    if (!ctx || !this.parkBirdsGain) return;
     const now = ctx.currentTime;
 
-    if (Math.random() < 0.65) {
-      const base = 1700 + Math.random() * 900;
-      for (let i = 0; i < 2; i++) {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const t = now + i * 0.14;
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(base, t);
-        osc.frequency.exponentialRampToValueAtTime(base * 1.28, t + 0.06);
-        osc.frequency.exponentialRampToValueAtTime(base * 0.95, t + 0.11);
+    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.setValueAtTime((Math.random() * 2 - 1) * 0.68, now);
+      panner.connect(this.parkBirdsGain);
+    }
+    const targetNode = panner ?? this.parkBirdsGain;
 
-        gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.linearRampToValueAtTime(0.045, t + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    const phraseCount = birdsLevel > 0.65 && Math.random() < 0.6 ? 3 : 2;
+    const base = 1850 + Math.random() * 1150;
+    const vol = 0.022 + birdsLevel * 0.028;
 
-        osc.connect(gain);
-        gain.connect(this.natureGain);
-        osc.start(t);
-        osc.stop(t + 0.13);
-      }
-    } else {
-      const notes = [523.25, 659.25, 783.99, 987.77];
-      const freq = notes[Math.floor(Math.random() * notes.length)];
+    for (let i = 0; i < phraseCount; i++) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+      const t = now + i * (0.11 + Math.random() * 0.06);
+      const pitchShift = 0.92 + Math.random() * 0.24;
+
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.15, now + 0.08);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.linearRampToValueAtTime(0.04, now + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+      osc.frequency.setValueAtTime(base * pitchShift, t);
+      osc.frequency.exponentialRampToValueAtTime(base * pitchShift * 1.32, t + 0.045);
+      osc.frequency.exponentialRampToValueAtTime(base * pitchShift * 0.9, t + 0.11);
+
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.linearRampToValueAtTime(vol, t + 0.016);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.125);
 
       osc.connect(gain);
-      gain.connect(this.natureGain);
-      osc.start(now);
-      osc.stop(now + 0.36);
+      gain.connect(targetNode);
+      osc.start(t);
+      osc.stop(t + 0.14);
+    }
+
+    if (panner) {
+      window.setTimeout(() => {
+        try {
+          panner.disconnect();
+        } catch {}
+      }, 650);
     }
   }
 
-  private triggerDistantUrbanCue(): void {
+  /**
+   * Paso lejano de tráfico urbano con barrido Doppler suave y filtro adaptado al clima
+   */
+  private triggerDistantVehiclePass(trafficLevel = 0.55, filterHz = 230): void {
     const ctx = this.ctx;
-    if (!ctx || !this.urbanGain) return;
+    if (!ctx || !this.distantTrafficGain || !this.urbanNoiseBuffer) return;
     const now = ctx.currentTime;
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    const src = ctx.createBufferSource();
+    src.buffer = this.urbanNoiseBuffer;
+    src.loop = true;
+
     const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(filterHz * 0.75, now);
+    filter.frequency.exponentialRampToValueAtTime(filterHz * 1.35, now + 0.9);
+    filter.frequency.exponentialRampToValueAtTime(filterHz * 0.65, now + 2.1);
+    filter.Q.value = 1.1;
 
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(440, now);
-    osc.frequency.setValueAtTime(523.25, now + 0.14);
-
-    filter.type = 'lowpass';
-    filter.frequency.value = 900;
-
+    const gain = ctx.createGain();
+    const peak = 0.045 + trafficLevel * 0.065;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.028, now + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.85);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
 
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.urbanGain);
+    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panner) {
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      panner.pan.setValueAtTime(-0.55 * dir, now);
+      panner.pan.linearRampToValueAtTime(0.55 * dir, now + 2.15);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.distantTrafficGain);
+    } else {
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.distantTrafficGain);
+    }
 
-    osc.start(now);
-    osc.stop(now + 0.48);
+    src.start(now);
+    src.stop(now + 2.25);
   }
 
   public dispose(): void {
@@ -906,6 +1259,10 @@ class CommonspolyAudioManager {
       this.ctx.close().catch(() => {});
       this.ctx = null;
     }
+    this.masterAnalyser = null;
+    this.ambientAnalyser = null;
+    this.sfxAnalyser = null;
+    this.urbanNoiseBuffer = null;
     this.isAmbientRunning = false;
   }
 
@@ -1454,6 +1811,93 @@ class CommonspolyAudioManager {
     osc.start(now);
     osc.stop(now + 0.09);
   }
+
+  /**
+   * Campanada cálida armónica al iniciar locución o activar narrador
+   */
+  public voiceCue(): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxBus) return;
+    const now = ctx.currentTime;
+
+    const freqs = [587.33, 880]; // D5, A5
+    freqs.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startAt = now + idx * 0.08;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, startAt);
+
+      gain.gain.setValueAtTime(0.001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.09, startAt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.32);
+
+      osc.connect(gain);
+      gain.connect(this.sfxBus!);
+
+      osc.start(startAt);
+      osc.stop(startAt + 0.33);
+    });
+  }
+
+  /**
+   * Indicador sutil de cambio de paso en el tutorial
+   */
+  public voiceStep(): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxBus) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, now); // C5
+    osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.08); // E5
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.08, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+
+    osc.connect(gain);
+    gain.connect(this.sfxBus);
+
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
+
+  /**
+   * Acorde brillante al completar un paso interactivo del tutorial
+   */
+  public voiceSuccess(): void {
+    if (this.muted) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxBus) return;
+    const now = ctx.currentTime;
+
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startAt = now + idx * 0.05;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startAt);
+
+      gain.gain.setValueAtTime(0.001, startAt);
+      gain.gain.linearRampToValueAtTime(0.08, startAt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.38);
+
+      osc.connect(gain);
+      gain.connect(this.sfxBus!);
+
+      osc.start(startAt);
+      osc.stop(startAt + 0.4);
+    });
+  }
 }
 
 export const audioManager = new CommonspolyAudioManager();
@@ -1479,5 +1923,8 @@ export const playSound = {
   notification: () => audioManager.notification(),
   achievementUnlock: () => audioManager.achievementUnlock(),
   modalOpen: () => audioManager.modalOpen(),
-  modalClose: () => audioManager.modalClose()
+  modalClose: () => audioManager.modalClose(),
+  voiceCue: () => audioManager.voiceCue(),
+  voiceStep: () => audioManager.voiceStep(),
+  voiceSuccess: () => audioManager.voiceSuccess()
 };

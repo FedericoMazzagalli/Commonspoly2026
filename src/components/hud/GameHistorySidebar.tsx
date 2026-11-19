@@ -16,10 +16,18 @@ import {
   MessageSquare,
   ShieldAlert,
   Vote,
-  HeartHandshake
+  HeartHandshake,
+  Milestone
 } from 'lucide-react';
-import { Character, GameLogEntry, CooperativeChatMessage } from '../../types/game';
+import {
+  Character,
+  GameLogEntry,
+  CooperativeChatMessage,
+  CooperativeAchievement,
+  GameEngineState
+} from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { GameTimelinePanel } from './GameTimelinePanel';
 
 interface GameHistorySidebarProps {
   isOpen: boolean;
@@ -28,6 +36,9 @@ interface GameHistorySidebarProps {
   chatMessages?: CooperativeChatMessage[];
   round: number;
   players: Character[];
+  achievements?: CooperativeAchievement[];
+  gameResult?: GameEngineState['gameResult'];
+  gameResultDetails?: string;
   disableEscapeKey?: boolean;
 }
 
@@ -59,8 +70,12 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
   chatMessages = [],
   round,
   players,
+  achievements = [],
+  gameResult,
+  gameResultDetails,
   disableEscapeKey = false
 }) => {
+  const [activeView, setActiveView] = useState<'NARRATIVE' | 'TIMELINE'>('NARRATIVE');
   const [filter, setFilter] = useState<NarrativeFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [chronologicalAsc, setChronologicalAsc] = useState(true);
@@ -241,49 +256,98 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
       className="pointer-events-auto fixed top-16 right-3 md:right-6 bottom-6 w-[23rem] sm:w-[28rem] max-w-[94vw] z-40 flex flex-col bg-slate-900/95 border border-teal-700/80 rounded-2xl shadow-2xl overflow-hidden text-slate-100 select-text backdrop-blur-md"
     >
       {/* CABECERA */}
-      <div className="px-4 py-3.5 bg-slate-950/90 border-b border-teal-900/50 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-teal-400 shrink-0" />
-            <h2 className="text-sm font-extrabold text-white tracking-tight truncate">
-              Chat y Narrativa de Sesión
-            </h2>
+      <div className="px-4 py-3 bg-slate-950/90 border-b border-teal-900/50 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-teal-400 shrink-0" />
+              <h2 className="text-sm font-extrabold text-white tracking-tight truncate">
+                Chat y Narrativa de Sesión
+              </h2>
+            </div>
+            <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 tabular-nums">
+              <span>{narrativeItems.length} registros</span>
+              <span aria-hidden="true">·</span>
+              <span>Ronda {round} / 20</span>
+              <span aria-hidden="true">·</span>
+              <span>{activeView === 'TIMELINE' ? 'Timeline de Hitos' : chronologicalAsc ? 'Cronológico' : 'Recientes'}</span>
+            </div>
           </div>
-          <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 tabular-nums">
-            <span>{narrativeItems.length} registros</span>
-            <span aria-hidden="true">·</span>
-            <span>Ronda {round} / 20</span>
-            <span aria-hidden="true">·</span>
-            <span>{chronologicalAsc ? 'Cronológico' : 'Recientes'}</span>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              playSound.modalClose();
+              onClose();
+            }}
+            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+            aria-label="Cerrar panel de chat y narrativa"
+            title="Cerrar (Esc)"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            playSound.modalClose();
-            onClose();
-          }}
-          className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-          aria-label="Cerrar panel de chat y narrativa"
-          title="Cerrar (Esc)"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {/* Selector de modo: Narrativa & Chat vs Timeline de Hitos */}
+        <div className="grid grid-cols-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              playSound.uiClick();
+              setActiveView('NARRATIVE');
+            }}
+            className={`py-1.5 px-3 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+              activeView === 'NARRATIVE'
+                ? 'bg-teal-600 text-white font-bold shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Narrativa & Chat</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              playSound.uiClick();
+              setActiveView('TIMELINE');
+            }}
+            className={`py-1.5 px-3 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+              activeView === 'TIMELINE'
+                ? 'bg-teal-600 text-white font-bold shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Milestone className="w-3.5 h-3.5 text-amber-300" />
+            <span>Timeline de Hitos</span>
+          </button>
+        </div>
       </div>
 
-      {/* CONTROLES DE BÚSQUEDA Y FILTROS */}
-      <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 space-y-2.5">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar votación, rescate, chat o ronda..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500"
-            />
+      {/* VISTA A: TIMELINE DE HITOS CLAVE */}
+      {activeView === 'TIMELINE' ? (
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <GameTimelinePanel
+            logs={logs}
+            achievements={achievements}
+            gameResult={gameResult}
+            gameResultDetails={gameResultDetails}
+            round={round}
+          />
+        </div>
+      ) : (
+        /* VISTA B: CONTROLES DE BÚSQUEDA Y LISTA NARRATIVA */
+        <>
+          <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar votación, rescate, chat o ronda..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                />
             {searchQuery && (
               <button
                 type="button"
@@ -450,6 +514,8 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
             Ir al evento actual
           </button>
         </div>
+      )}
+        </>
       )}
     </aside>
   );

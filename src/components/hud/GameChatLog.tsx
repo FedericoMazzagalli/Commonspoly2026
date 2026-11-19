@@ -16,10 +16,12 @@ import {
   ChevronUp,
   Search,
   X,
-  Trees
+  Trees,
+  Milestone
 } from 'lucide-react';
 import { GameEngineState } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { GameTimelinePanel } from './GameTimelinePanel';
 
 export interface GameChatLogProps {
   state: GameEngineState;
@@ -51,6 +53,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
   const [isMinimized, setIsMinimized] = useState(false);
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [modalViewMode, setModalViewMode] = useState<'LOGS' | 'TIMELINE'>('LOGS');
   const [searchQuery, setSearchQuery] = useState('');
   const [modalFilter, setModalFilter] = useState<'ALL' | 'BOTS' | 'PLAYERS' | 'CHAT' | 'COMMONS'>('ALL');
 
@@ -227,6 +230,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                 type="button"
                 onClick={() => {
                   playSound.modalOpen();
+                  setModalViewMode('LOGS');
                   setIsHistoryModalOpen(true);
                 }}
                 className="px-2 py-1 rounded-lg bg-teal-950/60 hover:bg-teal-900/80 text-teal-300 hover:text-white border border-teal-800/60 text-[11px] font-medium flex items-center gap-1 transition-colors"
@@ -234,6 +238,21 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
               >
                 <History className="w-3 h-3 text-teal-400" />
                 <span className="hidden xs:inline">Historial</span>
+              </button>
+
+              {/* Botón para abrir Timeline de Hitos */}
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.modalOpen();
+                  setModalViewMode('TIMELINE');
+                  setIsHistoryModalOpen(true);
+                }}
+                className="px-2 py-1 rounded-lg bg-teal-950/60 hover:bg-teal-900/80 text-amber-300 hover:text-white border border-amber-800/60 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                title="Abrir Timeline de la partida con hitos clave"
+              >
+                <Milestone className="w-3 h-3 text-amber-400" />
+                <span className="hidden xs:inline">Timeline</span>
               </button>
 
               {/* Botón de Colapsar / Expandir */}
@@ -412,36 +431,85 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
           <div className="relative w-full max-w-2xl bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden text-slate-100">
             
             {/* Cabecera del modal */}
-            <div className="flex items-center justify-between px-4 py-3 bg-slate-950/90 border-b border-teal-800/60">
-              <div className="flex items-center gap-2.5">
-                <div className="p-1.5 rounded-xl bg-teal-950 border border-teal-800 text-teal-400">
-                  <History className="w-5 h-5" />
+            <div className="flex flex-col gap-2.5 px-4 py-3 bg-slate-950/90 border-b border-teal-800/60">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-xl bg-teal-950 border border-teal-800 text-teal-400">
+                    <History className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+                      Historial y Timeline de la Partida
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-800 font-mono tabular-nums">
+                        {unifiedItems.length} registros
+                      </span>
+                    </h2>
+                    <p className="text-[11px] text-slate-400">
+                      Registro cronológico de hitos clave, chat cooperativo y acciones
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
-                    Historial Completo de la Partida
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-800 font-mono tabular-nums">
-                      {unifiedItems.length} registros
-                    </span>
-                  </h2>
-                  <p className="text-[11px] text-slate-400">
-                    Historial cronológico de acciones de bots, movimientos de jugadores y chat cooperativo
-                  </p>
-                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound.modalClose();
+                    setIsHistoryModalOpen(false);
+                  }}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title="Cerrar historial"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  playSound.modalClose();
-                  setIsHistoryModalOpen(false);
-                }}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                title="Cerrar historial"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              {/* Selector de vista: Registros de Chat/Acciones vs Timeline de Hitos */}
+              <div className="grid grid-cols-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound.uiClick();
+                    setModalViewMode('LOGS');
+                  }}
+                  className={`py-1.5 px-3 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+                    modalViewMode === 'LOGS'
+                      ? 'bg-teal-600 text-white font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Registros y Chat</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound.uiClick();
+                    setModalViewMode('TIMELINE');
+                  }}
+                  className={`py-1.5 px-3 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+                    modalViewMode === 'TIMELINE'
+                      ? 'bg-teal-600 text-white font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Milestone className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Timeline de Hitos</span>
+                </button>
+              </div>
             </div>
+
+            {modalViewMode === 'TIMELINE' ? (
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                <GameTimelinePanel
+                  logs={state.logs}
+                  achievements={state.achievements}
+                  gameResult={state.gameResult}
+                  gameResultDetails={state.gameResultDetails}
+                  round={state.round}
+                />
+              </div>
+            ) : (
+              <>
 
             {/* Métricas y barra de búsqueda */}
             <div className="p-3 bg-slate-950/40 border-b border-slate-800 flex flex-col gap-2.5">
@@ -636,6 +704,8 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                 Cerrar
               </button>
             </div>
+              </>
+            )}
 
           </div>
         </div>

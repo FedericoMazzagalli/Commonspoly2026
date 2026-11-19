@@ -41,6 +41,7 @@ import {
   GameLogEntry
 } from '../../types/game';
 import { CommonsEvolutionD3Chart } from '../charts/CommonsEvolutionD3Chart';
+import { CooperativeEfficiencyBreakdown } from '../../utils/cooperativeEfficiency';
 
 interface GameOverModalProps {
   result: 'VICTORY' | 'DRAW' | 'DEFEAT';
@@ -52,6 +53,7 @@ interface GameOverModalProps {
   turnHistory?: TurnCommonsSnapshot[];
   playerStats?: Record<string, PlayerContributionStats>;
   logs?: GameLogEntry[];
+  cooperativeEfficiency?: CooperativeEfficiencyBreakdown;
   onInspectBoard?: () => void;
   onRestart: () => void;
 }
@@ -117,6 +119,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   turnHistory,
   playerStats,
   logs = [],
+  cooperativeEfficiency,
   onInspectBoard,
   onRestart
 }) => {
@@ -309,6 +312,14 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           </div>
 
           <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-2.5 gap-y-1 shrink-0 tabular-nums">
+            {cooperativeEfficiency && (
+              <>
+                <span className="font-bold text-teal-300">
+                  Eficiencia coop.: {cooperativeEfficiency.efficiencyPct}% ({cooperativeEfficiency.tierLabel})
+                </span>
+                <span className="text-slate-600">·</span>
+              </>
+            )}
             <span>{round} / 20 rondas</span>
             <span className="text-slate-600">·</span>
             <span>{players.length} participantes</span>

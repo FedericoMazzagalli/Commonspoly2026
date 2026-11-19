@@ -24,7 +24,8 @@ import {
   Clock,
   Sunrise,
   Sunset,
-  Moon
+  Moon,
+  Radar
 } from 'lucide-react';
 import { GameEngineState, TimeOfDayMode, WeatherMode } from '../../types/game';
 import { resolveWeather } from '../../utils/weather';
@@ -36,13 +37,17 @@ interface WeatherControllerHUDProps {
   onSetWeatherMode: (mode: WeatherMode) => void;
   onSetWeatherIntensity?: (intensity: number) => void;
   onSetTimeOfDayMode?: (mode: TimeOfDayMode) => void;
+  isMeteorologicalInsightOpen?: boolean;
+  onToggleMeteorologicalInsight?: () => void;
 }
 
 export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
   state,
   onSetWeatherMode,
   onSetWeatherIntensity,
-  onSetTimeOfDayMode
+  onSetTimeOfDayMode,
+  isMeteorologicalInsightOpen = false,
+  onToggleMeteorologicalInsight
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const condition = resolveWeather(state.tiles, state.weatherMode, state.weatherIntensity ?? 0.85);
@@ -192,6 +197,26 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
           >
             <Sun className="w-3.5 h-3.5" />
           </button>
+
+          {onToggleMeteorologicalInsight && (
+            <button
+              type="button"
+              onClick={() => {
+                playSound.uiToggle(!isMeteorologicalInsightOpen);
+                onToggleMeteorologicalInsight();
+              }}
+              className={`p-1 rounded-lg transition-colors ${
+                isMeteorologicalInsightOpen
+                  ? 'bg-cyan-600 text-white shadow-sm'
+                  : 'text-cyan-300 hover:text-white hover:bg-slate-800'
+              }`}
+              title="Meteorological Insight: Análisis climático y prioridades estratégicas"
+              aria-label="Abrir Meteorological Insight"
+              aria-expanded={isMeteorologicalInsightOpen}
+            >
+              <Radar className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Botón expandir/contraer panel completo */}
           <button

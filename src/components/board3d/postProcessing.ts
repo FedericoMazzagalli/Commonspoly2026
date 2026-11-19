@@ -95,6 +95,9 @@ export interface BoardPostProcessingController {
     postShadowTint?: THREE.Color;
     twilightFactor?: number;
     nightFactor?: number;
+    isTragedyOfCommons?: boolean;
+    cooperativeEfficiency?: number;
+    cleansingProgress?: number;
     delta: number;
   }) => void;
   setSize: (width: number, height: number) => void;
@@ -153,6 +156,9 @@ export function createBoardPostProcessing(
     postShadowTint,
     twilightFactor = 0,
     nightFactor = 0,
+    isTragedyOfCommons = false,
+    cooperativeEfficiency = 1,
+    cleansingProgress = 0,
     delta
   }) => {
     const isGameOver = phase === 'GAME_OVER';
@@ -214,24 +220,43 @@ export function createBoardPostProcessing(
       targetRadius = 0.52;
     }
 
+    if (isTragedyOfCommons && !isGameOver) {
+      targetSaturation = Math.min(targetSaturation, 0.72);
+      targetContrast = Math.max(targetContrast, 1.1);
+      targetVignette = Math.min(0.42, targetVignette + 0.08);
+      targetStrength = Math.max(0.18, targetStrength - 0.1);
+    }
+
     if (isGameOver) {
+      const eff = Math.max(0, Math.min(1, cooperativeEfficiency));
+      const cleanseT = Math.max(0, Math.min(1, cleansingProgress));
+
       if (gameResult === 'VICTORY') {
         _targetTint.setRGB(0.98, 1.04, 1.0);
         _targetShadowTint.setRGB(0.9, 1.04, 1.0);
-        targetStrength = 0.48;
+        targetStrength = THREE.MathUtils.lerp(0.36, 0.48, cleanseT);
         targetThreshold = 0.78;
-        targetSaturation = 1.14;
+        targetSaturation = THREE.MathUtils.lerp(0.94, 1.06 + eff * 0.1, cleanseT);
         targetVignette = 0.22;
       } else if (gameResult === 'DEFEAT') {
-        _targetTint.setRGB(1.03, 0.94, 0.95);
-        _targetShadowTint.setRGB(1.04, 0.9, 0.92);
-        targetStrength = 0.4;
-        targetContrast = 1.12;
-        targetSaturation = 0.94;
-        targetVignette = 0.32;
+        _targetTint.setRGB(
+          THREE.MathUtils.lerp(1.03, 0.99, eff * cleanseT),
+          THREE.MathUtils.lerp(0.93, 1.0, eff * cleanseT),
+          THREE.MathUtils.lerp(0.94, 1.01, eff * cleanseT)
+        );
+        _targetShadowTint.setRGB(
+          THREE.MathUtils.lerp(1.04, 0.94, eff * cleanseT),
+          THREE.MathUtils.lerp(0.9, 0.98, eff * cleanseT),
+          THREE.MathUtils.lerp(0.92, 1.0, eff * cleanseT)
+        );
+        targetStrength = THREE.MathUtils.lerp(0.3, 0.38 + eff * 0.08, cleanseT);
+        targetContrast = 1.1;
+        targetSaturation = THREE.MathUtils.lerp(0.76, 0.84 + eff * 0.26, cleanseT);
+        targetVignette = THREE.MathUtils.lerp(0.34, 0.25, eff * cleanseT);
       } else {
         _targetTint.setRGB(0.96, 1.01, 1.05);
-        targetStrength = 0.42;
+        targetStrength = THREE.MathUtils.lerp(0.34, 0.44, cleanseT);
+        targetSaturation = THREE.MathUtils.lerp(0.86, 0.96 + eff * 0.16, cleanseT);
         targetThreshold = 0.8;
       }
     }

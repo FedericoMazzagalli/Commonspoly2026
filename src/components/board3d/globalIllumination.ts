@@ -24,6 +24,10 @@ export interface GlobalIlluminationUniforms {
   uVolumetricFogColor: { value: THREE.Color };
   uVolumetricFogDensity: { value: number };
   uVolumetricFogEnabled: { value: number };
+  uCleanseWaveRadius: { value: number };
+  uCleanseWaveIntensity: { value: number };
+  uCleanseEfficiency: { value: number };
+  uCleanseWaveColor: { value: THREE.Color };
 }
 
 export function createGlobalIlluminationUniforms(): GlobalIlluminationUniforms {
@@ -39,20 +43,29 @@ export function createGlobalIlluminationUniforms(): GlobalIlluminationUniforms {
     uGiTime: { value: 0.0 },
     uVolumetricFogColor: { value: new THREE.Color(0x0a1917) },
     uVolumetricFogDensity: { value: 0.025 },
-    uVolumetricFogEnabled: { value: 0.08 }
+    uVolumetricFogEnabled: { value: 0.08 },
+    uCleanseWaveRadius: { value: -5.0 },
+    uCleanseWaveIntensity: { value: 0.0 },
+    uCleanseEfficiency: { value: 0.0 },
+    uCleanseWaveColor: { value: new THREE.Color(0x2dd4bf) }
   };
 }
 
 export function applyGlobalIlluminationShader(
   material: THREE.MeshStandardMaterial,
   giUniforms: GlobalIlluminationUniforms,
-  options?: { giWeight?: number; wetnessWeight?: number }
+  options?: {
+    giWeight?: number;
+    wetnessWeight?: number;
+    saturationUniform?: { value: number };
+  }
 ): void {
   const giWeight = options?.giWeight ?? 1.0;
   const wetnessWeight = options?.wetnessWeight ?? 0.65;
+  const saturationUniform = options?.saturationUniform ?? { value: 1.0 };
 
   material.customProgramCacheKey = () =>
-    `commonspoly_gi_v2_${giWeight.toFixed(2)}_${wetnessWeight.toFixed(2)}`;
+    `commonspoly_gi_v3_${giWeight.toFixed(2)}_${wetnessWeight.toFixed(2)}`;
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uGiSkyColor = giUniforms.uGiSkyColor;
@@ -67,6 +80,11 @@ export function applyGlobalIlluminationShader(
     shader.uniforms.uVolumetricFogColor = giUniforms.uVolumetricFogColor;
     shader.uniforms.uVolumetricFogDensity = giUniforms.uVolumetricFogDensity;
     shader.uniforms.uVolumetricFogEnabled = giUniforms.uVolumetricFogEnabled;
+    shader.uniforms.uCleanseWaveRadius = giUniforms.uCleanseWaveRadius;
+    shader.uniforms.uCleanseWaveIntensity = giUniforms.uCleanseWaveIntensity;
+    shader.uniforms.uCleanseEfficiency = giUniforms.uCleanseEfficiency;
+    shader.uniforms.uCleanseWaveColor = giUniforms.uCleanseWaveColor;
+    shader.uniforms.uTileSaturation = saturationUniform;
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -103,8 +121,24 @@ uniform float uGiAgoraGlowStrength;
 uniform float uGiStrength;
 uniform float uGiWetness;
 uniform float uGiTime;
+uniform float uCleanseWaveRadius;
+uniform float uCleanseWaveIntensity;
+uniform float uCleanseEfficiency;
+uniform vec3 uCleanseWaveColor;
+uniform float uTileSaturation;
 varying vec3 vGiWorldPos;
 varying vec3 vGiWorldNormal;`
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  float satLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+  float clampedSat = clamp( uTileSaturation, 0.0, 1.0 );
+  vec3 weatheredGrey = vec3( satLuma ) * mix( 0.72, 1.0, clampedSat );
+  vec3 satAdjusted = mix( weatheredGrey, diffuseColor.rgb, uTileSaturation );
+  diffuseColor.rgb = max( satAdjusted, vec3( 0.0 ) );
+}`
       )
       .replace(
         '#include <lights_fragment_end>',
@@ -128,6 +162,15 @@ varying vec3 vGiWorldNormal;`
   float giRipple = 0.55 + 0.45 * sin( vGiWorldPos.x * 1.35 + uGiTime * 1.9 ) * cos( vGiWorldPos.z * 1.35 - uGiTime * 1.6 );
   float giWetSpec = uGiWetness * ${wetnessWeight.toFixed(3)} * giRipple * max( 0.0, giN.y ) * 0.085;
   reflectedLight.indirectSpecular += uGiSkyColor * giWetSpec;
+
+  if ( uCleanseWaveIntensity > 0.001 ) {
+    float cleanseDist = giAgoraDist - uCleanseWaveRadius;
+    float waveCrest = exp( -cleanseDist * cleanseDist * 0.55 ) * uCleanseWaveIntensity;
+    float wakeBand = smoothstep( 1.2, -2.5, cleanseDist ) * ( 1.0 - smoothstep( -4.0, -9.5, cleanseDist ) ) * uCleanseWaveIntensity;
+    float effScale = 0.28 + 0.72 * uCleanseEfficiency;
+    reflectedLight.indirectDiffuse += uCleanseWaveColor * ( waveCrest * ( 0.45 + 0.55 * effScale ) + wakeBand * 0.12 * effScale );
+    reflectedLight.indirectSpecular += uCleanseWaveColor * ( waveCrest * 0.28 * max( 0.2, giN.y ) * effScale );
+  }
 }`
       )
       .replace(

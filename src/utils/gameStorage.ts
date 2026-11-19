@@ -42,6 +42,7 @@ interface SerializableGameState {
   setupConfig?: GameEngineState['setupConfig'];
   currentDiceRoll: number | null;
   activeModal: GameEngineState['activeModal'];
+  neighborhoodDecision?: GameEngineState['neighborhoodDecision'];
   speculatorAttackPayload?: GameEngineState['speculatorAttackPayload'];
   logs: GameEngineState['logs'];
   chatMessages: GameEngineState['chatMessages'];
@@ -58,6 +59,8 @@ interface SerializableGameState {
   weatherMode: GameEngineState['weatherMode'];
   weatherIntensity?: number;
   timeOfDayMode?: GameEngineState['timeOfDayMode'];
+  activeCrisis?: GameEngineState['activeCrisis'];
+  turnsSinceLastCrisis?: number;
 }
 
 interface PersistedGamePayload {
@@ -165,6 +168,7 @@ export function saveGameToStorage(
     setupConfig: state.setupConfig,
     currentDiceRoll: state.currentDiceRoll,
     activeModal: state.activeModal,
+    neighborhoodDecision: state.neighborhoodDecision,
     speculatorAttackPayload: state.speculatorAttackPayload,
     logs: state.logs.slice(0, 600),
     chatMessages: state.chatMessages.slice(-40),
@@ -180,7 +184,9 @@ export function saveGameToStorage(
     ambientMode: state.ambientMode,
     weatherMode: state.weatherMode,
     weatherIntensity: state.weatherIntensity,
-    timeOfDayMode: state.timeOfDayMode
+    timeOfDayMode: state.timeOfDayMode,
+    activeCrisis: state.activeCrisis ?? null,
+    turnsSinceLastCrisis: state.turnsSinceLastCrisis ?? 0
   };
 
   const payload: PersistedGamePayload = {
@@ -313,6 +319,7 @@ export function loadSavedGameFromStorage(options?: {
       currentGlobalCard: rehydratedGlobalCard,
       currentSituationCard: rehydratedSituationCard,
       activeModal: normalizedModal,
+      neighborhoodDecision: saved.neighborhoodDecision ?? null,
       speculatorAttackPayload: saved.speculatorAttackPayload,
       logs: Array.isArray(saved.logs) ? saved.logs : [],
       chatMessages: Array.isArray(saved.chatMessages) ? saved.chatMessages : [],
@@ -329,6 +336,8 @@ export function loadSavedGameFromStorage(options?: {
       weatherMode: saved.weatherMode || 'AUTO',
       weatherIntensity: saved.weatherIntensity ?? 0.85,
       timeOfDayMode: saved.timeOfDayMode || 'AUTO',
+      activeCrisis: saved.activeCrisis ?? null,
+      turnsSinceLastCrisis: saved.turnsSinceLastCrisis ?? 0,
       achievements: loadLocalAchievements(),
       recentAchievement: null
     };

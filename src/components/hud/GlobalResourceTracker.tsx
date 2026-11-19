@@ -17,7 +17,8 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  LineChart
+  LineChart,
+  BarChart3
 } from 'lucide-react';
 import { GameEngineState, GoodType } from '../../types/game';
 import { playSound } from '../../utils/audio';
@@ -26,6 +27,8 @@ interface GlobalResourceTrackerProps {
   state: GameEngineState;
   isEvolutionOpen?: boolean;
   onToggleEvolution?: () => void;
+  isCollectiveImpactOpen?: boolean;
+  onToggleCollectiveImpact?: () => void;
 }
 
 interface CategoryStats {
@@ -43,7 +46,9 @@ interface CategoryStats {
 export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
   state,
   isEvolutionOpen = false,
-  onToggleEvolution
+  onToggleEvolution,
+  isCollectiveImpactOpen = false,
+  onToggleCollectiveImpact
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [pulseGain, setPulseGain] = useState(false);
@@ -158,6 +163,25 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
             <span className="px-1.5 py-0.5 rounded-md bg-emerald-950/90 border border-emerald-700/60 text-[10px] font-bold text-emerald-300 tabular-nums">
               {commonPercent}%
             </span>
+            {onToggleCollectiveImpact && (
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.uiToggle(!isCollectiveImpactOpen);
+                  onToggleCollectiveImpact();
+                }}
+                className={`p-1 rounded-md transition-colors ${
+                  isCollectiveImpactOpen
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-emerald-300 hover:text-white hover:bg-slate-800'
+                }`}
+                title="Collective Impact: Eficiencia del equipo vs especuladores"
+                aria-label="Abrir panel Collective Impact"
+                aria-expanded={isCollectiveImpactOpen}
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+              </button>
+            )}
             {onToggleEvolution && (
               <button
                 type="button"

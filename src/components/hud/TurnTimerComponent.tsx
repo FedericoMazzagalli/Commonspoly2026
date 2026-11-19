@@ -1,13 +1,13 @@
 /**
  * TurnTimerComponent.tsx
- * Temporizador visual de turno en el HUD de Commonspoly.
+ * Temporizador visual de límite de tiempo (60s) por turno en el HUD de Commonspoly.
  * Rastrea el tiempo disponible para la jugada del personaje humano activo,
- * con anillo SVG animado, barra de progreso y animación sutil de advertencia
- * cuando queda poco tiempo, fomentando el juego estratégico sin bloquear la lectura de reglas/modales.
+ * con anillo SVG animado, barra de progreso, pulso de urgencia en los últimos segundos
+ * y paso automático del turno al agotarse los 60 segundos.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Clock, Pause, Play, AlertTriangle, Bot } from 'lucide-react';
 import { Character, GamePhase } from '../../types/game';
 import { playSound } from '../../utils/audio';
@@ -28,7 +28,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
   round,
   phase,
   isPausedByOverlay,
-  durationSeconds = 45,
+  durationSeconds = 60,
   onTimeout
 }) => {
   const [secondsLeft, setSecondsLeft] = useState(durationSeconds);
@@ -36,6 +36,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
   const timeoutFiredRef = useRef(false);
   const onTimeoutRef = useRef(onTimeout);
   onTimeoutRef.current = onTimeout;
+  const shouldReduceMotion = useReducedMotion();
 
   const isHumanTurnDecision =
     activePlayer?.controller === 'HUMAN' &&
@@ -43,9 +44,10 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
 
   const isTimerActive = isHumanTurnDecision && !isPausedByOverlay && !isManualPaused;
 
-  // Reiniciar el temporizador cada vez que cambia el jugador, la ronda o la fase de decisión
+  // Reiniciar el temporizador y limpiar pausa manual cuando cambia jugador, ronda o fase
   useEffect(() => {
     setSecondsLeft(durationSeconds);
+    setIsManualPaused(false);
     timeoutFiredRef.current = false;
   }, [activePlayerIndex, round, phase, durationSeconds]);
 
@@ -65,7 +67,14 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
     return () => window.clearInterval(interval);
   }, [isTimerActive]);
 
-  // Ejecutar acción automática al llegar a 0
+  // Señal sonora sutil de urgencia en los últimos 5 segundos
+  useEffect(() => {
+    if (isTimerActive && secondsLeft > 0 && secondsLeft <= 5) {
+      playSound.uiClick();
+    }
+  }, [secondsLeft, isTimerActive]);
+
+  // Ejecutar paso automático del turno al llegar a 0
   useEffect(() => {
     if (secondsLeft === 0 && isTimerActive && !timeoutFiredRef.current) {
       timeoutFiredRef.current = true;
@@ -76,7 +85,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
   if (!activePlayer) return null;
 
   const progress = Math.max(0, Math.min(1, secondsLeft / durationSeconds));
-  const isWarning = isHumanTurnDecision && secondsLeft <= 12 && secondsLeft > 5;
+  const isWarning = isHumanTurnDecision && secondsLeft <= 15 && secondsLeft > 5;
   const isCritical = isHumanTurnDecision && secondsLeft <= 5;
 
   // Geometría del anillo SVG
@@ -98,25 +107,40 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
       : isManualPaused
       ? 'En pausa'
       : isCritical
-      ? '¡Decide ahora!'
+      ? '¡Paso automático!'
       : isWarning
       ? 'Poco tiempo'
       : phase === 'TILE_ACTION_DECISION'
-      ? 'Decisión'
-      : 'Tu jugada';
+      ? 'Decisión (60s)'
+      : 'Tu jugada (60s)';
 
   return (
     <motion.div
-      aria-label="Temporizador de Turno"
+      aria-label={`Temporizador de Turno: ${secondsLeft} segundos restantes`}
       animate={
-        isCritical && isTimerActive
-          ? { scale: [1, 1.03, 1], boxShadow: ['0 0 0 rgba(244,63,94,0)', '0 0 18px rgba(244,63,94,0.45)', '0 0 0 rgba(244,63,94,0)'] }
+        shouldReduceMotion
+          ? undefined
+          : isCritical && isTimerActive
+          ? {
+              scale: [1, 1.03, 1],
+              boxShadow: [
+                '0 0 0 rgba(244,63,94,0)',
+                '0 0 18px rgba(244,63,94,0.45)',
+                '0 0 0 rgba(244,63,94,0)'
+              ]
+            }
           : isWarning && isTimerActive
-          ? { boxShadow: ['0 0 0 rgba(245,158,11,0)', '0 0 12px rgba(245,158,11,0.32)', '0 0 0 rgba(245,158,11,0)'] }
+          ? {
+              boxShadow: [
+                '0 0 0 rgba(245,158,11,0)',
+                '0 0 12px rgba(245,158,11,0.32)',
+                '0 0 0 rgba(245,158,11,0)'
+              ]
+            }
           : { scale: 1, boxShadow: '0 0 0 rgba(0,0,0,0)' }
       }
       transition={
-        (isCritical || isWarning) && isTimerActive
+        !shouldReduceMotion && (isCritical || isWarning) && isTimerActive
           ? { duration: isCritical ? 0.85 : 1.4, repeat: Infinity, ease: 'easeInOut' }
           : { duration: 0.2 }
       }
@@ -150,7 +174,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
               strokeLinecap="round"
               strokeDasharray={circumference}
               strokeDashoffset={dashOffset}
-              style={{ transition: 'stroke-dashoffset 0.35s linear, stroke 0.25s ease' }}
+              className="transition-[stroke-dashoffset,stroke] duration-300 ease-linear"
             />
           )}
         </svg>
@@ -164,16 +188,22 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
         </span>
       </div>
 
-      {/* Etiqueta y barra de tiempo */}
-      <div className="flex flex-col min-w-[88px] gap-1">
-        <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold leading-none">
+      {/* Etiqueta y barra de progreso */}
+      <div className="flex flex-col min-w-[96px] gap-1">
+        <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold leading-none whitespace-nowrap">
           <span className="flex items-center gap-1">
             {isCritical || isWarning ? (
               <AlertTriangle
-                className={`w-3 h-3 ${isCritical ? 'text-rose-400 animate-bounce' : 'text-amber-400'}`}
+                className={`w-3 h-3 shrink-0 ${
+                  isCritical && !shouldReduceMotion
+                    ? 'text-rose-400 animate-bounce'
+                    : isCritical
+                    ? 'text-rose-400'
+                    : 'text-amber-400'
+                }`}
               />
             ) : (
-              <Clock className="w-3 h-3 text-teal-400" />
+              <Clock className="w-3 h-3 shrink-0 text-teal-400" />
             )}
             <span>{badgeText}</span>
           </span>
@@ -181,15 +211,16 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
 
         {activePlayer.controller === 'HUMAN' ? (
           <div className="h-1.5 w-full rounded-full bg-slate-950/90 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ease-linear ${
+            <motion.div
+              animate={{ scaleX: progress }}
+              transition={{ duration: 0.35, ease: 'linear' }}
+              className={`h-full w-full origin-left rounded-full transition-colors duration-300 ${
                 isCritical
                   ? 'bg-rose-500'
                   : isWarning
                   ? 'bg-amber-400'
                   : 'bg-teal-400'
               }`}
-              style={{ width: `${Math.round(progress * 100)}%` }}
             />
           </div>
         ) : (

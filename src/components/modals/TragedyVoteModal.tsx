@@ -40,7 +40,7 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
   const needed = Math.min(3, commonTiles.length);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40">
       <div className="w-full max-w-lg bg-slate-900 border-2 border-red-600 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}

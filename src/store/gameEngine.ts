@@ -14,6 +14,7 @@ import {
   GoodState,
   GlobalCard, 
   SituationCard,
+  NeighborhoodDecision,
   GameLogEntry,
   CooperativeChatMessage,
   AmbientMode,
@@ -45,6 +46,11 @@ import {
   getSavedGameMetadata,
   clearSavedGameFromStorage
 } from '../utils/gameStorage';
+import {
+  evaluateUnexpectedCrisisTurn,
+  getEffectiveResourceReward,
+  getEffectiveUnlockCost
+} from '../utils/crisisEngine';
 
 function createInitialPlayerStats(players: Character[]): Record<string, PlayerContributionStats> {
   const stats: Record<string, PlayerContributionStats> = {};
@@ -201,6 +207,7 @@ function buildDefaultTitleState(): GameEngineState {
     currentDiceRoll: null,
     currentGlobalCard: null,
     currentSituationCard: null,
+    neighborhoodDecision: null,
     activeModal: null,
     logs: [
       {
@@ -221,6 +228,8 @@ function buildDefaultTitleState(): GameEngineState {
     weatherMode: 'AUTO',
     weatherIntensity: 0.85,
     timeOfDayMode: 'AUTO',
+    activeCrisis: null,
+    turnsSinceLastCrisis: 0,
     achievements: loadLocalAchievements(),
     recentAchievement: null,
     playerStats: initialStats,
@@ -257,6 +266,7 @@ export function useCommonspolyGame() {
   stateRef.current = state;
 
   const seenAchievementLogsRef = useRef<Set<string>>(new Set(state.logs.map(l => l.id)));
+  const lastCrisisIdRef = useRef<string | null>(state.activeCrisis?.id ?? null);
   const prevCompletedSectorsRef = useRef<Set<GoodType>>(detectCompletedGoodCategories(state));
   const prevVictoryTriggeredRef = useRef<boolean>(
     state.phase === 'GAME_OVER' && state.gameResult === 'VICTORY'
@@ -313,15 +323,22 @@ export function useCommonspolyGame() {
     state.tiles
   ]);
 
-  // Sincronización dinámica de la capa atmosférica de audio según el clima seleccionado e intensidad
+  // Sincronización dinámica de la capa atmosférica de audio y mezcla Naturaleza Urbana según weatherMode
   useEffect(() => {
-    const cond = resolveWeather(state.tiles, state.weatherMode, state.weatherIntensity ?? 0.85);
+    const cond = resolveWeather(
+      state.tiles,
+      state.weatherMode,
+      state.weatherIntensity ?? 0.85,
+      state.round,
+      state.activePlayerIndex
+    );
     audioManager.setWeatherAudio(
       cond.type,
       cond.intensity,
-      state.phase === 'TITLE' || state.phase === 'SETUP'
+      state.phase === 'TITLE' || state.phase === 'SETUP',
+      state.weatherMode
     );
-  }, [state.phase, state.weatherMode, state.weatherIntensity, state.tiles]);
+  }, [state.phase, state.weatherMode, state.weatherIntensity, state.tiles, state.round, state.activePlayerIndex]);
 
   // Rastreo automático de logros locales ('Achievements') ante hitos cooperativos
   useEffect(() => {
@@ -387,6 +404,19 @@ export function useCommonspolyGame() {
         playSound.achievementUnlock();
         triggerHaptic.commonUnlocked();
         const [firstNew, ...restNew] = newlyUnlocked;
+
+        const achievementLogs: GameLogEntry[] = newlyUnlocked.map(ach => ({
+          id: `log_ach_${ach.id}_${Date.now()}`,
+          round: ach.unlockedAtRound ?? prev.round,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          actor: ach.unlockedByPlayerName || 'Comunidad',
+          actorColor: ach.unlockedByPlayerColor || '#facc15',
+          message: `🏆 ¡Logro desbloqueado! "${ach.title}": ${ach.description}`,
+          type: 'SUCCESS' as const,
+          category: 'COOPERATIVE' as const,
+          highlight: true
+        }));
+
         if (!prev.recentAchievement) {
           if (restNew.length > 0) {
             achievementQueueRef.current.push(...restNew);
@@ -394,10 +424,16 @@ export function useCommonspolyGame() {
           return {
             ...prev,
             achievements: nextAchievements,
-            recentAchievement: firstNew
+            recentAchievement: firstNew,
+            logs: [...achievementLogs, ...prev.logs]
           };
         } else {
           achievementQueueRef.current.push(...newlyUnlocked);
+          return {
+            ...prev,
+            achievements: nextAchievements,
+            logs: [...achievementLogs, ...prev.logs]
+          };
         }
       }
 
@@ -492,6 +528,9 @@ export function useCommonspolyGame() {
       currentGlobalCard: null,
       currentSituationCard: null,
       activeModal: null,
+      neighborhoodDecision: null,
+      activeCrisis: null,
+      turnsSinceLastCrisis: 0,
       recentAchievement: null,
       playerStats: freshStats,
       performanceHistory: [initialSnapshot],
@@ -1010,6 +1049,12 @@ export function useCommonspolyGame() {
         // Se debe abrir modal de votación para privatizar 3 comunes
         playSound.speculatorAlert(getTileCoords3D(tile.id));
         triggerHaptic.tragedy();
+        addLog(
+          player.name,
+          '¡Ha caído en la Tragedia de los Comunes! Comienza la asamblea de emergencia para consensuar privatizaciones forzadas.',
+          'HAZARD',
+          { category: 'HAZARD', highlight: true }
+        );
         setState(prev => ({ ...prev, activeModal: 'TRAGEDY_VOTE' }));
         return;
       }
@@ -1033,11 +1078,20 @@ export function useCommonspolyGame() {
     // D. Casilla de Recurso (Salud, Urbano, Conocimiento, Medioambiente)
     if (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY') {
       if (tile.state === 'COMMON') {
-        player.wellness += 2;
-        player.legitimacy += 2;
+        const reward = getEffectiveResourceReward(tile, 2, 2, stateRef.current.activeCrisis);
+        player.wellness += reward.wellness;
+        player.legitimacy += reward.legitimacy;
         playSound.unlockCommon(getTileCoords3D(tile.id));
-        recordPlayerMetric(player.id, { totalResourcesEarned: 4 });
-        addLog(player.name, `Disfruta del bien común "${tile.name}" (+2 Bienestar, +2 Legitimidad).`, 'SUCCESS');
+        recordPlayerMetric(player.id, { totalResourcesEarned: reward.wellness + reward.legitimacy });
+        const crisisNote =
+          reward.crisisDelta !== 0
+            ? ` (efecto crisis ${reward.crisisDelta > 0 ? `+${reward.crisisDelta}` : reward.crisisDelta})`
+            : '';
+        addLog(
+          player.name,
+          `Disfruta del bien común "${tile.name}" (+${reward.wellness} Bienestar, +${reward.legitimacy} Legitimidad)${crisisNote}.`,
+          'SUCCESS'
+        );
         advanceToNextTurn();
         return;
       }
@@ -1052,13 +1106,8 @@ export function useCommonspolyGame() {
 
   // Lógica de decisión autónoma para Bots
   const autoBotActionForTile = useCallback((tile: Tile, bot: Character) => {
-    let skill = 0;
-    if (tile.goodType === 'HEALTH') skill = bot.skills.care;
-    if (tile.goodType === 'URBAN') skill = bot.skills.occupy;
-    if (tile.goodType === 'KNOWLEDGE') skill = bot.skills.share;
-    if (tile.goodType === 'ENVIRONMENT') skill = bot.skills.regenerate;
-
-    const neededWellness = Math.max(0, 10 - skill);
+    const costInfo = getEffectiveUnlockCost(tile, bot, stateRef.current.activeCrisis);
+    const neededWellness = costInfo.effectiveCost;
 
     if (bot.wellness > neededWellness && (tile.state === 'PRIVATE' || tile.state === 'PUBLIC')) {
       // El bot desbloquea el bien solidariamente
@@ -1086,9 +1135,13 @@ export function useCommonspolyGame() {
         updatedTiles
       );
 
+      const crisisCostNote =
+        costInfo.crisisDelta !== 0
+          ? ` [Crisis: ${costInfo.crisisDelta > 0 ? `+${costInfo.crisisDelta}` : costInfo.crisisDelta} coste]`
+          : '';
       addLog(
         bot.name,
-        `[Acción Cooperativa] ${bot.name} desprivatizó "${tile.name}" convirtiéndolo en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'}.`,
+        `[Acción Cooperativa] ${bot.name} desprivatizó "${tile.name}" convirtiéndolo en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'}${crisisCostNote}.`,
         'SUCCESS',
         {
           category: 'COOPERATIVE',
@@ -1101,10 +1154,15 @@ export function useCommonspolyGame() {
     } else {
       // El bot pasa y gana puntos si es público
       if (tile.state === 'PUBLIC') {
-        bot.wellness += 1;
-        bot.legitimacy += 1;
-        recordPlayerMetric(bot.id, { totalResourcesEarned: 2 });
-        addLog(bot.name, `[BOT] No desbloqueó "${tile.name}" y obtiene +1 Bienestar y +1 Legitimidad.`, 'INFO');
+        const reward = getEffectiveResourceReward(tile, 1, 1, stateRef.current.activeCrisis);
+        bot.wellness += reward.wellness;
+        bot.legitimacy += reward.legitimacy;
+        recordPlayerMetric(bot.id, { totalResourcesEarned: reward.wellness + reward.legitimacy });
+        addLog(
+          bot.name,
+          `[BOT] No desbloqueó "${tile.name}" y obtiene +${reward.wellness} Bienestar y +${reward.legitimacy} Legitimidad.`,
+          'INFO'
+        );
       } else {
         addLog(bot.name, `[BOT] No tiene suficiente Bienestar para desprivatizar "${tile.name}".`, 'INFO');
       }
@@ -1115,20 +1173,16 @@ export function useCommonspolyGame() {
     }, 400);
   }, []);
 
-  // Acción manual de un jugador humano: Desbloquear el bien (10 pts)
+  // Acción manual de un jugador humano: Desbloquear el bien (10 pts ± modificador de crisis)
   const unlockCurrentTile = useCallback(() => {
     const currentState = stateRef.current;
     const player = currentState.players[currentState.activePlayerIndex];
     const tile = currentState.tiles.find(t => t.id === player.position);
     if (!tile || !tile.goodType) return;
 
-    let skill = 0;
-    if (tile.goodType === 'HEALTH') skill = player.skills.care;
-    if (tile.goodType === 'URBAN') skill = player.skills.occupy;
-    if (tile.goodType === 'KNOWLEDGE') skill = player.skills.share;
-    if (tile.goodType === 'ENVIRONMENT') skill = player.skills.regenerate;
-
-    const neededWellness = Math.max(0, 10 - skill);
+    const costInfo = getEffectiveUnlockCost(tile, player, currentState.activeCrisis);
+    const neededWellness = costInfo.effectiveCost;
+    const skill = costInfo.skillPoints;
     if (player.wellness < neededWellness) return;
 
     player.wellness -= neededWellness;
@@ -1160,9 +1214,13 @@ export function useCommonspolyGame() {
       updatedTiles
     );
 
+    const crisisNote =
+      costInfo.crisisDelta !== 0
+        ? `, Crisis ${costInfo.crisisDelta > 0 ? `+${costInfo.crisisDelta}` : costInfo.crisisDelta}`
+        : '';
     addLog(
       player.name,
-      `¡Bien Desprivatizado! ${player.name} transformó "${tile.name}" en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'} (${neededWellness} Bienestar + ${skill} Habilidad).`,
+      `¡Bien Desprivatizado! ${player.name} transformó "${tile.name}" en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'} (${neededWellness} Bienestar + ${skill} Habilidad${crisisNote}).`,
       'SUCCESS',
       {
         category: 'COOPERATIVE',
@@ -1188,14 +1246,69 @@ export function useCommonspolyGame() {
     const tile = currentState.tiles.find(t => t.id === player.position);
 
     if (tile?.state === 'PUBLIC') {
-      player.wellness += 1;
-      player.legitimacy += 1;
+      const reward = getEffectiveResourceReward(tile, 1, 1, currentState.activeCrisis);
+      player.wellness += reward.wellness;
+      player.legitimacy += reward.legitimacy;
       playSound.unlockPublic(getTileCoords3D(tile.id));
-      recordPlayerMetric(player.id, { totalResourcesEarned: 2 });
-      addLog(player.name, `Pasa en el bien público "${tile.name}" y recibe +1 Bienestar y +1 Legitimidad.`, 'INFO');
+      recordPlayerMetric(player.id, { totalResourcesEarned: reward.wellness + reward.legitimacy });
+      addLog(
+        player.name,
+        `Pasa en el bien público "${tile.name}" y recibe +${reward.wellness} Bienestar y +${reward.legitimacy} Legitimidad.`,
+        'INFO'
+      );
     } else {
       addLog(player.name, `Pasa su turno sin realizar transformaciones en "${tile?.name}".`, 'INFO');
     }
+
+    advanceToNextTurn();
+  }, []);
+
+  // Paso automático de turno al expirar el límite de tiempo (60s) del jugador humano activo
+  const passTurnOnTimeout = useCallback(() => {
+    const currentState = stateRef.current;
+    if (
+      currentState.phase !== 'PLAYER_TURN_READY' &&
+      currentState.phase !== 'TILE_ACTION_DECISION'
+    ) {
+      return;
+    }
+    if (currentState.activeModal) return;
+
+    const player = currentState.players[currentState.activePlayerIndex];
+    if (!player || player.controller !== 'HUMAN') return;
+
+    if (currentState.phase === 'PLAYER_TURN_READY' && player.isDetained) {
+      if (player.detentionRoundsLeft > 1) {
+        player.detentionRoundsLeft -= 1;
+      } else {
+        player.isDetained = false;
+        player.detentionRoundsLeft = 0;
+      }
+      setState(prev => ({
+        ...prev,
+        players: prev.players.map((p, idx) =>
+          idx === prev.activePlayerIndex ? { ...player } : p
+        )
+      }));
+    }
+
+    playSound.notification();
+    triggerHaptic.uiTap();
+
+    const phaseContext =
+      currentState.phase === 'TILE_ACTION_DECISION'
+        ? 'sin decidir sobre la casilla'
+        : 'sin lanzar el dado';
+
+    addLog(
+      'Tiempo Límite (60s)',
+      `¡Tiempo agotado! ${player.name} no actuó en 60s (${phaseContext}) y pasa su turno automáticamente.`,
+      'HAZARD',
+      {
+        actorColor: player.color,
+        highlight: true
+      }
+    );
 
     advanceToNextTurn();
   }, []);
@@ -1497,11 +1610,44 @@ export function useCommonspolyGame() {
     }
   }, []);
 
-  // Avanzar al siguiente jugador dentro de la ronda
+  // Avanzar al siguiente jugador dentro de la ronda y evaluar eventos de crisis inesperada
   const advanceToNextTurn = useCallback(() => {
     const currentState = stateRef.current;
     if (currentState.phase === 'GAME_OVER') return;
     const nextIndex = currentState.activePlayerIndex + 1;
+
+    const crisisEval = evaluateUnexpectedCrisisTurn(
+      currentState.activeCrisis,
+      currentState.turnsSinceLastCrisis,
+      currentState.round,
+      lastCrisisIdRef.current
+    );
+
+    if (crisisEval.newlyTriggeredCrisis) {
+      const triggered = crisisEval.newlyTriggeredCrisis;
+      lastCrisisIdRef.current = triggered.id;
+      if (triggered.severity === 'OPPORTUNITY') {
+        playSound.unlockPublic();
+      } else {
+        playSound.speculatorAlert();
+      }
+      triggerHaptic.uiTap();
+      addLog(
+        'Crisis Inesperada',
+        `${triggered.title}: ${triggered.description} (${triggered.totalTurns} turnos).`,
+        triggered.severity === 'OPPORTUNITY' ? 'SUCCESS' : 'HAZARD',
+        {
+          category: triggered.severity === 'OPPORTUNITY' ? 'COOPERATIVE' : 'HAZARD',
+          highlight: true
+        }
+      );
+    } else if (crisisEval.expiredCrisis) {
+      addLog(
+        'Balance de Crisis',
+        `Remite "${crisisEval.expiredCrisis.title}". El coste y valor de los recursos vuelven a la normalidad.`,
+        'INFO'
+      );
+    }
 
     // Registrar snapshot turno a turno de la evolución Comunes vs Privatizados
     setState(prev => {
@@ -1518,6 +1664,8 @@ export function useCommonspolyGame() {
       if (nextIndex >= prev.players.length) {
         return {
           ...prev,
+          activeCrisis: crisisEval.nextCrisis,
+          turnsSinceLastCrisis: crisisEval.nextTurnsSinceLastCrisis,
           turnHistory: nextTurnHistory
         };
       }
@@ -1527,6 +1675,8 @@ export function useCommonspolyGame() {
         activePlayerIndex: nextIndex,
         currentDiceRoll: null,
         phase: 'PLAYER_TURN_READY',
+        activeCrisis: crisisEval.nextCrisis,
+        turnsSinceLastCrisis: crisisEval.nextTurnsSinceLastCrisis,
         turnHistory: nextTurnHistory
       };
     });
@@ -1696,6 +1846,82 @@ export function useCommonspolyGame() {
     }
 
     advanceToNextTurn();
+  }, []);
+
+  const triggerNeighborhoodDecision = useCallback(() => {
+    const currentState = stateRef.current;
+    if (currentState.neighborhoodDecision) return;
+
+    const decision: NeighborhoodDecision = {
+      id: `nd_${Date.now()}`,
+      title: 'Referéndum de Asignación de Espacios Vecinales',
+      description: 'El vecindario convoca una votación in-situ para decidir el destino de los solares y locales comunes. Desplázate a las casillas de Urna habilitadas (Cooperativa [4], Red P2P [14], Centro Social [24], Tienda Ecológica [31]) para emitir tu voto.',
+      targetTileIds: [4, 14, 24, 31],
+      votesCast: [],
+      rewardSummary: '+2 Legitimidad, +2 Bienestar y conversión automática de 1 bien a Común.'
+    };
+
+    setState(prev => ({
+      ...prev,
+      neighborhoodDecision: decision,
+      activeModal: 'NEIGHBORHOOD_DECISION'
+    }));
+
+    addLog('Decisión Barrial', `¡Referéndum convocado! Desplázate a las urnas en el tablero para votar.`, 'CARD');
+  }, []);
+
+  const castNeighborhoodVote = useCallback(() => {
+    const currentState = stateRef.current;
+    const decision = currentState.neighborhoodDecision;
+    const player = currentState.players[currentState.activePlayerIndex];
+
+    if (!decision || !player) return;
+
+    const playerTile = currentState.tiles.find(t => t.id === player.position);
+    const isAtPollingStation = playerTile && decision.targetTileIds.includes(playerTile.id);
+
+    if (!isAtPollingStation) {
+      addLog('Decisión Barrial', `${player.name} intentó votar pero no se encuentra en una casilla de urna in-situ.`, 'HAZARD');
+      return;
+    }
+
+    if (decision.votesCast.includes(player.id)) return;
+
+    const nextVotesCast = [...decision.votesCast, player.id];
+    const isQuorumReached = nextVotesCast.length >= Math.max(1, Math.min(2, currentState.players.length));
+
+    const updatedPlayer: Character = {
+      ...player,
+      wellness: Math.min(10, player.wellness + 2),
+      legitimacy: player.legitimacy + 2
+    };
+
+    let updatedTiles = [...currentState.tiles];
+    if (isQuorumReached) {
+      const targetResource = updatedTiles.find(t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state !== 'COMMON');
+      if (targetResource) {
+        targetResource.state = 'COMMON';
+      }
+    }
+
+    const nextDecision = isQuorumReached ? null : { ...decision, votesCast: nextVotesCast };
+    const nextModal = isQuorumReached ? null : 'NEIGHBORHOOD_DECISION';
+
+    setState(prev => ({
+      ...prev,
+      players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? updatedPlayer : p),
+      tiles: updatedTiles,
+      neighborhoodDecision: nextDecision,
+      activeModal: nextModal
+    }));
+
+    addLog('Decisión Barrial', `${player.name} emitió su voto in-situ con éxito (+2 Bienestar, +2 Legitimidad).`, 'SUCCESS', {
+      actorColor: player.color
+    });
+
+    if (isQuorumReached) {
+      addLog('Decisión Barrial', `¡Quorum alcanzado! El referéndum barrial triunfó y consolidó un nuevo Bien Común en el territorio.`, 'SUCCESS');
+    }
   }, []);
 
   // Burocracia: Convertir 1 bien privado en público pagando 6 bienestar
@@ -2089,6 +2315,7 @@ export function useCommonspolyGame() {
     rollDiceForCurrentPlayer,
     unlockCurrentTile,
     passCurrentTile,
+    passTurnOnTimeout,
     tryEnterAgora,
     stayInAgora,
     executeInsurrectionForCategory,
@@ -2116,6 +2343,8 @@ export function useCommonspolyGame() {
     pauseToTitle,
     clearSavedGame,
     resetToTitle,
-    addLog
+    addLog,
+    triggerNeighborhoodDecision,
+    castNeighborhoodVote
   };
 }
