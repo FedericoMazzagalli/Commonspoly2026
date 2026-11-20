@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCommonspolyGame } from './store/gameEngine';
 import { CommonspolyBoard3D } from './components/board3d/CommonspolyBoard3D';
 import { TitleScreen } from './components/TitleScreen';
@@ -23,11 +23,31 @@ import { RulesModal } from './components/modals/RulesModal';
 import { KeyboardShortcutsModal } from './components/modals/KeyboardShortcutsModal';
 import { AchievementsModal } from './components/modals/AchievementsModal';
 import { NeighborhoodDecisionModal } from './components/modals/NeighborhoodDecisionModal';
+import { LeaderboardModal } from './components/modals/LeaderboardModal';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { SetupInitialRolls, Tile } from './types/game';
 import { playSound } from './utils/audio';
 import { resolveWeather } from './utils/weather';
 import { computeCooperativeEfficiency } from './utils/cooperativeEfficiency';
+import {
+  auth,
+  googleProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  type User
+} from './firebase';
+import {
+  buildLeaderboardSnapshotFromMatch,
+  fetchGlobalLeaderboardOnce,
+  LeaderboardEntry,
+  LeaderboardSubmissionStatus,
+  loadLocalBestRecord,
+  LocalBestRecord,
+  saveLocalBestRecordIfBetter,
+  submitPersonalBestToLeaderboard,
+  subscribeGlobalLeaderboard
+} from './utils/leaderboard';
 
 export default function App() {
   const {
@@ -73,12 +93,25 @@ export default function App() {
   const [showRules, setShowRules] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [isGameHistoryOpen, setIsGameHistoryOpen] = useState(false);
   const [isEvolutionOpen, setIsEvolutionOpen] = useState(false);
   const [isDockCollapsed, setIsDockCollapsed] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [showGameOverSummary, setShowGameOverSummary] = useState(false);
   const [inspectedTileId, setInspectedTileId] = useState<number | null>(null);
+
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [localBest, setLocalBest] = useState<LocalBestRecord | null>(() => loadLocalBestRecord());
+  const [submissionStatus, setSubmissionStatus] = useState<LeaderboardSubmissionStatus>({
+    state: 'IDLE'
+  });
+  const hasRecordedGameOverRef = useRef(false);
 
   const inspectedTile: Tile | null =
     inspectedTileId !== null
@@ -107,6 +140,7 @@ export default function App() {
     isShortcutsOpen: showShortcuts,
     isRulesOpen: showRules,
     isAchievementsOpen: showAchievements,
+    isLeaderboardOpen: showLeaderboard,
     isTutorialOpen,
     isGameHistoryOpen,
     isEvolutionOpen,
@@ -131,10 +165,128 @@ export default function App() {
     onCloseRules: () => setShowRules(false),
     onToggleAchievements: () => setShowAchievements(prev => !prev),
     onCloseAchievements: () => setShowAchievements(false),
+    onCloseLeaderboard: () => setShowLeaderboard(false),
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
-    onCloseGameOverSummary: () => setShowGameOverSummary(false)
+    onCloseGameOverSummary: () => setShowGameOverSummary(false),
+    onToggleTutorial: () => setIsTutorialOpen(prev => !prev)
   });
+
+  const refreshLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true);
+    setLeaderboardError(null);
+    try {
+      const rows = await fetchGlobalLeaderboardOnce(25);
+      setLeaderboardEntries(rows);
+    } catch (err) {
+      setLeaderboardError(err instanceof Error ? err.message : 'Error al consultar la clasificación.');
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
+  // Autenticación Firebase + carga inicial del Leaderboard Global
+  useEffect(() => {
+    void refreshLeaderboard();
+    const unsubAuth = onAuthStateChanged(auth, user => {
+      setAuthUser(user);
+      setAuthReady(true);
+    });
+    return () => unsubAuth();
+  }, [refreshLeaderboard]);
+
+  // Suscripción en tiempo real (onSnapshot) solo cuando Auth está listo y el usuario autenticado
+  useEffect(() => {
+    if (!authReady || !authUser) return;
+    setLeaderboardLoading(true);
+    setLeaderboardError(null);
+    const unsubSnapshot = subscribeGlobalLeaderboard(
+      entries => {
+        setLeaderboardEntries(entries);
+        setLeaderboardLoading(false);
+        setLeaderboardError(null);
+      },
+      err => {
+        setLeaderboardLoading(false);
+        setLeaderboardError(err.message);
+      },
+      25
+    );
+    return () => unsubSnapshot();
+  }, [authReady, authUser]);
+
+  const syncPendingLocalRecord = useCallback(
+    async (user: User, record: LocalBestRecord | null) => {
+      if (!record || !record.pendingSync) return;
+      setSubmissionStatus({ state: 'SUBMITTING' });
+      try {
+        const res = await submitPersonalBestToLeaderboard(user, record);
+        const refreshed = loadLocalBestRecord();
+        setLocalBest(refreshed);
+        if (res.status === 'CREATED' && res.entry) {
+          setSubmissionStatus({ state: 'CREATED', entry: res.entry });
+        } else if (res.status === 'UPDATED_RECORD' && res.entry) {
+          setSubmissionStatus({
+            state: 'UPDATED_RECORD',
+            entry: res.entry,
+            prevEfficiencyPct: res.prevEfficiencyPct ?? 0
+          });
+        } else if (res.status === 'NOT_HIGHER') {
+          setSubmissionStatus({
+            state: 'NOT_HIGHER',
+            existingBestPct: res.prevEfficiencyPct ?? 0,
+            matchPct: record.efficiencyPct
+          });
+        }
+        await refreshLeaderboard();
+      } catch (err) {
+        setSubmissionStatus({
+          state: 'ERROR',
+          message: err instanceof Error ? err.message : 'No se pudo publicar el récord.'
+        });
+      }
+    },
+    [refreshLeaderboard]
+  );
+
+  // Al iniciar sesión con Google, sincronizar cualquier récord local pendiente
+  useEffect(() => {
+    if (authReady && authUser && authUser.emailVerified && localBest?.pendingSync) {
+      void syncPendingLocalRecord(authUser, localBest);
+    }
+  }, [authReady, authUser, localBest, syncPendingLocalRecord]);
+
+  const handleSignInGoogle = useCallback(async () => {
+    setIsAuthBusy(true);
+    setLeaderboardError(null);
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      if (cred.user.emailVerified) {
+        const currentPending = loadLocalBestRecord();
+        if (currentPending?.pendingSync) {
+          await syncPendingLocalRecord(cred.user, currentPending);
+        }
+      }
+    } catch (err) {
+      setLeaderboardError(
+        err instanceof Error ? err.message : 'No se pudo iniciar sesión con Google.'
+      );
+    } finally {
+      setIsAuthBusy(false);
+    }
+  }, [syncPendingLocalRecord]);
+
+  const handleSignOutGoogle = useCallback(async () => {
+    setIsAuthBusy(true);
+    try {
+      await signOut(auth);
+      await refreshLeaderboard();
+    } catch (err) {
+      setLeaderboardError(err instanceof Error ? err.message : 'Error al cerrar sesión.');
+    } finally {
+      setIsAuthBusy(false);
+    }
+  }, [refreshLeaderboard]);
 
   // Limpiar inspector al volver al título o configuración
   useEffect(() => {
@@ -194,6 +346,77 @@ export default function App() {
     [state.tiles, state.playerStats, state.round, state.gameResult]
   );
 
+  // Registrar puntuación más alta de Eficiencia Cooperativa al finalizar partida
+  useEffect(() => {
+    if (state.phase !== 'GAME_OVER' || !state.gameResult) {
+      hasRecordedGameOverRef.current = false;
+      setSubmissionStatus({ state: 'IDLE' });
+      return;
+    }
+
+    if (hasRecordedGameOverRef.current) return;
+    hasRecordedGameOverRef.current = true;
+
+    const snapshot = buildLeaderboardSnapshotFromMatch(
+      cooperativeEfficiency,
+      state.gameResult,
+      state.round,
+      state.players,
+      authUser?.displayName || undefined
+    );
+
+    const canSyncNow = Boolean(authUser && authUser.emailVerified);
+    const { record } = saveLocalBestRecordIfBetter(snapshot, !canSyncNow);
+    setLocalBest(record);
+
+    if (authUser && authUser.emailVerified) {
+      setSubmissionStatus({ state: 'SUBMITTING' });
+      void submitPersonalBestToLeaderboard(authUser, snapshot)
+        .then(res => {
+          setLocalBest(loadLocalBestRecord());
+          if (res.status === 'CREATED' && res.entry) {
+            setSubmissionStatus({ state: 'CREATED', entry: res.entry });
+          } else if (res.status === 'UPDATED_RECORD' && res.entry) {
+            setSubmissionStatus({
+              state: 'UPDATED_RECORD',
+              entry: res.entry,
+              prevEfficiencyPct: res.prevEfficiencyPct ?? 0
+            });
+          } else if (res.status === 'NOT_HIGHER') {
+            setSubmissionStatus({
+              state: 'NOT_HIGHER',
+              existingBestPct: res.prevEfficiencyPct ?? 0,
+              matchPct: snapshot.efficiencyPct
+            });
+          }
+          return refreshLeaderboard();
+        })
+        .catch(err => {
+          setSubmissionStatus({
+            state: 'ERROR',
+            message: err instanceof Error ? err.message : 'Error al sincronizar.'
+          });
+        });
+    } else {
+      setSubmissionStatus({ state: 'SAVED_LOCAL_PENDING', record });
+    }
+  }, [
+    state.phase,
+    state.gameResult,
+    state.round,
+    state.players,
+    cooperativeEfficiency,
+    authUser,
+    refreshLeaderboard
+  ]);
+
+  const globalTopEntry = leaderboardEntries[0] ?? null;
+  const globalUserRank = useMemo(() => {
+    if (!authUser) return null;
+    const idx = leaderboardEntries.findIndex(e => e.uid === authUser.uid);
+    return idx >= 0 ? idx + 1 : null;
+  }, [leaderboardEntries, authUser]);
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
       
@@ -211,6 +434,7 @@ export default function App() {
         cooperativeEfficiency={cooperativeEfficiency.efficiency}
         weatherMode={state.weatherMode}
         weatherIntensity={state.weatherIntensity}
+        activeWeatherEvent={state.activeWeatherEvent}
         timeOfDayMode={state.timeOfDayMode}
         currentGlobalCard={state.currentGlobalCard}
         currentSituationCard={state.currentSituationCard}
@@ -230,9 +454,20 @@ export default function App() {
           onQuickStart={handleQuickStart}
           onOpenRules={() => setShowRules(true)}
           onOpenAchievements={() => setShowAchievements(true)}
+          onOpenLeaderboard={() => {
+            setShowLeaderboard(true);
+            void refreshLeaderboard();
+          }}
+          leaderboardTopPct={globalTopEntry?.efficiencyPct ?? null}
+          leaderboardCount={leaderboardEntries.length}
+          localBestPct={
+            authUser && globalUserRank
+              ? leaderboardEntries[globalUserRank - 1]?.efficiencyPct ?? localBest?.efficiencyPct ?? null
+              : localBest?.efficiencyPct ?? null
+          }
           achievementsUnlockedCount={(state.achievements ?? []).filter(a => a.isUnlocked).length}
           achievementsTotalCount={(state.achievements ?? []).length}
-          isModalOpen={showRules || showShortcuts || showAchievements}
+          isModalOpen={showRules || showShortcuts || showAchievements || showLeaderboard}
           soundEnabled={state.soundEnabled}
           onToggleSound={toggleSound}
           savedGameMeta={savedGameMeta}
@@ -267,6 +502,7 @@ export default function App() {
             onTryEnterAgora={tryEnterAgora}
             onStayInAgora={stayInAgora}
             onOpenDetentionRescue={openDetentionRescue}
+            onTriggerNeighborhoodDecision={triggerNeighborhoodDecision}
             onOpenRules={() => setShowRules(true)}
             onOpenShortcuts={() => setShowShortcuts(true)}
             onOpenAchievements={() => setShowAchievements(true)}
@@ -276,6 +512,8 @@ export default function App() {
             onToggleEvolution={handleToggleEvolution}
             onCloseEvolution={() => setIsEvolutionOpen(false)}
             onToggleDock={() => setIsDockCollapsed(prev => !prev)}
+            isTutorialOpen={isTutorialOpen}
+            onToggleTutorial={() => setIsTutorialOpen(prev => !prev)}
             onTutorialVisibilityChange={setIsTutorialOpen}
             onSetCameraMode={setCameraMode}
             onToggleSound={toggleSound}
@@ -286,6 +524,7 @@ export default function App() {
             onSetWeatherIntensity={setWeatherIntensity}
             onSetTimeOfDayMode={setTimeOfDayMode}
             onSendCooperativeChat={sendCooperativeChat}
+            savedGameMeta={savedGameMeta}
             onSaveGame={saveGameNow}
             onPauseToTitle={pauseToTitle}
           />
@@ -295,6 +534,7 @@ export default function App() {
               players={state.players}
               speculators={state.speculators}
               activeCrisis={state.activeCrisis}
+              activeWeatherEvent={state.activeWeatherEvent}
               onClose={() => setInspectedTileId(null)}
             />
           )}
@@ -317,7 +557,14 @@ export default function App() {
         <SituationCardModal
           card={state.currentSituationCard}
           player={activePlayer}
-          weather={resolveWeather(state.tiles, state.weatherMode, state.weatherIntensity ?? 0.85, state.round, state.activePlayerIndex)}
+          weather={resolveWeather(
+            state.tiles,
+            state.weatherMode,
+            state.weatherIntensity ?? 0.85,
+            state.round,
+            state.activePlayerIndex,
+            state.activeWeatherEvent
+          )}
           onConfirm={resolveSituationCard}
         />
       )}
@@ -373,8 +620,10 @@ export default function App() {
         <NeighborhoodDecisionModal
           decision={state.neighborhoodDecision}
           activePlayer={activePlayer}
+          players={state.players}
           tiles={state.tiles}
           onCastVote={castNeighborhoodVote}
+          onClose={closeModal}
         />
       )}
 
@@ -401,6 +650,16 @@ export default function App() {
               playerStats={state.playerStats}
               logs={state.logs}
               cooperativeEfficiency={cooperativeEfficiency}
+              leaderboardStatus={submissionStatus}
+              globalTopEntry={globalTopEntry}
+              globalUserRank={globalUserRank}
+              authUser={authUser}
+              isAuthBusy={isAuthBusy}
+              onOpenLeaderboard={() => {
+                playSound.modalOpen();
+                setShowLeaderboard(true);
+              }}
+              onSignInAndPublish={() => void handleSignInGoogle()}
               onInspectBoard={() => {
                 playSound.uiClick();
                 setShowGameOverSummary(false);
@@ -439,6 +698,32 @@ export default function App() {
           setShowAchievements(false);
         }}
         onResetAchievements={resetAchievements}
+      />
+
+      {/* Clasificación Global ('Leaderboard') */}
+      <LeaderboardModal
+        isOpen={showLeaderboard}
+        entries={leaderboardEntries}
+        isLoading={leaderboardLoading}
+        errorMessage={leaderboardError}
+        authUser={authUser}
+        isAuthBusy={isAuthBusy}
+        localBest={localBest}
+        latestMatchEfficiencyPct={
+          state.phase === 'GAME_OVER' ? cooperativeEfficiency.efficiencyPct : null
+        }
+        onClose={() => {
+          playSound.modalClose();
+          setShowLeaderboard(false);
+        }}
+        onRefresh={() => void refreshLeaderboard()}
+        onSignInGoogle={() => void handleSignInGoogle()}
+        onSignOut={() => void handleSignOutGoogle()}
+        onSyncPendingRecord={
+          authUser && localBest?.pendingSync
+            ? () => void syncPendingLocalRecord(authUser, localBest)
+            : undefined
+        }
       />
 
     </div>

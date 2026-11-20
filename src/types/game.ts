@@ -35,6 +35,9 @@ export interface Tile {
   goodType?: GoodType;
   defaultState?: GoodState;
   state?: GoodState;     // Estado actual: PRIVATE (Blanco), PUBLIC (Gris), COMMON (Negro)
+  transformedById?: string;
+  transformedByName?: string;
+  transformedAtRound?: number;
   specialType?: SpecialTileType;
   columnId?: 'BOTTOM' | 'RIGHT' | 'TOP' | 'LEFT' | 'CENTER';
   columnIndex?: number;
@@ -54,6 +57,29 @@ export interface CharacterSkills {
   regenerate: number;    // Regenerar -> Bienes Medioambientales (1-6)
 }
 
+export interface CharacterUniqueBonus {
+  id: string;
+  title: string;
+  shortLabel: string;
+  description: string;
+  goodType?: GoodType;
+}
+
+export type ReputationTierId =
+  | 'DISTRUSTED'
+  | 'SUSPECT'
+  | 'NEUTRAL'
+  | 'TRUSTED'
+  | 'EXEMPLARY';
+
+export interface ReputationEvent {
+  id: string;
+  round: number;
+  delta: number;
+  reason: string;
+  kind: 'POSITIVE' | 'SELFISH';
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -62,6 +88,7 @@ export interface Character {
   hasCitizenship: boolean;
   socialClass: 'BAJA' | 'MEDIA' | 'ALTA';
   skills: CharacterSkills;
+  uniqueBonus?: CharacterUniqueBonus;
   color: string;         // Color distintivo para la ficha 3D y UI
   accentColor: string;
   
@@ -74,6 +101,8 @@ export interface Character {
   inAgora: boolean;      // ¿Está en el Ágora Central?
   roundsInAgora: number; // Máximo 3 rondas (-1 bienestar por ronda)
   controller: ControllerType;
+  neighborhoodReputation?: number; // -20 a +20 (inicio 0)
+  reputationHistory?: ReputationEvent[];
 }
 
 export interface Speculator {
@@ -105,6 +134,8 @@ export interface NeighborhoodDecision {
   description: string;
   targetTileIds: number[];
   votesCast: string[];
+  trustAccumulated?: number;
+  requiredTrust?: number;
   rewardSummary: string;
 }
 
@@ -215,6 +246,31 @@ export interface WeatherCondition {
   totalEnvTiles: number;
 }
 
+export type DynamicWeatherEventKind =
+  | 'DROUGHT'
+  | 'TORRENTIAL_RAIN'
+  | 'HEATWAVE'
+  | 'FROST_WAVE'
+  | 'SOLAR_BLOOM';
+
+export interface DynamicWeatherEvent {
+  id: string;
+  kind: DynamicWeatherEventKind;
+  weatherType: WeatherType;
+  title: string;
+  description: string;
+  alertMessage: string;
+  affectedTileIds: number[];
+  affectedTileNames: string[];
+  affectedGoodTypes: GoodType[];
+  unlockCostDelta: number;
+  resourceYieldDelta: number;
+  turnsRemaining: number;
+  totalTurns: number;
+  severity: 'HAZARD' | 'WARNING' | 'BENEFICIAL';
+  triggeredAtRound: number;
+}
+
 export type AchievementCategory = 
   | 'RESCUE' 
   | 'AGORA' 
@@ -315,6 +371,10 @@ export interface GameEngineState {
   // Motor de eventos de crisis inesperada
   activeCrisis?: UnexpectedCrisisEvent | null;
   turnsSinceLastCrisis?: number;
+
+  // Motor de eventos meteorológicos dinámicos
+  activeWeatherEvent?: DynamicWeatherEvent | null;
+  turnsSinceLastWeatherEvent?: number;
 }
 
 export interface PlayerContributionStats {

@@ -11,14 +11,21 @@ import {
   Sparkles, 
   Bot, 
   User, 
-  ChevronRight, 
+  ChevronRight,
+  ChevronLeft,
+  ChevronUp,
+  ChevronDown,
   CheckCircle2, 
   RefreshCw,
-  Volume2
+  Volume2,
+  Award,
+  Box
 } from 'lucide-react';
 import { OFFICIAL_CHARACTERS } from '../data/characters';
 import { SetupInitialRolls, DifficultyLevel } from '../types/game';
 import { playSound } from '../utils/audio';
+import { useVoiceNarrator, NARRATIVE_PROFILES } from '../utils/voiceNarrator';
+import { Avatar3DPreview } from './Avatar3DPreview';
 
 interface SetupWizardProps {
   onComplete: (
@@ -31,6 +38,8 @@ interface SetupWizardProps {
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }) => {
   const [step, setStep] = useState<1 | 2>(1);
   const [enableTutorialOnStart, setEnableTutorialOnStart] = useState<boolean>(true);
+  const [expandedCharId, setExpandedCharId] = useState<string | null>('carolina');
+  const voice = useVoiceNarrator();
 
   // Paso 1: Selección de jugadores
   const [selectedChars, setSelectedChars] = useState<
@@ -108,6 +117,26 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
     );
   };
 
+  const handleToggleExpand = (charId: string) => {
+    playSound.uiClick();
+    setExpandedCharId(prev => (prev === charId ? null : charId));
+  };
+
+  const expandedIndex = expandedCharId
+    ? OFFICIAL_CHARACTERS.findIndex(c => c.id === expandedCharId)
+    : -1;
+  const expandedChar = expandedIndex >= 0 ? OFFICIAL_CHARACTERS[expandedIndex] : null;
+  const expandedSelection = expandedChar
+    ? selectedChars.find(c => c.baseCharId === expandedChar.id)
+    : undefined;
+
+  const cycleExpandedChar = (delta: -1 | 1) => {
+    playSound.uiClick();
+    const baseIdx = expandedIndex >= 0 ? expandedIndex : 0;
+    const nextIdx = (baseIdx + delta + OFFICIAL_CHARACTERS.length) % OFFICIAL_CHARACTERS.length;
+    setExpandedCharId(OFFICIAL_CHARACTERS[nextIdx].id);
+  };
+
   const getStateLabel = (val: number) => {
     if (val <= 2) return { text: 'Privado', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
     if (val <= 4) return { text: 'Público', bg: 'bg-slate-800 text-slate-300 border-slate-700' };
@@ -136,11 +165,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-4xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 my-auto">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <div className="w-full max-w-5xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-5 md:p-7 text-slate-100 my-auto">
         
         {/* Header con pasos */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800 gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-slate-800 gap-4">
           <div>
             <div className="flex items-center gap-2 text-teal-400 text-sm font-semibold tracking-wider uppercase mb-1">
               <Sparkles className="w-4 h-4" />
@@ -164,56 +193,310 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
 
         {/* CONTENIDO PASO 1 */}
         {step === 1 && (
-          <div className="py-6 space-y-6">
-            <p className="text-slate-300 text-sm leading-relaxed">
-              Commonspoly se juega en equipo colaborando entre <strong className="text-teal-400">2 y 8 personajes</strong>. 
-              Elige los integrantes y decide si cada uno será controlado por una persona en pantalla o por un Bot Cooperativo.
-            </p>
+          <div className="py-5 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-slate-300 text-sm leading-relaxed">
+                Commonspoly se juega en equipo colaborando entre <strong className="text-teal-400">2 y 8 personajes</strong>.
+                Pulsa <strong className="text-white">Inspeccionar 3D</strong> en cualquiera para ver su avatar, biografía y bonificador único.
+              </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {!expandedChar && (
+                <button
+                  type="button"
+                  onClick={() => handleToggleExpand('carolina')}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-700/50 text-xs font-semibold transition-colors"
+                >
+                  <Box className="w-3.5 h-3.5" />
+                  <span>Abrir Visor 3D</span>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* PANEL EXPANDIBLE DE INSPECTOR 3D */}
+            {expandedChar && (
+              <div className="rounded-2xl bg-slate-950/90 border border-slate-700/80 p-4 md:p-5 shadow-xl space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <Box className="w-4 h-4 text-teal-400" />
+                    <span className="font-semibold text-slate-200">
+                      Inspector 3D · Personaje {expandedIndex + 1} de {OFFICIAL_CHARACTERS.length}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => cycleExpandedChar(-1)}
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
+                      title="Personaje anterior"
+                      aria-label="Personaje anterior"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cycleExpandedChar(1)}
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
+                      title="Siguiente personaje"
+                      aria-label="Siguiente personaje"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleExpand(expandedChar.id)}
+                      className="ml-1 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition-colors"
+                    >
+                      <span>Contraer</span>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
+                  {/* Columna izquierda: Avatar 3D interactivo + acciones de equipo */}
+                  <div className="md:col-span-5 flex flex-col gap-3">
+                    <Avatar3DPreview
+                      charId={expandedChar.id}
+                      name={expandedChar.name}
+                      color={expandedChar.color}
+                      accentColor={expandedChar.accentColor}
+                      className="h-60 md:h-64 w-full"
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleCharacter(expandedChar.id)}
+                        disabled={Boolean(expandedSelection) && selectedChars.length <= 2}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+                          expandedSelection
+                            ? selectedChars.length <= 2
+                              ? 'bg-teal-950/60 text-teal-300/70 border-teal-800/50 cursor-not-allowed'
+                              : 'bg-teal-600/25 hover:bg-rose-950/60 text-teal-200 hover:text-rose-200 border-teal-500/50 hover:border-rose-500/50'
+                            : 'bg-teal-600 hover:bg-teal-500 text-white border-teal-500'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>
+                          {expandedSelection
+                            ? selectedChars.length <= 2
+                              ? 'Mínimo 2 en equipo'
+                              : 'En el equipo (Quitar)'
+                            : 'Añadir al equipo'}
+                        </span>
+                      </button>
+
+                      {expandedSelection && (
+                        <button
+                          type="button"
+                          onClick={() => toggleController(expandedChar.id)}
+                          className={`py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-colors ${
+                            expandedSelection.controller === 'HUMAN'
+                              ? 'bg-teal-600/30 text-teal-200 border-teal-500/50 hover:bg-teal-600/40'
+                              : 'bg-indigo-950/70 text-indigo-200 border-indigo-700/60 hover:bg-indigo-900/70'
+                          }`}
+                        >
+                          {expandedSelection.controller === 'HUMAN' ? (
+                            <>
+                              <User className="w-3.5 h-3.5" />
+                              <span>Humano</span>
+                            </>
+                          ) : (
+                            <>
+                              <Bot className="w-3.5 h-3.5" />
+                              <span>Bot IA</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Columna derecha: Biografía, Bonificador Único y Costes de Habilidad */}
+                  <div className="md:col-span-7 flex flex-col justify-between gap-4">
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className="w-4 h-4 rounded-full border border-white/30 shrink-0"
+                            style={{ backgroundColor: expandedChar.color }}
+                          />
+                          <h3 className="text-2xl font-extrabold text-white tracking-tight">
+                            {expandedChar.name}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">
+                          <span className="text-teal-300 font-semibold">
+                            {expandedChar.hasCitizenship ? 'Con Ciudadanía' : 'Sin Ciudadanía'}
+                          </span>
+                          {' · '}
+                          <span>Clase {expandedChar.socialClass.toLowerCase()}</span>
+                          {' · '}
+                          <span>{expandedChar.identityTag}</span>
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-900/75 border border-slate-800 p-3.5">
+                        <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">
+                          Biografía Temática
+                        </div>
+                        <p className="text-sm text-slate-200 leading-relaxed">
+                          «{expandedChar.bio}»
+                        </p>
+                      </div>
+
+                      {expandedChar.uniqueBonus && (
+                        <div
+                          className="rounded-xl bg-slate-900/90 border p-3.5 space-y-1.5"
+                          style={{ borderColor: `${expandedChar.color}66` }}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Award className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span className="text-xs font-extrabold uppercase tracking-wide text-amber-300">
+                                Bonificador Único · {expandedChar.uniqueBonus.title}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-semibold text-teal-300">
+                              {expandedChar.uniqueBonus.shortLabel}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {expandedChar.uniqueBonus.description}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Habilidades + Coste real en Bienestar */}
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-2">
+                        Habilidades Cooperativas y Coste de Transformación
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                        {[
+                          {
+                            label: 'Cuidar',
+                            domain: 'Salud',
+                            val: expandedChar.skills.care,
+                            good: 'HEALTH',
+                            boxClass: 'bg-purple-950/60 border-purple-800/50 text-purple-300'
+                          },
+                          {
+                            label: 'Ocupar',
+                            domain: 'Urbano',
+                            val: expandedChar.skills.occupy,
+                            good: 'URBAN',
+                            boxClass: 'bg-orange-950/60 border-orange-800/50 text-orange-300'
+                          },
+                          {
+                            label: 'Compartir',
+                            domain: 'Saber',
+                            val: expandedChar.skills.share,
+                            good: 'KNOWLEDGE',
+                            boxClass: 'bg-yellow-950/60 border-yellow-800/50 text-yellow-300'
+                          },
+                          {
+                            label: 'Regenerar',
+                            domain: 'Entorno',
+                            val: expandedChar.skills.regenerate,
+                            good: 'ENVIRONMENT',
+                            boxClass: 'bg-emerald-950/60 border-emerald-800/50 text-emerald-300'
+                          }
+                        ].map(item => {
+                          const hasBonusDiscount = expandedChar.uniqueBonus?.goodType === item.good;
+                          const effectiveBase = Math.max(1, 10 - item.val - (hasBonusDiscount ? 1 : 0));
+                          return (
+                            <div
+                              key={item.label}
+                              className={`rounded-xl border p-2.5 ${item.boxClass}`}
+                            >
+                              <div className="text-lg font-black text-white tabular-nums leading-none">
+                                {item.val}
+                              </div>
+                              <div className="text-[11px] font-bold mt-1">{item.label}</div>
+                              <div className="text-[10px] text-slate-400">
+                                {item.domain} · Coste {effectiveBase}
+                                {hasBonusDiscount ? ' (-1)' : ''}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* CUADRÍCULA DE LOS 8 PERSONAJES */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
               {OFFICIAL_CHARACTERS.map(char => {
                 const isSelected = selectedChars.some(c => c.baseCharId === char.id);
                 const current = selectedChars.find(c => c.baseCharId === char.id);
+                const isExpanded = expandedCharId === char.id;
 
                 return (
                   <div
                     key={char.id}
-                    className={`relative p-4 rounded-xl border transition-all text-left flex flex-col justify-between ${
-                      isSelected
-                        ? 'border-teal-500 bg-slate-800/90 shadow-md ring-1 ring-teal-500/50'
-                        : 'border-slate-800 bg-slate-900/60 opacity-60 hover:opacity-90'
+                    className={`relative p-3.5 rounded-xl border transition-all text-left flex flex-col justify-between ${
+                      isExpanded
+                        ? 'border-teal-400 bg-slate-800 shadow-lg ring-1 ring-teal-400/50'
+                        : isSelected
+                          ? 'border-teal-600/80 bg-slate-800/85 shadow-md'
+                          : 'border-slate-800 bg-slate-900/60 opacity-70 hover:opacity-95 hover:border-slate-700'
                     }`}
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleExpand(char.id)}
+                          className="flex items-center gap-2 text-left group"
+                          title={`Inspeccionar avatar 3D de ${char.name}`}
+                        >
                           <span
-                            className="w-4 h-4 rounded-full border border-white/20"
+                            className="w-3.5 h-3.5 rounded-full border border-white/25 shrink-0"
                             style={{ backgroundColor: char.color }}
                           />
-                          <h3 className="font-bold text-base text-white">{char.name}</h3>
-                        </div>
+                          <h3 className="font-bold text-base text-white group-hover:text-teal-300 transition-colors">
+                            {char.name}
+                          </h3>
+                        </button>
 
                         <button
+                          type="button"
                           onClick={() => toggleCharacter(char.id)}
+                          disabled={isSelected && selectedChars.length <= 2}
                           className={`p-1 rounded text-xs transition-colors ${
                             isSelected ? 'text-teal-400 hover:text-teal-300' : 'text-slate-500 hover:text-white'
                           }`}
+                          title={isSelected ? 'Quitar del equipo' : 'Añadir al equipo'}
+                          aria-label={isSelected ? `Quitar a ${char.name}` : `Añadir a ${char.name}`}
                         >
                           <CheckCircle2 className={`w-5 h-5 ${isSelected ? 'fill-teal-500/20 text-teal-400' : 'text-slate-600'}`} />
                         </button>
                       </div>
 
-                      <p className="text-xs text-slate-400 line-clamp-3 mb-3 leading-snug">
+                      <p className="text-xs text-slate-400 line-clamp-2 mb-2 leading-snug">
                         {char.bio}
                       </p>
 
-                      <div className="text-[11px] text-slate-400 border-t border-slate-700/60 pt-2 mb-3">
+                      <div className="text-[11px] text-slate-400 border-t border-slate-700/60 pt-2 mb-2">
                         <span className="text-teal-300 font-medium">{char.hasCitizenship ? 'Con Ciudadanía' : 'Sin Ciudadanía'}</span> · {char.socialClass}
                       </div>
 
+                      {char.uniqueBonus && (
+                        <div className="text-[11px] text-amber-200/90 flex items-start gap-1.5 mb-2.5 leading-snug">
+                          <Award className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                          <span>{char.uniqueBonus.shortLabel}</span>
+                        </div>
+                      )}
+
                       {/* Habilidades fijas */}
-                      <div className="grid grid-cols-4 gap-1 text-center text-[10px] mb-3">
+                      <div className="grid grid-cols-4 gap-1 text-center text-[10px] mb-2.5">
                         <div className="bg-purple-950/60 border border-purple-800/40 rounded p-1">
                           <div className="text-purple-300 font-bold">{char.skills.care}</div>
                           <div className="text-slate-400 text-[9px]">Cuidar</div>
@@ -233,29 +516,46 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                       </div>
                     </div>
 
-                    {/* Selector de Humano / Bot */}
-                    {isSelected && current && (
+                    <div className="space-y-1.5">
                       <button
-                        onClick={() => toggleController(char.id)}
-                        className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                          current.controller === 'HUMAN'
-                            ? 'bg-teal-600/30 text-teal-300 border border-teal-500/50 hover:bg-teal-600/40'
-                            : 'bg-indigo-950/60 text-indigo-300 border border-indigo-700/50 hover:bg-indigo-900/60'
+                        type="button"
+                        onClick={() => handleToggleExpand(char.id)}
+                        className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border transition-colors ${
+                          isExpanded
+                            ? 'bg-teal-500/20 text-teal-200 border-teal-400/60'
+                            : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:border-teal-500/50 hover:text-teal-200'
                         }`}
                       >
-                        {current.controller === 'HUMAN' ? (
-                          <>
-                            <User className="w-3.5 h-3.5" />
-                            <span>Humano (Tú / Local)</span>
-                          </>
-                        ) : (
-                          <>
-                            <Bot className="w-3.5 h-3.5" />
-                            <span>Bot Cooperativo (IA)</span>
-                          </>
-                        )}
+                        <Box className="w-3.5 h-3.5" />
+                        <span>{isExpanded ? 'Ocultar 3D' : 'Inspeccionar 3D'}</span>
+                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
-                    )}
+
+                      {/* Selector de Humano / Bot */}
+                      {isSelected && current && (
+                        <button
+                          type="button"
+                          onClick={() => toggleController(char.id)}
+                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                            current.controller === 'HUMAN'
+                              ? 'bg-teal-600/30 text-teal-300 border border-teal-500/50 hover:bg-teal-600/40'
+                              : 'bg-indigo-950/60 text-indigo-300 border border-indigo-700/50 hover:bg-indigo-900/60'
+                          }`}
+                        >
+                          {current.controller === 'HUMAN' ? (
+                            <>
+                              <User className="w-3.5 h-3.5" />
+                              <span>Humano (Tú / Local)</span>
+                            </>
+                          ) : (
+                            <>
+                              <Bot className="w-3.5 h-3.5" />
+                              <span>Bot Cooperativo (IA)</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -355,31 +655,77 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
             </div>
 
             {/* Checkbox para activar tutorial de onboarding con voz al iniciar */}
-            <div className="p-3.5 rounded-xl bg-teal-950/40 border border-teal-800/60 flex items-center justify-between gap-3 shadow-md">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-teal-900/60 border border-teal-700/50 text-teal-300 shrink-0">
-                  <Volume2 className="w-4 h-4" />
+            <div className="p-3.5 rounded-xl bg-teal-950/40 border border-teal-800/60 flex flex-col gap-3 shadow-md">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-teal-900/60 border border-teal-700/50 text-teal-300 shrink-0">
+                    <Volume2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-2">
+                      <span>Tutorial de Onboarding con Voz Guiada</span>
+                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                        Recomendado
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Activa la locución por voz interactiva al comenzar para explicar las mecánicas básicas paso a paso.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-xs font-bold text-white flex items-center gap-2">
-                    <span>Tutorial de Onboarding con Voz Guiada</span>
-                    <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                      Recomendado
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={enableTutorialOnStart}
+                    onChange={(e) => setEnableTutorialOnStart(e.target.checked)}
+                    className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-teal-600 focus:ring-0 focus:outline-none"
+                  />
+                </label>
+              </div>
+
+              {enableTutorialOnStart && (
+                <div className="pt-2.5 border-t border-teal-800/40 flex flex-col gap-2 text-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <span className="text-[11px] text-teal-300/90 font-semibold">
+                      Voz narrativa del tutorial (8 personajes + Ágora):
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      <strong className="text-white">{voice.currentProfile.name}</strong> · {voice.currentProfile.tagline}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Activa la locución por voz interactiva al comenzar para explicar las mecánicas básicas paso a paso.
-                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {NARRATIVE_PROFILES.map((p) => {
+                      const isSelected = voice.currentProfileId === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            playSound.uiClick();
+                            voice.setProfile(p.id);
+                          }}
+                          style={{
+                            borderColor: isSelected ? p.colorHex : undefined,
+                            boxShadow: isSelected ? `0 0 10px ${p.colorHex}45` : undefined
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-slate-900/70 text-slate-300 border-slate-700 hover:text-white hover:border-slate-500'
+                          }`}
+                          title={`${p.characterArchetype} — ${p.tagline}`}
+                        >
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: p.colorHex }}
+                          />
+                          <span>{p.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  checked={enableTutorialOnStart}
-                  onChange={(e) => setEnableTutorialOnStart(e.target.checked)}
-                  className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-teal-600 focus:ring-0 focus:outline-none"
-                />
-              </label>
+              )}
             </div>
           </div>
         )}

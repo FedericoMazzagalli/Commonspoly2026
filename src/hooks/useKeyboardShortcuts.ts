@@ -120,6 +120,7 @@ interface UseKeyboardShortcutsOptions {
   isShortcutsOpen: boolean;
   isRulesOpen: boolean;
   isAchievementsOpen?: boolean;
+  isLeaderboardOpen?: boolean;
   isTutorialOpen: boolean;
   isGameHistoryOpen: boolean;
   isEvolutionOpen?: boolean;
@@ -144,9 +145,11 @@ interface UseKeyboardShortcutsOptions {
   onCloseRules: () => void;
   onToggleAchievements?: () => void;
   onCloseAchievements?: () => void;
+  onCloseLeaderboard?: () => void;
   onToggleShortcuts: () => void;
   onCloseShortcuts: () => void;
   onCloseGameOverSummary: () => void;
+  onToggleTutorial?: () => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -163,6 +166,7 @@ export function useKeyboardShortcuts({
   isShortcutsOpen,
   isRulesOpen,
   isAchievementsOpen = false,
+  isLeaderboardOpen = false,
   isTutorialOpen,
   isGameHistoryOpen,
   isEvolutionOpen = false,
@@ -187,9 +191,11 @@ export function useKeyboardShortcuts({
   onCloseRules,
   onToggleAchievements,
   onCloseAchievements,
+  onCloseLeaderboard,
   onToggleShortcuts,
   onCloseShortcuts,
-  onCloseGameOverSummary
+  onCloseGameOverSummary,
+  onToggleTutorial
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -226,6 +232,13 @@ export function useKeyboardShortcuts({
           e.preventDefault();
           playSound.modalClose();
           onCloseAchievements();
+          return;
+        }
+
+        if (isLeaderboardOpen && onCloseLeaderboard) {
+          e.preventDefault();
+          playSound.modalClose();
+          onCloseLeaderboard();
           return;
         }
 
@@ -330,6 +343,7 @@ export function useKeyboardShortcuts({
         isShortcutsOpen ||
         isRulesOpen ||
         isAchievementsOpen ||
+        isLeaderboardOpen ||
         isTutorialOpen ||
         Boolean(state.activeModal);
 
@@ -352,6 +366,12 @@ export function useKeyboardShortcuts({
           playSound.modalOpen();
         }
         onToggleAchievements();
+        return;
+      }
+
+      if (keyLower === 't' && onToggleTutorial && !isShortcutsOpen && !isRulesOpen && !isAchievementsOpen && !state.activeModal) {
+        e.preventDefault();
+        onToggleTutorial();
         return;
       }
 
@@ -470,6 +490,7 @@ export function useKeyboardShortcuts({
     isShortcutsOpen,
     isRulesOpen,
     isAchievementsOpen,
+    isLeaderboardOpen,
     isTutorialOpen,
     isGameHistoryOpen,
     isEvolutionOpen,
@@ -494,6 +515,7 @@ export function useKeyboardShortcuts({
     onCloseRules,
     onToggleAchievements,
     onCloseAchievements,
+    onCloseLeaderboard,
     onToggleShortcuts,
     onCloseShortcuts,
     onCloseGameOverSummary

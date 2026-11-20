@@ -18,7 +18,10 @@ import {
   TrendingUp,
   Layers,
   Users,
-  Activity
+  Activity,
+  Globe,
+  LogIn,
+  CheckCircle2
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -42,6 +45,8 @@ import {
 } from '../../types/game';
 import { CommonsEvolutionD3Chart } from '../charts/CommonsEvolutionD3Chart';
 import { CooperativeEfficiencyBreakdown } from '../../utils/cooperativeEfficiency';
+import { LeaderboardEntry, LeaderboardSubmissionStatus } from '../../utils/leaderboard';
+import { type User } from '../../firebase';
 
 interface GameOverModalProps {
   result: 'VICTORY' | 'DRAW' | 'DEFEAT';
@@ -54,6 +59,13 @@ interface GameOverModalProps {
   playerStats?: Record<string, PlayerContributionStats>;
   logs?: GameLogEntry[];
   cooperativeEfficiency?: CooperativeEfficiencyBreakdown;
+  leaderboardStatus?: LeaderboardSubmissionStatus;
+  globalTopEntry?: LeaderboardEntry | null;
+  globalUserRank?: number | null;
+  authUser?: User | null;
+  isAuthBusy?: boolean;
+  onOpenLeaderboard?: () => void;
+  onSignInAndPublish?: () => void;
   onInspectBoard?: () => void;
   onRestart: () => void;
 }
@@ -120,6 +132,13 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   playerStats,
   logs = [],
   cooperativeEfficiency,
+  leaderboardStatus,
+  globalTopEntry = null,
+  globalUserRank = null,
+  authUser = null,
+  isAuthBusy = false,
+  onOpenLeaderboard,
+  onSignInAndPublish,
   onInspectBoard,
   onRestart
 }) => {
@@ -631,6 +650,71 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Estado de Récord en el Leaderboard Global */}
+        {cooperativeEfficiency && (
+          <div className="bg-slate-950 border border-teal-800/60 rounded-2xl p-3.5 sm:p-4 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="p-2 rounded-xl bg-teal-500/15 text-teal-300 border border-teal-500/30 shrink-0 mt-0.5">
+                {leaderboardStatus?.state === 'CREATED' || leaderboardStatus?.state === 'UPDATED_RECORD' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                ) : (
+                  <Globe className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0 space-y-0.5 tabular-nums">
+                <div className="text-xs font-bold text-white flex items-center gap-2 flex-wrap">
+                  <span>Clasificación Global · Eficiencia Cooperativa: {cooperativeEfficiency.efficiencyPct}%</span>
+                  {globalUserRank && (
+                    <span className="text-teal-300">· Tu puesto actual: #{globalUserRank}</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-300 leading-snug">
+                  {leaderboardStatus?.state === 'CREATED' &&
+                    `¡Primer récord personal publicado en el Leaderboard Global (${leaderboardStatus.entry.efficiencyPct}%)!`}
+                  {leaderboardStatus?.state === 'UPDATED_RECORD' &&
+                    `¡Nuevo récord personal! Superaste tu marca anterior (${leaderboardStatus.prevEfficiencyPct}% → ${leaderboardStatus.entry.efficiencyPct}%).`}
+                  {leaderboardStatus?.state === 'NOT_HIGHER' &&
+                    `Tu récord global vigente sigue siendo ${leaderboardStatus.existingBestPct}% (se conserva tu puntuación más alta).`}
+                  {leaderboardStatus?.state === 'SAVED_LOCAL_PENDING' &&
+                    'Puntuación guardada localmente. Conecta tu cuenta de Google para publicarla y compararte en el Leaderboard Global.'}
+                  {leaderboardStatus?.state === 'SUBMITTING' &&
+                    'Sincronizando récord con el Leaderboard Global...'}
+                  {leaderboardStatus?.state === 'ERROR' &&
+                    `Guardado local conservado (error de red al sincronizar: ${leaderboardStatus.message}).`}
+                  {(!leaderboardStatus || leaderboardStatus.state === 'IDLE') &&
+                    (globalTopEntry
+                      ? `Líder mundial actual: ${globalTopEntry.displayAlias} con ${globalTopEntry.efficiencyPct}% (Ronda ${globalTopEntry.round}/20).`
+                      : 'Consulta y compara tu resultado con el resto de participantes en el Leaderboard Global.')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {!authUser && onSignInAndPublish && (
+                <button
+                  type="button"
+                  onClick={onSignInAndPublish}
+                  disabled={isAuthBusy}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{isAuthBusy ? 'Conectando...' : 'Publicar con Google'}</span>
+                </button>
+              )}
+              {onOpenLeaderboard && (
+                <button
+                  type="button"
+                  onClick={onOpenLeaderboard}
+                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-teal-300 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Ver Leaderboard Global</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Nota y acciones */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-1">

@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { Landmark, Check, ArrowRight, X } from 'lucide-react';
 import { Character, GoodType, Tile } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { formatSignedScore, getEffectiveBureaucracyCost, getReputationProfile } from '../../utils/reputation';
 
 interface BureaucracyModalProps {
   player: Character;
@@ -33,7 +34,9 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
     t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state === 'PRIVATE'
   );
   const [selectedTileId, setSelectedTileId] = useState<number>(privateTiles[0]?.id ?? -1);
-  const canAfford = player.wellness > 6 && privateTiles.length > 0;
+  const costInfo = getEffectiveBureaucracyCost(player);
+  const repProfile = getReputationProfile(player);
+  const canAfford = player.wellness > costInfo.effectiveCost && privateTiles.length > 0;
 
   return (
     <div
@@ -74,12 +77,39 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
 
         {/* Body */}
         <div className="py-4 space-y-4">
-          <p className="text-sm text-slate-300 leading-relaxed">
-            <strong className="text-white">{player.name}</strong> puede invertir{' '}
-            <strong className="text-sky-300 tabular-nums">6 Puntos de Bienestar</strong> (disponible:{' '}
-            <span className="font-bold text-white tabular-nums">{player.wellness}</span>) para expropiar un
-            recurso privado y pasarlo a <strong className="text-slate-200">Gestión Pública</strong>.
-          </p>
+          <div className="space-y-1.5">
+            <p className="text-sm text-slate-300 leading-relaxed">
+              <strong className="text-white">{player.name}</strong> puede invertir{' '}
+              <strong className="text-sky-300 tabular-nums">
+                {costInfo.effectiveCost} Puntos de Bienestar
+              </strong>{' '}
+              (disponible:{' '}
+              <span className="font-bold text-white tabular-nums">{player.wellness}</span>) para expropiar un
+              recurso privado y pasarlo a <strong className="text-slate-200">Gestión Pública</strong>.
+            </p>
+            <div className="text-[11px] text-slate-400 flex items-center gap-1.5 flex-wrap tabular-nums">
+              <span>Reputación Vecinal:</span>
+              <strong
+                className={
+                  repProfile.tone === 'POSITIVE'
+                    ? 'text-emerald-300'
+                    : repProfile.tone === 'NEGATIVE'
+                    ? 'text-rose-300'
+                    : 'text-slate-200'
+                }
+              >
+                {repProfile.label} ({formatSignedScore(repProfile.score)})
+              </strong>
+              {costInfo.reputationDelta !== 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className={costInfo.reputationDelta < 0 ? 'text-emerald-300' : 'text-amber-300'}>
+                    Tarifa {costInfo.reputationDelta < 0 ? `${costInfo.reputationDelta} descuento` : `+${costInfo.reputationDelta} recargo`}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
 
           {canAfford ? (
             <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
@@ -111,10 +141,10 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
               })}
             </div>
           ) : (
-            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400">
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400 tabular-nums">
               {privateTiles.length === 0
                 ? 'Ya no quedan bienes privados en el tablero para convertir.'
-                : `Necesitas al menos 7 de Bienestar para costear el trámite sin quedar a cero (actual: ${player.wellness}).`}
+                : `Necesitas al menos ${costInfo.effectiveCost + 1} de Bienestar para costear el trámite sin quedar a cero (actual: ${player.wellness}).`}
             </div>
           )}
         </div>
@@ -136,9 +166,9 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
             <button
               type="button"
               onClick={() => onConfirm(selectedTileId)}
-              className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+              className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 tabular-nums"
             >
-              <span>Convertir a Público (-6 Bienestar)</span>
+              <span>Convertir a Público (-{costInfo.effectiveCost} Bienestar)</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}

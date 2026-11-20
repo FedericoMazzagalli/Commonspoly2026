@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public personal-best cooperative efficiency record for a verified player at the end of a Commonspoly match. Contains zero PII.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the record owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayAlias": {
+          "type": "string",
+          "description": "Public display name or team alias shown on the global leaderboard.",
+          "minLength": 1,
+          "maxLength": 48
+        },
+        "leadCharacterId": {
+          "type": "string",
+          "description": "ID of the lead Commonspoly character avatar.",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "efficiencyPct": {
+          "type": "integer",
+          "description": "Highest cooperative efficiency percentage achieved (0-100)."
+        },
+        "boardRecoveryPct": {
+          "type": "integer",
+          "description": "Board recovery percentage achieved (0-100)."
+        },
+        "teamSynergyPct": {
+          "type": "integer",
+          "description": "Team synergy percentage achieved (0-100)."
+        },
+        "tierLabel": {
+          "type": "string",
+          "description": "Qualitative efficiency tier label.",
+          "minLength": 1,
+          "maxLength": 48
+        },
+        "result": {
+          "type": "string",
+          "description": "Outcome of the completed match.",
+          "enum": ["VICTORY", "DRAW", "DEFEAT"]
+        },
+        "round": {
+          "type": "integer",
+          "description": "Round number in which the match concluded (1-20)."
+        },
+        "commonCount": {
+          "type": "integer",
+          "description": "Total Common resource tiles recovered (0-40)."
+        },
+        "totalResourceTiles": {
+          "type": "integer",
+          "description": "Total resource tiles on the board (1-40)."
+        },
+        "totalCooperativeActions": {
+          "type": "integer",
+          "description": "Total cooperative actions performed during the match."
+        },
+        "playersCount": {
+          "type": "integer",
+          "description": "Total participants in the match (2-8)."
+        },
+        "teamSummary": {
+          "type": "string",
+          "description": "Public summary of participating character names.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Indicates the record is published to the public global leaderboard."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the player first published a leaderboard record."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the player achieved their current personal best."
+        }
+      },
+      "required": [
+        "uid",
+        "displayAlias",
+        "leadCharacterId",
+        "efficiencyPct",
+        "boardRecoveryPct",
+        "teamSynergyPct",
+        "tierLabel",
+        "result",
+        "round",
+        "commonCount",
+        "totalResourceTiles",
+        "totalCooperativeActions",
+        "playersCount",
+        "teamSummary",
+        "isPublic",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/leaderboard/{userId}": {
+      "schema": {
+        "$ref": "#/entities/LeaderboardEntry"
+      },
+      "description": "Global personal-best Cooperative Efficiency leaderboard keyed by authenticated userId."
+    }
+  }
+}

@@ -16,9 +16,11 @@ import {
   Bot,
   User,
   Sparkles,
-  Dices
+  Dices,
+  Scale
 } from 'lucide-react';
 import { Character, GamePhase } from '../../types/game';
+import { formatSignedScore, getReputationProfile } from '../../utils/reputation';
 
 interface PlayerTurnIndicatorProps {
   players: Character[];
@@ -185,6 +187,7 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
   if (!activePlayer) return null;
 
   const phaseText = getPhaseLabel(phase, activePlayer, currentDiceRoll);
+  const activeRep = getReputationProfile(activePlayer);
 
   return (
     <div
@@ -266,7 +269,7 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-3 text-[11px] tabular-nums text-slate-300">
+            <div className="flex items-center gap-3 text-[11px] tabular-nums text-slate-300 flex-wrap">
               <span className="flex items-center gap-1 font-semibold text-rose-300">
                 <Heart className="w-3 h-3 text-rose-400" />
                 {activePlayer.wellness} Bienestar
@@ -274,6 +277,21 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
               <span className="flex items-center gap-1 font-semibold text-amber-300">
                 <Award className="w-3 h-3 text-amber-400" />
                 {activePlayer.legitimacy} Legitimidad
+              </span>
+              <span
+                className={`flex items-center gap-1 font-semibold ${
+                  activeRep.tone === 'POSITIVE'
+                    ? 'text-emerald-300'
+                    : activeRep.tone === 'NEGATIVE'
+                    ? 'text-rose-300'
+                    : 'text-slate-300'
+                }`}
+                title={activeRep.shortDesc}
+              >
+                <Scale className="w-3 h-3 shrink-0" />
+                <span>
+                  {activeRep.label} ({formatSignedScore(activeRep.score)}) · Voto {activeRep.voteWeight}x
+                </span>
               </span>
             </div>
           </div>
@@ -284,6 +302,7 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
       <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
         {players.map((p, idx) => {
           const isActive = idx === activePlayerIndex;
+          const pRep = getReputationProfile(p);
           return (
             <div
               key={p.id}
@@ -300,6 +319,7 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
                     }
                   : undefined
               }
+              title={`${p.name}: Reputación Vecinal ${pRep.label} (${formatSignedScore(pRep.score)}) · Confianza ${pRep.trustPercent}%`}
             >
               <CharacterAvatar character={p} size="sm" isActive={false} />
               <div className="flex flex-col leading-tight">
@@ -312,7 +332,18 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
                   {p.isDetained && <Lock className="w-2.5 h-2.5 text-rose-400" />}
                 </span>
                 <span className="text-[9px] text-slate-400 tabular-nums">
-                  ♥{p.wellness} · ★{p.legitimacy}
+                  ♥{p.wellness} · ★{p.legitimacy} ·{' '}
+                  <span
+                    className={
+                      pRep.tone === 'POSITIVE'
+                        ? 'text-emerald-300'
+                        : pRep.tone === 'NEGATIVE'
+                        ? 'text-rose-300'
+                        : 'text-slate-400'
+                    }
+                  >
+                    Rep {formatSignedScore(pRep.score)}
+                  </span>
                 </span>
               </div>
             </div>

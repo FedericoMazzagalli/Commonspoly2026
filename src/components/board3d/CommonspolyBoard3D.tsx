@@ -17,7 +17,8 @@ import {
   GlobalCard,
   SituationCard,
   NeighborhoodDecision,
-  GameEngineState
+  GameEngineState,
+  DynamicWeatherEvent
 } from '../../types/game';
 import { resolveWeather } from '../../utils/weather';
 import {
@@ -44,6 +45,7 @@ import {
   TileSaturationEntry
 } from './boardCleansing';
 import { computeCooperativeEfficiency } from '../../utils/cooperativeEfficiency';
+import { createCharacterPawnMesh } from './characterAvatarBuilder';
 
 interface Board3DProps {
   tiles: Tile[];
@@ -58,6 +60,7 @@ interface Board3DProps {
   cooperativeEfficiency?: number;
   weatherMode?: WeatherMode;
   weatherIntensity?: number;
+  activeWeatherEvent?: DynamicWeatherEvent | null;
   timeOfDayMode?: TimeOfDayMode;
   currentGlobalCard?: GlobalCard | null;
   currentSituationCard?: SituationCard | null;
@@ -91,6 +94,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
   cooperativeEfficiency,
   weatherMode = 'AUTO',
   weatherIntensity = 0.85,
+  activeWeatherEvent = null,
   timeOfDayMode = 'AUTO',
   currentGlobalCard = null,
   currentSituationCard = null,
@@ -133,6 +137,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     cooperativeEfficiency,
     weatherMode,
     weatherIntensity,
+    activeWeatherEvent,
     timeOfDayMode,
     currentGlobalCard,
     currentSituationCard,
@@ -154,6 +159,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     cooperativeEfficiency,
     weatherMode,
     weatherIntensity,
+    activeWeatherEvent,
     timeOfDayMode,
     currentGlobalCard,
     currentSituationCard,
@@ -461,10 +467,9 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     scene.add(diceGroup);
     diceGroupRef.current = diceGroup;
 
-    // --- 7. PROCEDURAL CHARACTER PAWNS (Composite 4-Part Models) ---
-    // Base, Torso, Ring, Head
+    // --- 7. PROCEDURAL CHARACTER PAWNS (Shared 6-9 Part Character Models) ---
     propsRef.current.players.forEach((player) => {
-      const pawnGroup = createCompositePawn(player.color, player.name, false);
+      const pawnGroup = createCharacterPawnMesh(player.id, player.color, player.accentColor, false);
       const coords = getTileCoords(player.position);
       pawnGroup.position.set(coords.x, 0.35, coords.z);
       scene.add(pawnGroup);
@@ -473,7 +478,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
 
     // --- 8. PROCEDURAL SPECULATOR PAWNS (Composite Top-Hat Models) ---
     propsRef.current.speculators.forEach((speculator) => {
-      const specGroup = createCompositePawn(speculator.color, speculator.name, true);
+      const specGroup = createCharacterPawnMesh('speculator', speculator.color, '#0f172a', true);
       const coords = getTileCoords(speculator.position);
       specGroup.position.set(coords.x + 0.3, 0.35, coords.z + 0.3);
       scene.add(specGroup);
@@ -1310,7 +1315,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       const weatherCond = resolveWeather(
         propsRef.current.tiles,
         propsRef.current.weatherMode,
-        propsRef.current.weatherIntensity ?? 0.85
+        propsRef.current.weatherIntensity ?? 0.85,
+        propsRef.current.round,
+        propsRef.current.activePlayerIndex,
+        propsRef.current.activeWeatherEvent
       );
       const isGameOver = currPhase === 'GAME_OVER';
 
@@ -1795,7 +1803,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     });
     players.forEach(player => {
       if (!playerMeshesRef.current.has(player.id)) {
-        const pawnGroup = createCompositePawn(player.color, player.name, false);
+        const pawnGroup = createCharacterPawnMesh(player.id, player.color, player.accentColor, false);
         const coords = getTileCoords(player.position);
         pawnGroup.position.set(coords.x, player.inAgora ? 0.65 : 0.35, coords.z);
         scene.add(pawnGroup);
@@ -1813,7 +1821,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     });
     speculators.forEach(speculator => {
       if (!speculatorMeshesRef.current.has(speculator.id)) {
-        const specGroup = createCompositePawn(speculator.color, speculator.name, true);
+        const specGroup = createCharacterPawnMesh('speculator', speculator.color, '#0f172a', true);
         const coords = getTileCoords(speculator.position);
         specGroup.position.set(coords.x + 0.3, 0.35, coords.z + 0.3);
         scene.add(specGroup);
@@ -1855,89 +1863,6 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       return () => clearTimeout(timer);
     }
   }, [currentDiceRoll]);
-
-  // Helper function to build high-craft composite procedural pawns (3-6 parts)
-  function createCompositePawn(colorHex: string, _name: string, isSpeculator: boolean): THREE.Group {
-    const group = new THREE.Group();
-
-    // 1. Wide beveled base disc
-    const baseGeo = new THREE.CylinderGeometry(0.36, 0.44, 0.16, 24);
-    const baseMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(colorHex),
-      roughness: 0.35,
-      metalness: isSpeculator ? 0.7 : 0.2
-    });
-    const base = new THREE.Mesh(baseGeo, baseMat);
-    base.position.y = 0.08;
-    base.castShadow = true;
-    group.add(base);
-
-    // 2. Tapered torso
-    const torsoGeo = new THREE.CylinderGeometry(0.18, 0.32, 0.55, 24);
-    const torsoMat = new THREE.MeshStandardMaterial({
-      color: isSpeculator ? 0x1e293b : new THREE.Color(colorHex),
-      roughness: 0.4,
-      metalness: isSpeculator ? 0.5 : 0.1
-    });
-    const torso = new THREE.Mesh(torsoGeo, torsoMat);
-    torso.position.y = 0.42;
-    torso.castShadow = true;
-    group.add(torso);
-
-    // 3. Collar ring
-    const collarGeo = new THREE.TorusGeometry(0.2, 0.04, 12, 24);
-    const collarMat = new THREE.MeshStandardMaterial({
-      color: isSpeculator ? 0xffffff : 0xfacc15,
-      roughness: 0.2,
-      metalness: 0.8
-    });
-    const collar = new THREE.Mesh(collarGeo, collarMat);
-    collar.rotation.x = Math.PI / 2;
-    collar.position.y = 0.7;
-    group.add(collar);
-
-    // 4. Head sphere
-    const headGeo = new THREE.SphereGeometry(0.22, 24, 24);
-    const headMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(colorHex),
-      roughness: 0.3,
-      metalness: 0.15
-    });
-    const head = new THREE.Mesh(headGeo, headMat);
-    head.position.y = 0.92;
-    head.castShadow = true;
-    group.add(head);
-
-    // 5. Speculator Accessory: Top Hat
-    if (isSpeculator) {
-      const brimGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.04, 20);
-      const hatGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.35, 20);
-      const hatMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2 });
-
-      const brim = new THREE.Mesh(brimGeo, hatMat);
-      brim.position.y = 1.14;
-      group.add(brim);
-
-      const top = new THREE.Mesh(hatGeo, hatMat);
-      top.position.y = 1.32;
-      group.add(top);
-    }
-
-    // Contact shadow beneath pawn
-    const shadowGeo = new THREE.PlaneGeometry(0.9, 0.9);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false
-    });
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.02;
-    group.add(shadow);
-
-    return group;
-  }
 
   return (
     <div className="relative w-full h-full select-none overflow-hidden bg-slate-950">

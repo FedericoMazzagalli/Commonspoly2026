@@ -4,9 +4,10 @@
  */
 
 import React from 'react';
-import { AlertTriangle, MapPin, X } from 'lucide-react';
+import { AlertTriangle, CloudRain, Flame, MapPin, Snowflake, Sun, Wind, X } from 'lucide-react';
 import {
   Character,
+  DynamicWeatherEvent,
   GoodType,
   Speculator,
   Tile,
@@ -14,12 +15,14 @@ import {
 } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { doesCrisisAffectTile } from '../../utils/crisisEngine';
+import { doesWeatherEventAffectTile, formatWeatherImpactSummary } from '../../utils/weatherEvents';
 
 interface TileInspectorHUDProps {
   tile: Tile | null;
   players: Character[];
   speculators: Speculator[];
   activeCrisis?: UnexpectedCrisisEvent | null;
+  activeWeatherEvent?: DynamicWeatherEvent | null;
   onClose: () => void;
 }
 
@@ -35,10 +38,12 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
   players,
   speculators,
   activeCrisis = null,
+  activeWeatherEvent = null,
   onClose
 }) => {
   if (!tile) return null;
   const crisisAffectsTile = doesCrisisAffectTile(tile, activeCrisis);
+  const weatherAffectsTile = doesWeatherEventAffectTile(tile, activeWeatherEvent);
 
   const occupants = players.filter(p => p.position === tile.id);
   const specOccupants = speculators.filter(s => s.position === tile.id);
@@ -75,7 +80,7 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 flex-wrap">
             <MapPin className="w-3 h-3 text-teal-400 shrink-0" />
             <span className={`font-bold uppercase tracking-wider ${stateColor}`}>
               {stateLabel}
@@ -84,6 +89,15 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
               <>
                 <span aria-hidden="true">·</span>
                 <span>{GOOD_LABELS[tile.goodType]}</span>
+              </>
+            )}
+            {tile.transformedByName && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-slate-300">
+                  Por {tile.transformedByName}
+                  {tile.transformedAtRound ? ` (R${tile.transformedAtRound})` : ''}
+                </span>
               </>
             )}
           </div>
@@ -109,6 +123,32 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
                   ? `+${activeCrisis.commonYieldDelta}`
                   : activeCrisis.commonYieldDelta}{' '}
                 ({activeCrisis.turnsRemaining}t)
+              </span>
+            </div>
+          )}
+
+          {weatherAffectsTile && activeWeatherEvent && (
+            <div
+              className={`mt-2 px-2.5 py-1.5 rounded-lg bg-slate-950/80 border text-[10px] flex items-center gap-1.5 tabular-nums ${
+                activeWeatherEvent.severity === 'BENEFICIAL'
+                  ? 'border-emerald-600/60 text-emerald-200'
+                  : 'border-cyan-600/60 text-cyan-200'
+              }`}
+            >
+              {activeWeatherEvent.weatherType === 'RAIN' ? (
+                <CloudRain className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              ) : activeWeatherEvent.weatherType === 'SNOW' ? (
+                <Snowflake className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+              ) : activeWeatherEvent.weatherType === 'SUNNY' ? (
+                <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              ) : activeWeatherEvent.weatherType === 'DROUGHT' ? (
+                <Flame className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+              ) : (
+                <Wind className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              )}
+              <span>
+                <strong>{activeWeatherEvent.title}:</strong>{' '}
+                {formatWeatherImpactSummary(activeWeatherEvent)} ({activeWeatherEvent.turnsRemaining}t)
               </span>
             </div>
           )}

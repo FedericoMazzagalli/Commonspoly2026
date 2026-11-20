@@ -7,7 +7,7 @@
  * - Metadatos claros y números tabulares
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
   Dices, 
@@ -35,7 +35,13 @@ import {
   X,
   Radar,
   BarChart3,
-  AlertTriangle
+  AlertTriangle,
+  CloudRain,
+  Snowflake,
+  Sun,
+  Wind,
+  ShieldCheck,
+  Vote
 } from 'lucide-react';
 import { GameEngineState, AmbientMode, WeatherMode, TimeOfDayMode } from '../../types/game';
 import { BitacoraHUD } from './BitacoraHUD';
@@ -48,6 +54,7 @@ import { WeatherControllerHUD } from './WeatherControllerHUD';
 import { TutorialOverlay } from './TutorialOverlay';
 import { GameChatLog } from './GameChatLog';
 import { GameHistorySidebar } from './GameHistorySidebar';
+import { SavedGameMetadata, formatSavedTimestamp } from '../../utils/gameStorage';
 import { GameToastHUD } from './GameToastHUD';
 import { AchievementNotificationHUD } from './AchievementNotificationHUD';
 import { CommonsEvolutionHUD } from './CommonsEvolutionHUD';
@@ -59,6 +66,12 @@ import { playSound, audioManager } from '../../utils/audio';
 import { resolveWeather } from '../../utils/weather';
 import { hapticsManager } from '../../utils/haptics';
 import { getEffectiveResourceReward, getEffectiveUnlockCost } from '../../utils/crisisEngine';
+import { formatWeatherImpactSummary } from '../../utils/weatherEvents';
+import {
+  computeReferendumTrustSummary,
+  formatSignedScore,
+  getReputationProfile
+} from '../../utils/reputation';
 
 interface GameOverlayHUDProps {
   state: GameEngineState;
@@ -75,6 +88,7 @@ interface GameOverlayHUDProps {
   onTryEnterAgora: () => void;
   onStayInAgora?: () => void;
   onOpenDetentionRescue?: () => void;
+  onTriggerNeighborhoodDecision?: () => void;
   onOpenRules: () => void;
   onOpenShortcuts?: () => void;
   onOpenAchievements?: () => void;
@@ -84,6 +98,8 @@ interface GameOverlayHUDProps {
   onToggleEvolution?: () => void;
   onCloseEvolution?: () => void;
   onToggleDock?: () => void;
+  isTutorialOpen?: boolean;
+  onToggleTutorial?: () => void;
   onTutorialVisibilityChange?: (visible: boolean) => void;
   onSetCameraMode: (mode: 'ISOMETRIC' | 'TOP_DOWN' | 'FOLLOW') => void;
   onToggleSound: () => void;
@@ -94,6 +110,7 @@ interface GameOverlayHUDProps {
   onSetWeatherIntensity?: (intensity: number) => void;
   onSetTimeOfDayMode?: (mode: TimeOfDayMode) => void;
   onSendCooperativeChat: (text: string, votingContext?: string) => void;
+  savedGameMeta?: SavedGameMetadata | null;
   onSaveGame?: () => void;
   onPauseToTitle?: () => void;
 }
@@ -106,6 +123,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   isGameHistoryOpen: controlledHistoryOpen,
   isEvolutionOpen: controlledEvolutionOpen,
   isDockCollapsed: controlledDockCollapsed,
+  isTutorialOpen: controlledTutorialOpen,
+  onToggleTutorial,
   onRollDice,
   onUnlockTile,
   onPassTile,
@@ -113,6 +132,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   onTryEnterAgora,
   onStayInAgora,
   onOpenDetentionRescue,
+  onTriggerNeighborhoodDecision,
   onOpenRules,
   onOpenShortcuts,
   onOpenAchievements,
@@ -132,6 +152,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   onSetWeatherIntensity,
   onSetTimeOfDayMode,
   onSendCooperativeChat,
+  savedGameMeta,
   onSaveGame,
   onPauseToTitle
 }) => {
@@ -147,6 +168,20 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const [ambientVol, setAmbientVol] = useState(() => audioManager.getAmbientVolume());
   const [sfxVol, setSfxVol] = useState(() => audioManager.getSfxVolume());
   const [justSaved, setJustSaved] = useState(false);
+  const [saveLabel, setSaveLabel] = useState<'Guardado' | 'Auto-guardado'>('Guardado');
+  const prevAutosaveCountRef = useRef<number>(savedGameMeta?.autosaveCount ?? 0);
+
+  useEffect(() => {
+    const nextCount = savedGameMeta?.autosaveCount ?? 0;
+    if (nextCount > prevAutosaveCountRef.current) {
+      prevAutosaveCountRef.current = nextCount;
+      setSaveLabel('Auto-guardado');
+      setJustSaved(true);
+      const timer = window.setTimeout(() => setJustSaved(false), 1800);
+      return () => window.clearTimeout(timer);
+    }
+    prevAutosaveCountRef.current = nextCount;
+  }, [savedGameMeta?.autosaveCount]);
 
   const isDockCollapsed = controlledDockCollapsed ?? internalDockCollapsed;
   const isGameHistoryOpen = controlledHistoryOpen ?? internalHistoryOpen;
@@ -226,7 +261,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     state.weatherMode,
     state.weatherIntensity ?? 0.85,
     state.round,
-    state.activePlayerIndex
+    state.activePlayerIndex,
+    state.activeWeatherEvent
   );
   const urbanNatureMix = audioManager.getUrbanNatureMix(
     activeWeather.type,
@@ -244,16 +280,32 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const activePlayer = state.players[state.activePlayerIndex];
   const currentTile = state.tiles.find(t => t.id === activePlayer?.position);
   const detainedTeammate = state.players.find(p => p.isDetained && p.id !== activePlayer?.id);
+  const activeRep = getReputationProfile(activePlayer);
+  const referendumSummary = state.neighborhoodDecision
+    ? computeReferendumTrustSummary(state.neighborhoodDecision, state.players)
+    : null;
 
   // Cálculo de legitimidad colectiva
   const totalLegitimacy = state.players.reduce((sum, p) => sum + p.legitimacy, 0);
   const requiredLegitimacyForAgora = state.players.length * 10;
   const canEnterAgora = totalLegitimacy >= requiredLegitimacyForAgora && !activePlayer?.inAgora;
 
-  // Cálculo de coste y recompensa efectivos (incluye modificadores de Crisis Inesperada)
-  const unlockCostInfo = getEffectiveUnlockCost(currentTile, activePlayer, state.activeCrisis);
+  // Cálculo de coste y recompensa efectivos (incluye Crisis Inesperada, Clima Dinámico y bonificador único)
+  const unlockCostInfo = getEffectiveUnlockCost(
+    currentTile,
+    activePlayer,
+    state.activeCrisis,
+    state.activeWeatherEvent
+  );
   const neededWellnessToUnlock = unlockCostInfo.effectiveCost;
-  const publicPassReward = getEffectiveResourceReward(currentTile, 1, 1, state.activeCrisis);
+  const publicPassReward = getEffectiveResourceReward(
+    currentTile,
+    1,
+    1,
+    state.activeCrisis,
+    activePlayer,
+    state.activeWeatherEvent
+  );
   const canUnlockCurrentTile =
     currentTile &&
     (currentTile.category === 'RESOURCE' || currentTile.category === 'AGORA_ENTRY') &&
@@ -625,14 +677,21 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             <button
               onClick={() => {
                 playSound.uiToggle(true);
-                setShowTutorial(true);
+                if (onToggleTutorial) {
+                  onToggleTutorial();
+                } else {
+                  setShowTutorial(prev => !prev);
+                }
               }}
               className="px-2.5 py-1.5 rounded-xl text-teal-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
-              title="Tutorial Interactivo de Onboarding con Voz"
+              title="Tutorial Interactivo de Onboarding con Voz (Atajo: T)"
               aria-label="Abrir tutorial interactivo de onboarding con narrador de voz"
             >
               <HelpCircle className="w-4 h-4 text-teal-400 shrink-0" />
               <span className="hidden lg:inline">Tutorial con Voz</span>
+              <kbd className="hidden xl:inline-block px-1 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-400 border border-slate-700">
+                T
+              </kbd>
             </button>
 
             <button
@@ -713,6 +772,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 type="button"
                 onClick={() => {
                   onSaveGame();
+                  setSaveLabel('Guardado');
                   setJustSaved(true);
                   window.setTimeout(() => setJustSaved(false), 1800);
                 }}
@@ -721,13 +781,19 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                     ? 'bg-emerald-600/25 text-emerald-300'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800'
                 }`}
-                title="Guardar partida manualmente en LocalStorage"
+                title={
+                  savedGameMeta
+                    ? `Auto-guardado por fin de turno · Ronda ${savedGameMeta.round}${
+                        savedGameMeta.lastEndedTurnBy ? ` (${savedGameMeta.lastEndedTurnBy})` : ''
+                      } · ${formatSavedTimestamp(savedGameMeta.savedAt)}`
+                    : 'Guardar partida manualmente en LocalStorage'
+                }
                 aria-label="Guardar partida manualmente"
               >
                 {justSaved ? (
                   <>
                     <Check className="w-4 h-4 shrink-0" />
-                    <span className="hidden xl:inline">Guardado</span>
+                    <span className="hidden xl:inline">{saveLabel}</span>
                   </>
                 ) : (
                   <>
@@ -797,6 +863,47 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   </div>
                   <p className="text-[11px] opacity-90 leading-snug">
                     {state.activeCrisis.description}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ALERTA DE EVENTO METEOROLÓGICO DINÁMICO ACTIVO */}
+            {state.activeWeatherEvent && (
+              <div
+                role="status"
+                aria-label="Alerta meteorológica dinámica activa"
+                className={`pointer-events-auto max-w-md rounded-xl border px-3 py-2 shadow-lg text-xs flex items-start gap-2.5 ${
+                  state.activeWeatherEvent.severity === 'BENEFICIAL'
+                    ? 'bg-emerald-950/90 border-emerald-500/70 text-emerald-100'
+                    : state.activeWeatherEvent.severity === 'WARNING'
+                    ? 'bg-cyan-950/90 border-cyan-500/70 text-cyan-100'
+                    : 'bg-orange-950/90 border-orange-500/70 text-orange-100'
+                }`}
+              >
+                {state.activeWeatherEvent.weatherType === 'RAIN' ? (
+                  <CloudRain className="w-4 h-4 text-cyan-300 shrink-0 mt-0.5" />
+                ) : state.activeWeatherEvent.weatherType === 'SNOW' ? (
+                  <Snowflake className="w-4 h-4 text-sky-200 shrink-0 mt-0.5" />
+                ) : state.activeWeatherEvent.weatherType === 'SUNNY' ? (
+                  <Sun className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                ) : state.activeWeatherEvent.weatherType === 'DROUGHT' ? (
+                  <Flame className="w-4 h-4 text-orange-300 shrink-0 mt-0.5" />
+                ) : (
+                  <Wind className="w-4 h-4 text-emerald-300 shrink-0 mt-0.5" />
+                )}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold truncate">
+                      {state.activeWeatherEvent.title} · {formatWeatherImpactSummary(state.activeWeatherEvent)}
+                    </span>
+                    <span className="text-[10px] font-bold tabular-nums shrink-0 opacity-90">
+                      {state.activeWeatherEvent.turnsRemaining}{' '}
+                      {state.activeWeatherEvent.turnsRemaining === 1 ? 'turno' : 'turnos'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] opacity-90 leading-snug">
+                    Casillas afectadas: {state.activeWeatherEvent.affectedTileNames.join(', ')}.
                   </p>
                 </div>
               </div>
@@ -971,9 +1078,26 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   )}
                 </div>
 
-                <div className="text-[11px] text-slate-400 flex items-center gap-3 pt-0.5">
+                <div className="text-[11px] text-slate-400 flex items-center flex-wrap gap-x-2.5 gap-y-0.5 pt-0.5 tabular-nums">
                   <span className="text-rose-400 font-medium">Bienestar: {activePlayer?.wellness}</span>
+                  <span className="text-slate-600" aria-hidden="true">·</span>
                   <span className="text-amber-400 font-medium">Legitimidad: {activePlayer?.legitimacy}</span>
+                  <span className="text-slate-600" aria-hidden="true">·</span>
+                  <span
+                    className={`font-semibold inline-flex items-center gap-1 ${
+                      activeRep.tone === 'POSITIVE'
+                        ? 'text-emerald-300'
+                        : activeRep.tone === 'NEGATIVE'
+                        ? 'text-rose-300'
+                        : 'text-slate-300'
+                    }`}
+                    title={activeRep.shortDesc}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      Rep. Vecinal: {activeRep.label} ({formatSignedScore(activeRep.score)}) · Voto {activeRep.voteWeight}x
+                    </span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -1039,6 +1163,12 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                       (-{neededWellnessToUnlock} Bienestar
                       {unlockCostInfo.crisisDelta !== 0
                         ? ` · Crisis ${unlockCostInfo.crisisDelta > 0 ? `+${unlockCostInfo.crisisDelta}` : unlockCostInfo.crisisDelta}`
+                        : ''}
+                      {unlockCostInfo.weatherDelta !== 0
+                        ? ` · Clima ${unlockCostInfo.weatherDelta > 0 ? `+${unlockCostInfo.weatherDelta}` : unlockCostInfo.weatherDelta}`
+                        : ''}
+                      {unlockCostInfo.reputationDelta !== 0
+                        ? ` · Rep. ${unlockCostInfo.reputationDelta > 0 ? `+${unlockCostInfo.reputationDelta}` : unlockCostInfo.reputationDelta}`
                         : ''})
                     </span>
                   </span>
@@ -1087,6 +1217,33 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 </button>
               )}
 
+              {/* Botón Referéndum Barrial (convocar o abrir votación in-situ) */}
+              {onTriggerNeighborhoodDecision &&
+                activePlayer?.controller === 'HUMAN' &&
+                (state.phase === 'PLAYER_TURN_READY' ||
+                  (state.phase === 'TILE_ACTION_DECISION' && Boolean(state.neighborhoodDecision))) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playSound.modalOpen();
+                      onTriggerNeighborhoodDecision();
+                    }}
+                    title="Abrir o convocar Referéndum Barrial in-situ ponderado por Reputación Vecinal"
+                    className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 tabular-nums border ${
+                      state.neighborhoodDecision
+                        ? 'bg-teal-950/90 hover:bg-teal-900 text-teal-200 border-teal-500/70 shadow-md'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                    }`}
+                  >
+                    <Vote className="w-4 h-4 text-teal-300 shrink-0" />
+                    <span>
+                      {state.neighborhoodDecision && referendumSummary
+                        ? `Referéndum (${referendumSummary.trustAccumulated.toFixed(1)}/${referendumSummary.requiredTrust.toFixed(1)})`
+                        : 'Referéndum Barrial'}
+                    </span>
+                  </button>
+                )}
+
             </div>
 
           </div>
@@ -1097,8 +1254,13 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
       {/* 6. TUTORIAL OVERLAY CONTEXTUAL (Primeros 3 turnos y bajo demanda) */}
       <TutorialOverlay
         state={state}
-        isOpen={showTutorial}
-        onClose={() => setShowTutorial(false)}
+        isOpen={controlledTutorialOpen !== undefined ? controlledTutorialOpen : showTutorial}
+        onClose={() => {
+          setShowTutorial(false);
+          if (controlledTutorialOpen && onToggleTutorial) {
+            onToggleTutorial();
+          }
+        }}
         onOpenRules={onOpenRules}
         disableEscapeKey={isRulesOpen || isShortcutsOpen || isAchievementsOpen}
         onVisibilityChange={(visible) => {

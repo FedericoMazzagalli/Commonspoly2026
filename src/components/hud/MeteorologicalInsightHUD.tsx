@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { GameEngineState, GoodType, WeatherType } from '../../types/game';
 import { predictWeatherForecast, resolveWeather } from '../../utils/weather';
+import { formatWeatherImpactSummary } from '../../utils/weatherEvents';
 import { playSound } from '../../utils/audio';
 
 interface PrioritizedResourceAdvice {
@@ -88,9 +89,17 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
         state.weatherMode,
         state.weatherIntensity ?? 0.85,
         state.round,
-        state.activePlayerIndex
+        state.activePlayerIndex,
+        state.activeWeatherEvent
       ),
-    [state.tiles, state.weatherMode, state.weatherIntensity, state.round, state.activePlayerIndex]
+    [
+      state.tiles,
+      state.weatherMode,
+      state.weatherIntensity,
+      state.round,
+      state.activePlayerIndex,
+      state.activeWeatherEvent
+    ]
   );
 
   const forecast = useMemo(
@@ -102,7 +111,8 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
         state.round,
         state.activePlayerIndex,
         state.players.length || 4,
-        3
+        3,
+        state.activeWeatherEvent
       ),
     [
       state.tiles,
@@ -110,7 +120,8 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
       state.weatherIntensity,
       state.round,
       state.activePlayerIndex,
-      state.players.length
+      state.players.length,
+      state.activeWeatherEvent
     ]
   );
 
@@ -330,6 +341,27 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
           </button>
         </div>
       </div>
+
+      {/* Evento Meteorológico Dinámico Activo */}
+      {state.activeWeatherEvent && (
+        <div
+          className={`p-3 rounded-xl border text-xs space-y-1 ${
+            state.activeWeatherEvent.severity === 'BENEFICIAL'
+              ? 'bg-emerald-950/60 border-emerald-600/50 text-emerald-100'
+              : 'bg-orange-950/60 border-orange-600/50 text-orange-100'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 font-bold">
+            <span>{state.activeWeatherEvent.title}</span>
+            <span className="tabular-nums text-[11px]">
+              {state.activeWeatherEvent.turnsRemaining}t · {formatWeatherImpactSummary(state.activeWeatherEvent)}
+            </span>
+          </div>
+          <p className="text-[11px] opacity-90 leading-snug">
+            Casillas afectadas: {state.activeWeatherEvent.affectedTileNames.join(', ')}.
+          </p>
+        </div>
+      )}
 
       {/* Tira de Pronóstico Climático (Actual + 3 Turnos) */}
       <div className="space-y-1.5">

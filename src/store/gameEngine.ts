@@ -23,7 +23,8 @@ import {
   PlayerContributionStats,
   RoundPerformanceSnapshot,
   TurnCommonsSnapshot,
-  CooperativeAchievement
+  CooperativeAchievement,
+  DynamicWeatherEventKind
 } from '../types/game';
 import { OFFICIAL_CHARACTERS, createInitialCharacter } from '../data/characters';
 import { INITIAL_TILES, applyInitialDifficultyToTiles } from '../data/tiles';
@@ -40,6 +41,7 @@ import {
   AchievementUpdate
 } from '../utils/achievements';
 import {
+  AutosaveReason,
   SavedGameMetadata,
   saveGameToStorage,
   loadSavedGameFromStorage,
@@ -51,6 +53,15 @@ import {
   getEffectiveResourceReward,
   getEffectiveUnlockCost
 } from '../utils/crisisEngine';
+import { evaluateDynamicWeatherTurn } from '../utils/weatherEvents';
+import {
+  applyReputationDelta,
+  DEFAULT_REFERENDUM_REQUIRED_TRUST,
+  formatSignedScore,
+  getEffectiveBailCostPerRound,
+  getEffectiveBureaucracyCost,
+  getReputationProfile
+} from '../utils/reputation';
 
 function createInitialPlayerStats(players: Character[]): Record<string, PlayerContributionStats> {
   const stats: Record<string, PlayerContributionStats> = {};
@@ -230,6 +241,8 @@ function buildDefaultTitleState(): GameEngineState {
     timeOfDayMode: 'AUTO',
     activeCrisis: null,
     turnsSinceLastCrisis: 0,
+    activeWeatherEvent: null,
+    turnsSinceLastWeatherEvent: 0,
     achievements: loadLocalAchievements(),
     recentAchievement: null,
     playerStats: initialStats,
@@ -267,6 +280,7 @@ export function useCommonspolyGame() {
 
   const seenAchievementLogsRef = useRef<Set<string>>(new Set(state.logs.map(l => l.id)));
   const lastCrisisIdRef = useRef<string | null>(state.activeCrisis?.id ?? null);
+  const lastWeatherKindRef = useRef<DynamicWeatherEventKind | null>(state.activeWeatherEvent?.kind ?? null);
   const prevCompletedSectorsRef = useRef<Set<GoodType>>(detectCompletedGoodCategories(state));
   const prevVictoryTriggeredRef = useRef<boolean>(
     state.phase === 'GAME_OVER' && state.gameResult === 'VICTORY'
@@ -277,18 +291,40 @@ export function useCommonspolyGame() {
   );
   const needsRecoveryRef = useRef<boolean>(Boolean(restoredOnBootRef.current));
   const lastTurnHapticKeyRef = useRef<string>('');
+  const pendingAutosaveRef = useRef<{ reason: AutosaveReason; endedTurnBy?: string } | null>(null);
 
-  // Auto-guardado continuo en LocalStorage durante partidas activas
+  // Auto-guardado automático en LocalStorage al finalizar cada turno, ronda o hito de partida
   useEffect(() => {
     if (state.phase === 'TITLE' || state.phase === 'SETUP') return;
+    const pending = pendingAutosaveRef.current;
+    if (!pending) return;
+    pendingAutosaveRef.current = null;
+
     const meta = saveGameToStorage(state, {
       autoResumeOnReload: true,
-      pendingRoundAdvance: pendingRoundAdvanceRef.current
+      pendingRoundAdvance: pendingRoundAdvanceRef.current,
+      reason: pending.reason,
+      endedTurnBy: pending.endedTurnBy
     });
     if (meta) {
       setSavedGameMeta(meta);
     }
   }, [state]);
+
+  // Red de seguridad si el usuario recarga o cierra la pestaña en mitad de un turno
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const current = stateRef.current;
+      if (current.phase === 'TITLE' || current.phase === 'SETUP') return;
+      saveGameToStorage(current, {
+        autoResumeOnReload: true,
+        pendingRoundAdvance: pendingRoundAdvanceRef.current,
+        reason: 'CHECKPOINT'
+      });
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // Sincronización dinámica del gestor de audio ambiental y háptica con el estado de la partida
   useEffect(() => {
@@ -330,7 +366,8 @@ export function useCommonspolyGame() {
       state.weatherMode,
       state.weatherIntensity ?? 0.85,
       state.round,
-      state.activePlayerIndex
+      state.activePlayerIndex,
+      state.activeWeatherEvent
     );
     audioManager.setWeatherAudio(
       cond.type,
@@ -338,7 +375,15 @@ export function useCommonspolyGame() {
       state.phase === 'TITLE' || state.phase === 'SETUP',
       state.weatherMode
     );
-  }, [state.phase, state.weatherMode, state.weatherIntensity, state.tiles, state.round, state.activePlayerIndex]);
+  }, [
+    state.phase,
+    state.weatherMode,
+    state.weatherIntensity,
+    state.tiles,
+    state.round,
+    state.activePlayerIndex,
+    state.activeWeatherEvent
+  ]);
 
   // Rastreo automático de logros locales ('Achievements') ante hitos cooperativos
   useEffect(() => {
@@ -515,6 +560,9 @@ export function useCommonspolyGame() {
     const freshStats = createInitialPlayerStats(players);
     const initialSnapshot = buildRoundSnapshot(1, players, tiles, freshStats);
 
+    lastCrisisIdRef.current = null;
+    lastWeatherKindRef.current = null;
+    pendingAutosaveRef.current = { reason: 'CHECKPOINT', endedTurnBy: 'Inicio de Partida' };
     setState(prev => ({
       ...prev,
       phase: 'PLAYER_TURN_READY',
@@ -531,6 +579,8 @@ export function useCommonspolyGame() {
       neighborhoodDecision: null,
       activeCrisis: null,
       turnsSinceLastCrisis: 0,
+      activeWeatherEvent: null,
+      turnsSinceLastWeatherEvent: 0,
       recentAchievement: null,
       playerStats: freshStats,
       performanceHistory: [initialSnapshot],
@@ -631,6 +681,7 @@ export function useCommonspolyGame() {
     if (privateCount === 0 && publicCount === 0 && commonCount > 0) {
       playSound.agoraInsurrection();
       triggerHaptic.victory();
+      pendingAutosaveRef.current = { reason: 'GAME_OVER', endedTurnBy: 'Victoria Comunitaria' };
       setState(prev => {
         const stats = prev.playerStats || createInitialPlayerStats(prev.players);
         const finalSnap = buildRoundSnapshot(Math.min(prev.round, 20), prev.players, tiles, stats);
@@ -660,6 +711,7 @@ export function useCommonspolyGame() {
 
     // Condición al terminar la ronda 20
     if (round > 20) {
+      pendingAutosaveRef.current = { reason: 'GAME_OVER', endedTurnBy: 'Cierre de Ronda 20' };
       if (privateCount === 0) {
         playSound.unlockPublic();
         triggerHaptic.rescue();
@@ -730,20 +782,24 @@ export function useCommonspolyGame() {
 
     const nextWellness = Math.max(1, player.wellness - 1);
     const nextRoundsInAgora = player.roundsInAgora + 1;
+    const repUpdate = applyReputationDelta(
+      { ...player, wellness: nextWellness, roundsInAgora: nextRoundsInAgora },
+      1,
+      'Sostuvo el Ágora esperando refuerzos',
+      currentState.round
+    );
 
     setState(prev => ({
       ...prev,
       players: prev.players.map((p, idx) =>
-        idx === prev.activePlayerIndex
-          ? { ...p, wellness: nextWellness, roundsInAgora: nextRoundsInAgora }
-          : p
+        idx === prev.activePlayerIndex ? repUpdate.player : p
       )
     }));
 
     playSound.unlockPublic({ x: 0, y: 0.5, z: 0 });
     addLog(
       player.name,
-      `Mantiene la asamblea en el Ágora Central esperando refuerzos (-1 Bienestar, ronda ${nextRoundsInAgora}/3 en el Ágora).`,
+      `Mantiene la asamblea en el Ágora Central esperando refuerzos (-1 Bienestar, +1 Reputación Vecinal, ronda ${nextRoundsInAgora}/3).`,
       'INFO'
     );
     advanceToNextTurn();
@@ -768,8 +824,8 @@ export function useCommonspolyGame() {
       // 2. Si hay una compañera detenida y el Bot tiene holgura, rescatarla solidariamente
       const detainedTeammate = currentState.players.find(p => p.isDetained && p.id !== activePlayer.id);
       if (detainedTeammate) {
-        const costPerRound = (detainedTeammate.hasCitizenship && detainedTeammate.socialClass !== 'BAJA') ? 1 : 2;
-        const totalCost = detainedTeammate.detentionRoundsLeft * costPerRound;
+        const bailInfo = getEffectiveBailCostPerRound(detainedTeammate, activePlayer);
+        const totalCost = detainedTeammate.detentionRoundsLeft * bailInfo.effectivePerRound;
         if (activePlayer.wellness > totalCost + 2) {
           rescueDetainedPlayer(activePlayer.id, detainedTeammate.id);
         }
@@ -872,9 +928,14 @@ export function useCommonspolyGame() {
     }
 
     if (passedStart && targetPos !== 0) {
-      activePlayer.wellness += 1;
-      recordPlayerMetric(activePlayer.id, { totalResourcesEarned: 1 });
-      addLog(activePlayer.name, 'Completó una vuelta al tablero pasando por SALIDA (+1 Bienestar).', 'SUCCESS');
+      const startWellnessBonus = activePlayer.id === 'moha' ? 2 : 1;
+      activePlayer.wellness += startWellnessBonus;
+      recordPlayerMetric(activePlayer.id, { totalResourcesEarned: startWellnessBonus });
+      addLog(
+        activePlayer.name,
+        `Completó una vuelta al tablero pasando por SALIDA (+${startWellnessBonus} Bienestar${activePlayer.id === 'moha' ? ' · Derecho a la Ciudad' : ''}).`,
+        'SUCCESS'
+      );
     }
 
     // Construir trayectoria espacial 3D casilla a casilla para el audio posicional
@@ -952,11 +1013,16 @@ export function useCommonspolyGame() {
     // B. Casillas Especiales
     if (tile.category === 'CORNER' || tile.category === 'SPECIAL') {
       if (tile.specialType === 'START') {
-        player.wellness += 1;
+        const startWellness = player.id === 'moha' ? 2 : 1;
+        player.wellness += startWellness;
         player.legitimacy += 1;
         playSound.unlockPublic(getTileCoords3D(tile.id));
-        recordPlayerMetric(player.id, { totalResourcesEarned: 2 });
-        addLog(player.name, 'Descansa en SALIDA (+1 Bienestar, +1 Legitimidad).', 'SUCCESS');
+        recordPlayerMetric(player.id, { totalResourcesEarned: startWellness + 1 });
+        addLog(
+          player.name,
+          `Descansa en SALIDA (+${startWellness} Bienestar, +1 Legitimidad${player.id === 'moha' ? ' · Derecho a la Ciudad' : ''}).`,
+          'SUCCESS'
+        );
         setState(prev => ({
           ...prev,
           players: prev.players.map(p => p.id === player.id ? { ...player } : p)
@@ -968,8 +1034,9 @@ export function useCommonspolyGame() {
         const privateTiles = stateRef.current.tiles.filter(
           t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state === 'PRIVATE'
         );
+        const burCost = getEffectiveBureaucracyCost(player).effectiveCost;
         if (player.controller === 'BOT') {
-          if (player.wellness > 7 && privateTiles.length > 0) {
+          if (player.wellness > burCost + 1 && privateTiles.length > 0) {
             executeBureaucracy(privateTiles[0].id);
           } else {
             addLog(player.name, 'Pasa por Burocracia sin realizar trámites.', 'INFO');
@@ -998,19 +1065,30 @@ export function useCommonspolyGame() {
         return;
       }
       if (tile.specialType === 'ASSEMBLY') {
-        // Pierdes 2 Bienestar, ganas 2 Legitimidad
+        // Pierdes 2 Bienestar, ganas 2 Legitimidad y +2 Reputación Vecinal
         player.wellness = Math.max(1, player.wellness - 2);
         player.legitimacy += 2;
+        const repRes = applyReputationDelta(
+          player,
+          2,
+          'Participación en Asamblea barrial',
+          stateRef.current.round
+        );
+        const nextPlayer = repRes.player;
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map(p => p.id === nextPlayer.id ? nextPlayer : p)
+        }));
         playSound.unlockCommon(getTileCoords3D(tile.id));
-        recordPlayerMetric(player.id, { cooperativeActions: 1, totalResourcesEarned: 2 });
+        recordPlayerMetric(nextPlayer.id, { cooperativeActions: 1, totalResourcesEarned: 2 });
         addLog(
-          player.name,
-          'Participó en la Asamblea barrial (-2 Bienestar, +2 Legitimidad).',
+          nextPlayer.name,
+          `Participó en la Asamblea barrial (-2 Bienestar, +2 Legitimidad, +2 Reputación Vecinal → ${formatSignedScore(repRes.nextScore)}).`,
           'SUCCESS',
           {
             category: 'COOPERATIVE',
             cooperativeAction: 'COLLECTIVE_VOTE',
-            actorColor: player.color,
+            actorColor: nextPlayer.color,
             target: 'Asamblea Barrial',
             highlight: false
           }
@@ -1019,26 +1097,60 @@ export function useCommonspolyGame() {
         return;
       }
       if (tile.specialType === 'BANK') {
-        // Pierdes 6 Puntos de Bienestar
+        // Pierdes 6 Puntos de Bienestar y -2 Reputación Vecinal
         player.wellness = Math.max(1, player.wellness - 6);
+        const repRes = applyReputationDelta(
+          player,
+          -2,
+          'Operación con Banca privada especulativa',
+          stateRef.current.round
+        );
+        const nextPlayer = repRes.player;
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map(p => p.id === nextPlayer.id ? nextPlayer : p)
+        }));
         playSound.speculatorAlert(getTileCoords3D(tile.id));
         triggerHaptic.speculatorHit();
-        addLog(player.name, '¡Cayó en el Banco privado! Pierde 6 Puntos de Bienestar.', 'HAZARD');
+        addLog(
+          nextPlayer.name,
+          `¡Cayó en el Banco privado! Pierde 6 Bienestar y -2 Reputación Vecinal (${formatSignedScore(repRes.nextScore)}).`,
+          'HAZARD'
+        );
         advanceToNextTurn();
         return;
       }
       if (tile.specialType === 'CASINO') {
-        // Pierdes 6 Puntos de Legitimidad
+        // Pierdes 6 Puntos de Legitimidad y -2 Reputación Vecinal
         player.legitimacy = Math.max(0, player.legitimacy - 6);
+        const repRes = applyReputationDelta(
+          player,
+          -2,
+          'Apuesta individual en Casino',
+          stateRef.current.round
+        );
+        const nextPlayer = repRes.player;
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map(p => p.id === nextPlayer.id ? nextPlayer : p)
+        }));
         playSound.speculatorAlert(getTileCoords3D(tile.id));
         triggerHaptic.speculatorHit();
-        addLog(player.name, '¡Cayó en el Casino! Pierde 6 Puntos de Legitimidad.', 'HAZARD');
+        addLog(
+          nextPlayer.name,
+          `¡Cayó en el Casino! Pierde 6 Legitimidad y -2 Reputación Vecinal (${formatSignedScore(repRes.nextScore)}).`,
+          'HAZARD'
+        );
         advanceToNextTurn();
         return;
       }
       if (tile.specialType === 'DETENTION_CENTER') {
         player.isDetained = true;
         player.detentionRoundsLeft = 1;
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map(p => p.id === player.id ? { ...player } : p)
+        }));
         playSound.detentionClang(getTileCoords3D(tile.id));
         triggerHaptic.detention();
         addLog(player.name, 'Retenido en el Centro de Detención durante 1 ronda.', 'HAZARD');
@@ -1067,6 +1179,10 @@ export function useCommonspolyGame() {
     if (tile.category === 'INALIENABLE_COMMON') {
       player.wellness += 2;
       player.legitimacy += 2;
+      setState(prev => ({
+        ...prev,
+        players: prev.players.map(p => p.id === player.id ? { ...player } : p)
+      }));
       playSound.unlockCommon(getTileCoords3D(tile.id));
       if (player.controller === 'HUMAN') triggerHaptic.commonUnlocked();
       recordPlayerMetric(player.id, { totalResourcesEarned: 4 });
@@ -1077,19 +1193,113 @@ export function useCommonspolyGame() {
 
     // D. Casilla de Recurso (Salud, Urbano, Conocimiento, Medioambiente)
     if (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY') {
+      const activeDecision = stateRef.current.neighborhoodDecision;
+      if (
+        player.controller === 'BOT' &&
+        activeDecision &&
+        activeDecision.targetTileIds.includes(tile.id) &&
+        !activeDecision.votesCast.includes(player.id)
+      ) {
+        const repProfile = getReputationProfile(player);
+        const requiredTrust = activeDecision.requiredTrust ?? DEFAULT_REFERENDUM_REQUIRED_TRUST;
+        const prevTrust = activeDecision.trustAccumulated ?? 0;
+        const nextTrustAccumulated = Number((prevTrust + repProfile.voteWeight).toFixed(2));
+        const nextVotesCast = [...activeDecision.votesCast, player.id];
+        const isQuorumReached = nextTrustAccumulated >= requiredTrust;
+        const legitimacyEarned = repProfile.voteWeight >= 1.5 ? 3 : 2;
+
+        const repRes = applyReputationDelta(
+          {
+            ...player,
+            wellness: Math.min(10, player.wellness + 2),
+            legitimacy: player.legitimacy + legitimacyEarned
+          },
+          2,
+          'Participación en referéndum barrial',
+          stateRef.current.round
+        );
+        player = repRes.player;
+
+        let updatedTiles = stateRef.current.tiles.map(t => ({ ...t }));
+        if (isQuorumReached) {
+          const targetResource = updatedTiles.find(
+            t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state !== 'COMMON'
+          );
+          if (targetResource) {
+            targetResource.state = 'COMMON';
+            targetResource.transformedById = 'neighborhood_referendum';
+            targetResource.transformedByName = 'Referéndum Vecinal';
+            targetResource.transformedAtRound = stateRef.current.round;
+            if (targetResource.id === tile.id) {
+              tile = targetResource;
+            }
+          }
+        }
+
+        const nextDecision = isQuorumReached
+          ? null
+          : {
+              ...activeDecision,
+              votesCast: nextVotesCast,
+              trustAccumulated: nextTrustAccumulated,
+              requiredTrust
+            };
+
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map(p => (p.id === player.id ? player : p)),
+          tiles: isQuorumReached ? updatedTiles : prev.tiles,
+          neighborhoodDecision: nextDecision
+        }));
+
+        addLog(
+          'Decisión Barrial',
+          `${player.name} (${repProfile.label} · confianza ${repProfile.trustPercent}%, peso ${repProfile.voteWeight}x) votó in-situ (+2 Bienestar, +${legitimacyEarned} Legitimidad, +2 Rep. Vecinal · quórum ${nextTrustAccumulated.toFixed(2)}/${requiredTrust.toFixed(1)}).`,
+          'SUCCESS',
+          {
+            category: 'COOPERATIVE',
+            cooperativeAction: 'COLLECTIVE_VOTE',
+            actorColor: player.color
+          }
+        );
+
+        if (isQuorumReached) {
+          addLog(
+            'Decisión Barrial',
+            `¡Quórum de confianza alcanzado (${nextTrustAccumulated.toFixed(2)}/${requiredTrust.toFixed(1)})! El referéndum barrial triunfó y consolidó un nuevo Bien Común en el territorio.`,
+            'SUCCESS'
+          );
+        }
+      }
+
       if (tile.state === 'COMMON') {
-        const reward = getEffectiveResourceReward(tile, 2, 2, stateRef.current.activeCrisis);
+        const reward = getEffectiveResourceReward(
+          tile,
+          2,
+          2,
+          stateRef.current.activeCrisis,
+          player,
+          stateRef.current.activeWeatherEvent
+        );
         player.wellness += reward.wellness;
         player.legitimacy += reward.legitimacy;
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map(p => p.id === player.id ? { ...player } : p)
+        }));
         playSound.unlockCommon(getTileCoords3D(tile.id));
         recordPlayerMetric(player.id, { totalResourcesEarned: reward.wellness + reward.legitimacy });
         const crisisNote =
           reward.crisisDelta !== 0
             ? ` (efecto crisis ${reward.crisisDelta > 0 ? `+${reward.crisisDelta}` : reward.crisisDelta})`
             : '';
+        const weatherNote =
+          reward.weatherDelta !== 0
+            ? ` [Clima: ${reward.weatherDelta > 0 ? `+${reward.weatherDelta}` : reward.weatherDelta}]`
+            : '';
         addLog(
           player.name,
-          `Disfruta del bien común "${tile.name}" (+${reward.wellness} Bienestar, +${reward.legitimacy} Legitimidad)${crisisNote}.`,
+          `Disfruta del bien común "${tile.name}" (+${reward.wellness} Bienestar, +${reward.legitimacy} Legitimidad)${crisisNote}${weatherNote}.`,
           'SUCCESS'
         );
         advanceToNextTurn();
@@ -1106,26 +1316,67 @@ export function useCommonspolyGame() {
 
   // Lógica de decisión autónoma para Bots
   const autoBotActionForTile = useCallback((tile: Tile, bot: Character) => {
-    const costInfo = getEffectiveUnlockCost(tile, bot, stateRef.current.activeCrisis);
+    const costInfo = getEffectiveUnlockCost(
+      tile,
+      bot,
+      stateRef.current.activeCrisis,
+      stateRef.current.activeWeatherEvent
+    );
     const neededWellness = costInfo.effectiveCost;
 
-    if (bot.wellness > neededWellness && (tile.state === 'PRIVATE' || tile.state === 'PUBLIC')) {
+      if (bot.wellness > neededWellness && (tile.state === 'PRIVATE' || tile.state === 'PUBLIC')) {
       // El bot desbloquea el bien solidariamente
       bot.wellness -= neededWellness;
       const nextState: GoodState = tile.state === 'PRIVATE' ? 'PUBLIC' : 'COMMON';
+
+      // Bonificadores únicos al comunizar (Matsuko, Whina, Yayo)
+      let bonusNote = '';
+      if (nextState === 'COMMON') {
+        if (bot.id === 'matsuko') {
+          bot.legitimacy += 1;
+          bonusNote = ' · +1 Legitimidad (Agitación Cultural)';
+        } else if (bot.id === 'whina' && (tile.goodType === 'HEALTH' || tile.goodType === 'ENVIRONMENT')) {
+          bot.legitimacy += 1;
+          bonusNote = ' · +1 Legitimidad (Sabiduría Ancestral)';
+        } else if (bot.id === 'yayo' && tile.goodType === 'ENVIRONMENT') {
+          bot.wellness += 1;
+          bonusNote = ' · +1 Bienestar (Economía Ecofeminista)';
+        }
+      }
+
+      const repDelta = nextState === 'COMMON' ? 3 : 2;
+      const repRes = applyReputationDelta(
+        bot,
+        repDelta,
+        nextState === 'COMMON'
+          ? `Comunalizó "${tile.name}"`
+          : `Desprivatizó "${tile.name}" a Público`,
+        stateRef.current.round
+      );
+      const updatedBot = repRes.player;
+
       const updatedTiles = stateRef.current.tiles.map(t =>
-        t.id === tile.id ? { ...t, state: nextState } : t
+        t.id === tile.id
+          ? {
+              ...t,
+              state: nextState,
+              transformedById: updatedBot.id,
+              transformedByName: updatedBot.name,
+              transformedAtRound: stateRef.current.round
+            }
+          : t
       );
       setState(prev => ({
         ...prev,
-        tiles: updatedTiles
+        tiles: updatedTiles,
+        players: prev.players.map(p => p.id === updatedBot.id ? updatedBot : p)
       }));
 
       if (nextState === 'COMMON') playSound.unlockCommon(getTileCoords3D(tile.id));
       else playSound.unlockPublic(getTileCoords3D(tile.id));
 
       recordPlayerMetric(
-        bot.id,
+        updatedBot.id,
         {
           commonsUnlocked: nextState === 'COMMON' ? 1 : 0,
           publicsUnlocked: nextState === 'PUBLIC' ? 1 : 0,
@@ -1139,14 +1390,22 @@ export function useCommonspolyGame() {
         costInfo.crisisDelta !== 0
           ? ` [Crisis: ${costInfo.crisisDelta > 0 ? `+${costInfo.crisisDelta}` : costInfo.crisisDelta} coste]`
           : '';
+      const weatherCostNote =
+        costInfo.weatherDelta !== 0
+          ? ` [Clima: ${costInfo.weatherDelta > 0 ? `+${costInfo.weatherDelta}` : costInfo.weatherDelta} coste]`
+          : '';
+      const repCostNote =
+        costInfo.reputationDelta !== 0
+          ? ` [Reputación: ${costInfo.reputationDelta > 0 ? `+${costInfo.reputationDelta}` : costInfo.reputationDelta} coste]`
+          : '';
       addLog(
-        bot.name,
-        `[Acción Cooperativa] ${bot.name} desprivatizó "${tile.name}" convirtiéndolo en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'}${crisisCostNote}.`,
+        updatedBot.name,
+        `[Acción Cooperativa] ${updatedBot.name} desprivatizó "${tile.name}" convirtiéndolo en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'} (+${repDelta} Rep. Vecinal)${crisisCostNote}${weatherCostNote}${repCostNote}${bonusNote}.`,
         'SUCCESS',
         {
           category: 'COOPERATIVE',
           cooperativeAction: nextState === 'COMMON' ? 'COMMON_UNLOCK' : 'PUBLIC_UNLOCK',
-          actorColor: bot.color,
+          actorColor: updatedBot.color,
           target: tile.name,
           highlight: nextState === 'COMMON'
         }
@@ -1154,13 +1413,28 @@ export function useCommonspolyGame() {
     } else {
       // El bot pasa y gana puntos si es público
       if (tile.state === 'PUBLIC') {
-        const reward = getEffectiveResourceReward(tile, 1, 1, stateRef.current.activeCrisis);
+        const reward = getEffectiveResourceReward(
+          tile,
+          1,
+          1,
+          stateRef.current.activeCrisis,
+          bot,
+          stateRef.current.activeWeatherEvent
+        );
         bot.wellness += reward.wellness;
         bot.legitimacy += reward.legitimacy;
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map(p => p.id === bot.id ? { ...bot } : p)
+        }));
         recordPlayerMetric(bot.id, { totalResourcesEarned: reward.wellness + reward.legitimacy });
+        const weatherNote =
+          reward.weatherDelta !== 0
+            ? ` [Clima: ${reward.weatherDelta > 0 ? `+${reward.weatherDelta}` : reward.weatherDelta}]`
+            : '';
         addLog(
           bot.name,
-          `[BOT] No desbloqueó "${tile.name}" y obtiene +${reward.wellness} Bienestar y +${reward.legitimacy} Legitimidad.`,
+          `[BOT] No desbloqueó "${tile.name}" y obtiene +${reward.wellness} Bienestar y +${reward.legitimacy} Legitimidad${weatherNote}.`,
           'INFO'
         );
       } else {
@@ -1180,19 +1454,60 @@ export function useCommonspolyGame() {
     const tile = currentState.tiles.find(t => t.id === player.position);
     if (!tile || !tile.goodType) return;
 
-    const costInfo = getEffectiveUnlockCost(tile, player, currentState.activeCrisis);
+    const costInfo = getEffectiveUnlockCost(
+      tile,
+      player,
+      currentState.activeCrisis,
+      currentState.activeWeatherEvent
+    );
     const neededWellness = costInfo.effectiveCost;
     const skill = costInfo.skillPoints;
     if (player.wellness < neededWellness) return;
 
     player.wellness -= neededWellness;
     const nextState: GoodState = tile.state === 'PRIVATE' ? 'PUBLIC' : 'COMMON';
+
+    // Bonificadores únicos al comunizar (Matsuko, Whina, Yayo)
+    let bonusNote = '';
+    if (nextState === 'COMMON') {
+      if (player.id === 'matsuko') {
+        player.legitimacy += 1;
+        bonusNote = ' · +1 Legitimidad (Agitación Cultural)';
+      } else if (player.id === 'whina' && (tile.goodType === 'HEALTH' || tile.goodType === 'ENVIRONMENT')) {
+        player.legitimacy += 1;
+        bonusNote = ' · +1 Legitimidad (Sabiduría Ancestral)';
+      } else if (player.id === 'yayo' && tile.goodType === 'ENVIRONMENT') {
+        player.wellness += 1;
+        bonusNote = ' · +1 Bienestar (Economía Ecofeminista)';
+      }
+    }
+
+    const repDelta = nextState === 'COMMON' ? 3 : 2;
+    const repRes = applyReputationDelta(
+      player,
+      repDelta,
+      nextState === 'COMMON'
+        ? `Comunalizó "${tile.name}"`
+        : `Desprivatizó "${tile.name}" a Público`,
+      currentState.round
+    );
+    const updatedPlayer = repRes.player;
+
     const updatedTiles = currentState.tiles.map(t =>
-      t.id === tile.id ? { ...t, state: nextState } : t
+      t.id === tile.id
+        ? {
+            ...t,
+            state: nextState,
+            transformedById: updatedPlayer.id,
+            transformedByName: updatedPlayer.name,
+            transformedAtRound: currentState.round
+          }
+        : t
     );
     setState(prev => ({
       ...prev,
-      tiles: updatedTiles
+      tiles: updatedTiles,
+      players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? updatedPlayer : p)
     }));
 
     if (nextState === 'COMMON') {
@@ -1204,7 +1519,7 @@ export function useCommonspolyGame() {
     }
 
     recordPlayerMetric(
-      player.id,
+      updatedPlayer.id,
       {
         commonsUnlocked: nextState === 'COMMON' ? 1 : 0,
         publicsUnlocked: nextState === 'PUBLIC' ? 1 : 0,
@@ -1218,18 +1533,35 @@ export function useCommonspolyGame() {
       costInfo.crisisDelta !== 0
         ? `, Crisis ${costInfo.crisisDelta > 0 ? `+${costInfo.crisisDelta}` : costInfo.crisisDelta}`
         : '';
+    const weatherCostNote =
+      costInfo.weatherDelta !== 0
+        ? `, Clima ${costInfo.weatherDelta > 0 ? `+${costInfo.weatherDelta}` : costInfo.weatherDelta}`
+        : '';
+    const repCostNote =
+      costInfo.reputationDelta !== 0
+        ? `, Rep. ${costInfo.reputationDelta > 0 ? `+${costInfo.reputationDelta}` : costInfo.reputationDelta}`
+        : '';
     addLog(
-      player.name,
-      `¡Bien Desprivatizado! ${player.name} transformó "${tile.name}" en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'} (${neededWellness} Bienestar + ${skill} Habilidad${crisisNote}).`,
+      updatedPlayer.name,
+      `¡Bien Desprivatizado! ${updatedPlayer.name} transformó "${tile.name}" en ${nextState === 'COMMON' ? 'Bien Común' : 'Bien Público'} (${neededWellness} Bienestar + ${skill} Habilidad${crisisNote}${weatherCostNote}${repCostNote}${bonusNote}) · +${repDelta} Rep. Vecinal (${formatSignedScore(repRes.nextScore)}).`,
       'SUCCESS',
       {
         category: 'COOPERATIVE',
         cooperativeAction: nextState === 'COMMON' ? 'COMMON_UNLOCK' : 'PUBLIC_UNLOCK',
-        actorColor: player.color,
+        actorColor: updatedPlayer.color,
         target: tile.name,
         highlight: nextState === 'COMMON'
       }
     );
+
+    if (repRes.tierChanged) {
+      const nextProf = getReputationProfile(repRes.nextScore);
+      addLog(
+        'Reputación Vecinal',
+        `${updatedPlayer.name} alcanza el nivel "${nextProf.label}" (${formatSignedScore(repRes.nextScore)} · transacciones ${nextProf.transactionCostDelta >= 0 ? `+${nextProf.transactionCostDelta}` : nextProf.transactionCostDelta}, voto ${nextProf.voteWeight}x).`,
+        repRes.nextScore >= 0 ? 'SUCCESS' : 'HAZARD'
+      );
+    }
 
     // Verificar si se ha ganado el juego
     if (checkEndGameConditions(updatedTiles, currentState.round)) {
@@ -1245,15 +1577,76 @@ export function useCommonspolyGame() {
     const player = currentState.players[currentState.activePlayerIndex];
     const tile = currentState.tiles.find(t => t.id === player.position);
 
+    const canTransform =
+      tile &&
+      (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY') &&
+      (tile.state === 'PRIVATE' || tile.state === 'PUBLIC');
+    const unlockCost = canTransform
+      ? getEffectiveUnlockCost(tile, player, currentState.activeCrisis, currentState.activeWeatherEvent).effectiveCost
+      : Infinity;
+    const passedDespiteFunds = Boolean(canTransform && player.wellness >= unlockCost);
+
     if (tile?.state === 'PUBLIC') {
-      const reward = getEffectiveResourceReward(tile, 1, 1, currentState.activeCrisis);
+      const reward = getEffectiveResourceReward(
+        tile,
+        1,
+        1,
+        currentState.activeCrisis,
+        player,
+        currentState.activeWeatherEvent
+      );
       player.wellness += reward.wellness;
       player.legitimacy += reward.legitimacy;
+
+      const repRes = passedDespiteFunds
+        ? applyReputationDelta(
+            player,
+            -2,
+            `Cobró renta individual en "${tile.name}" pudiendo comunalizar`,
+            currentState.round
+          )
+        : { player, nextScore: getReputationProfile(player).score, tierChanged: false };
+
+      setState(prev => ({
+        ...prev,
+        players: prev.players.map(p => p.id === repRes.player.id ? repRes.player : p)
+      }));
       playSound.unlockPublic(getTileCoords3D(tile.id));
       recordPlayerMetric(player.id, { totalResourcesEarned: reward.wellness + reward.legitimacy });
+      const weatherNote =
+        reward.weatherDelta !== 0
+          ? ` [Clima: ${reward.weatherDelta > 0 ? `+${reward.weatherDelta}` : reward.weatherDelta}]`
+          : '';
+      const selfishNote = passedDespiteFunds
+        ? ` · -2 Reputación Vecinal por priorizar renta propia (${formatSignedScore(repRes.nextScore)})`
+        : '';
       addLog(
         player.name,
-        `Pasa en el bien público "${tile.name}" y recibe +${reward.wellness} Bienestar y +${reward.legitimacy} Legitimidad.`,
+        `Pasa en el bien público "${tile.name}" y recibe +${reward.wellness} Bienestar y +${reward.legitimacy} Legitimidad${weatherNote}${selfishNote}.`,
+        passedDespiteFunds ? 'HAZARD' : 'INFO'
+      );
+      if (repRes.tierChanged) {
+        const nextProf = getReputationProfile(repRes.nextScore);
+        addLog(
+          'Reputación Vecinal',
+          `${player.name} desciende a "${nextProf.label}" (${formatSignedScore(repRes.nextScore)} · recargo ${nextProf.transactionCostDelta >= 0 ? `+${nextProf.transactionCostDelta}` : nextProf.transactionCostDelta}, voto ${nextProf.voteWeight}x).`,
+          'HAZARD'
+        );
+      }
+    } else if (passedDespiteFunds && tile) {
+      const repRes = applyReputationDelta(
+        player,
+        -1,
+        `Evitó desprivatizar "${tile.name}" teniendo recursos`,
+        currentState.round
+      );
+      setState(prev => ({
+        ...prev,
+        players: prev.players.map(p => p.id === repRes.player.id ? repRes.player : p)
+      }));
+      addLog(
+        player.name,
+        `Pasa su turno sin desprivatizar "${tile.name}" disponiendo de Bienestar (-1 Reputación Vecinal → ${formatSignedScore(repRes.nextScore)}).`,
         'INFO'
       );
     } else {
@@ -1384,7 +1777,15 @@ export function useCommonspolyGame() {
 
     // Convertir todos los bienes de esta categoría a COMMON
     const updatedTiles = currentState.tiles.map(t =>
-      t.goodType === category ? { ...t, state: 'COMMON' as const } : t
+      t.goodType === category
+        ? {
+            ...t,
+            state: 'COMMON' as const,
+            transformedById: 'agora_assembly',
+            transformedByName: 'Ágora Asamblearia',
+            transformedAtRound: currentState.round
+          }
+        : t
     );
 
     const categoryNames: Record<GoodType, string> = {
@@ -1406,22 +1807,31 @@ export function useCommonspolyGame() {
       }
     );
 
-    // Desalojo pacífico de vuelta al tablero
+    // Desalojo pacífico de vuelta al tablero + +3 Reputación Vecinal por acción colectiva en Ágora
     const exitCorners = [0, 10, 20, 30];
-    currentState.players.forEach((p, idx) => {
-      p.inAgora = false;
-      p.roundsInAgora = 0;
-      p.position = exitCorners[idx % exitCorners.length];
+    const updatedAgoraPlayers = currentState.players.map((p, idx) => {
+      const resetPlayer: Character = {
+        ...p,
+        inAgora: false,
+        roundsInAgora: 0,
+        position: exitCorners[idx % exitCorners.length]
+      };
+      return applyReputationDelta(
+        resetPlayer,
+        3,
+        'Insurrección colectiva en el Ágora Central',
+        currentState.round
+      ).player;
     });
 
     setState(prev => {
-      const baseStats = prev.playerStats || createInitialPlayerStats(prev.players);
+      const baseStats = prev.playerStats || createInitialPlayerStats(updatedAgoraPlayers);
       const nextStats: Record<string, PlayerContributionStats> = { ...baseStats };
-      const playerCount = prev.players.length || 1;
+      const playerCount = updatedAgoraPlayers.length || 1;
       const baseShare = Math.floor(convertedCount / playerCount);
       const remainder = convertedCount % playerCount;
 
-      prev.players.forEach((p, idx) => {
+      updatedAgoraPlayers.forEach((p, idx) => {
         const cur = nextStats[p.id] || {
           playerId: p.id,
           playerName: p.name,
@@ -1440,10 +1850,11 @@ export function useCommonspolyGame() {
         };
       });
 
-      const snap = buildRoundSnapshot(prev.round, prev.players, updatedTiles, nextStats);
+      const snap = buildRoundSnapshot(prev.round, updatedAgoraPlayers, updatedTiles, nextStats);
 
       return {
         ...prev,
+        players: updatedAgoraPlayers,
         tiles: updatedTiles,
         activeModal: null,
         playerStats: nextStats,
@@ -1459,21 +1870,18 @@ export function useCommonspolyGame() {
 
   // Turno de los Especuladores al final de la ronda
   const runSpeculatorsTurn = useCallback(() => {
-    setState(prev => ({ ...prev, phase: 'SPECULATOR_TURN' }));
-
     const currentState = stateRef.current;
     const firstSpecPos = currentState.speculators[0]?.position ?? 0;
     playSound.speculatorAlert(getTileCoords3D(firstSpecPos));
 
     let attackTriggered = false;
     let detentionModalOpened = false;
-
-    currentState.speculators.forEach((speculator, sIdx) => {
+    const nextPlayers = currentState.players.map(p => ({ ...p }));
+    const nextSpeculators = currentState.speculators.map((speculator, sIdx) => {
       // Lanzar dado para el especulador
       const prevPos = speculator.position;
       const roll = Math.floor(Math.random() * 6) + 1;
       const targetPos = (prevPos + roll) % 40;
-      speculator.position = targetPos;
 
       const specSteps: { x: number; y: number; z: number }[] = [];
       for (let s = 1; s <= roll; s++) {
@@ -1484,7 +1892,7 @@ export function useCommonspolyGame() {
       addLog(speculator.name, `Se desplazó ${roll} casillas hasta la casilla ${targetPos}.`, 'HAZARD');
 
       // Comprobar si aterriza en una casilla con un personaje
-      const victims = currentState.players.filter(p => p.position === targetPos);
+      const victims = nextPlayers.filter(p => p.position === targetPos);
 
       // Si hay 2 o más personajes juntos, se protegen mutuamente del especulador
       if (victims.length >= 2) {
@@ -1520,11 +1928,6 @@ export function useCommonspolyGame() {
           addLog(speculator.name, `¡Atrapó a ${victim.name} y lo encerró en el Centro de Detención por ${actionDice} rondas!`, 'HAZARD');
           detentionModalOpened = true;
           pendingRoundAdvanceRef.current = true;
-          setState(prev => ({
-            ...prev,
-            players: prev.players.map(p => p.id === victim.id ? { ...victim } : p),
-            activeModal: 'DETENTION_RESCUE'
-          }));
         } else {
           // Quitar puntos de Bienestar o Legitimidad
           playSound.speculatorAlert(getTileCoords3D(targetPos));
@@ -1541,7 +1944,18 @@ export function useCommonspolyGame() {
           }
         }
       }
+
+      return { ...speculator, position: targetPos };
     });
+
+    pendingAutosaveRef.current = { reason: 'TURN_END', endedTurnBy: 'Especuladores' };
+    setState(prev => ({
+      ...prev,
+      phase: 'SPECULATOR_TURN',
+      speculators: nextSpeculators,
+      players: nextPlayers,
+      activeModal: detentionModalOpened ? 'DETENTION_RESCUE' : prev.activeModal
+    }));
 
     if (!detentionModalOpened) {
       setTimeout(() => {
@@ -1567,6 +1981,7 @@ export function useCommonspolyGame() {
     playSound.cardFlip();
     triggerHaptic.globalCard();
 
+    pendingAutosaveRef.current = { reason: 'ROUND_END', endedTurnBy: `Fin Ronda ${currentState.round}` };
     setState(prev => {
       const stats = prev.playerStats || createInitialPlayerStats(prev.players);
       const completedSnap = buildRoundSnapshot(prev.round, prev.players, prev.tiles, stats);
@@ -1649,6 +2064,43 @@ export function useCommonspolyGame() {
       );
     }
 
+    const weatherEval = evaluateDynamicWeatherTurn(
+      currentState.activeWeatherEvent,
+      currentState.turnsSinceLastWeatherEvent,
+      currentState.tiles,
+      currentState.round,
+      lastWeatherKindRef.current
+    );
+
+    if (weatherEval.newlyTriggeredWeatherEvent) {
+      const wEvent = weatherEval.newlyTriggeredWeatherEvent;
+      lastWeatherKindRef.current = wEvent.kind;
+      if (wEvent.severity === 'BENEFICIAL') {
+        playSound.unlockPublic();
+      } else {
+        playSound.notification();
+      }
+      triggerHaptic.uiTap();
+      addLog(
+        'Meteorología Dinámica',
+        `${wEvent.alertMessage} (${wEvent.totalTurns} turnos).`,
+        wEvent.severity === 'BENEFICIAL' ? 'SUCCESS' : 'HAZARD',
+        {
+          category: wEvent.severity === 'BENEFICIAL' ? 'COOPERATIVE' : 'HAZARD',
+          highlight: true
+        }
+      );
+    } else if (weatherEval.expiredWeatherEvent) {
+      addLog(
+        'Meteorología Dinámica',
+        `Remite "${weatherEval.expiredWeatherEvent.title}". El clima y las casillas afectadas vuelven a su estado habitual.`,
+        'INFO'
+      );
+    }
+
+    const endingPlayerName = currentState.players[currentState.activePlayerIndex]?.name ?? 'Turno';
+    pendingAutosaveRef.current = { reason: 'TURN_END', endedTurnBy: endingPlayerName };
+
     // Registrar snapshot turno a turno de la evolución Comunes vs Privatizados
     setState(prev => {
       if (prev.phase === 'GAME_OVER') return prev;
@@ -1666,6 +2118,8 @@ export function useCommonspolyGame() {
           ...prev,
           activeCrisis: crisisEval.nextCrisis,
           turnsSinceLastCrisis: crisisEval.nextTurnsSinceLastCrisis,
+          activeWeatherEvent: weatherEval.nextWeatherEvent,
+          turnsSinceLastWeatherEvent: weatherEval.nextTurnsSinceLastWeatherEvent,
           turnHistory: nextTurnHistory
         };
       }
@@ -1677,6 +2131,8 @@ export function useCommonspolyGame() {
         phase: 'PLAYER_TURN_READY',
         activeCrisis: crisisEval.nextCrisis,
         turnsSinceLastCrisis: crisisEval.nextTurnsSinceLastCrisis,
+        activeWeatherEvent: weatherEval.nextWeatherEvent,
+        turnsSinceLastWeatherEvent: weatherEval.nextTurnsSinceLastWeatherEvent,
         turnHistory: nextTurnHistory
       };
     });
@@ -1702,16 +2158,21 @@ export function useCommonspolyGame() {
     const rescuer = currentState.players.find(p => p.id === rescuerId);
     if (!victim || !rescuer) return;
 
-    // Regla oficial de fianza:
-    // Con ciudadanía / clase media o alta: 1 Bienestar por ronda
-    // Sin ciudadanía / clase baja: 2 Bienestar por ronda
-    const costPerRound = (victim.hasCitizenship && victim.socialClass !== 'BAJA') ? 1 : 2;
-    const totalCost = victim.detentionRoundsLeft * costPerRound;
+    const bailInfo = getEffectiveBailCostPerRound(victim, rescuer);
+    const totalCost = victim.detentionRoundsLeft * bailInfo.effectivePerRound;
 
     if (rescuer.wellness > totalCost) {
+      const rescueRefund = rescuer.id === 'carolina' ? 1 : 0;
+      const repRes = applyReputationDelta(
+        { ...rescuer, wellness: rescuer.wellness - totalCost + rescueRefund },
+        4,
+        `Rescate solidario de ${victim.name}`,
+        currentState.round
+      );
+
       const updatedPlayers = currentState.players.map(p => {
         if (p.id === rescuer.id) {
-          return { ...p, wellness: p.wellness - totalCost };
+          return repRes.player;
         }
         if (p.id === victim.id) {
           return { ...p, isDetained: false, detentionRoundsLeft: 0 };
@@ -1722,9 +2183,13 @@ export function useCommonspolyGame() {
       playSound.unlockCommon(getTileCoords3D(18));
       triggerHaptic.rescue();
       recordPlayerMetric(rescuer.id, { cooperativeActions: 1, wellnessInvested: totalCost });
+      const repNote =
+        bailInfo.reputationDelta !== 0
+          ? ` (tarifa ajustada por reputación: ${bailInfo.reputationDelta > 0 ? `+${bailInfo.reputationDelta}` : bailInfo.reputationDelta}/ronda)`
+          : '';
       addLog(
         rescuer.name,
-        `¡Solidaridad Comunitaria! ${rescuer.name} pagó ${totalCost} pts de Bienestar de la caja común y rescató a ${victim.name} del Centro de Detención.`,
+        `¡Solidaridad Comunitaria! ${rescuer.name} pagó ${totalCost} Bienestar${repNote} y rescató a ${victim.name} del Centro de Detención (+4 Reputación Vecinal → ${formatSignedScore(repRes.nextScore)})${rescueRefund > 0 ? ' · +1 Bienestar (Red de Cuidados)' : ''}.`,
         'SUCCESS',
         {
           category: 'COOPERATIVE',
@@ -1752,7 +2217,13 @@ export function useCommonspolyGame() {
     const updatedTiles = currentState.tiles.map(tile => {
       if (tileIdsToPrivatize.includes(tile.id) && tile.category !== 'INALIENABLE_COMMON') {
         affectedNames.push(tile.name);
-        return { ...tile, state: 'PRIVATE' as const };
+        return {
+          ...tile,
+          state: 'PRIVATE' as const,
+          transformedById: 'tragedy',
+          transformedByName: 'Tragedia de los Comunes',
+          transformedAtRound: currentState.round
+        };
       }
       return tile;
     });
@@ -1797,7 +2268,8 @@ export function useCommonspolyGame() {
         currentState.weatherMode,
         currentState.weatherIntensity ?? 0.85,
         currentState.round,
-        currentState.activePlayerIndex
+        currentState.activePlayerIndex,
+        currentState.activeWeatherEvent
       );
 
       const isFavorable = weather.type === 'RAIN' || weather.type === 'SUNNY' || weather.type === 'TEMPERATE';
@@ -1850,14 +2322,19 @@ export function useCommonspolyGame() {
 
   const triggerNeighborhoodDecision = useCallback(() => {
     const currentState = stateRef.current;
-    if (currentState.neighborhoodDecision) return;
+    if (currentState.neighborhoodDecision) {
+      setState(prev => ({ ...prev, activeModal: 'NEIGHBORHOOD_DECISION' }));
+      return;
+    }
 
     const decision: NeighborhoodDecision = {
       id: `nd_${Date.now()}`,
       title: 'Referéndum de Asignación de Espacios Vecinales',
-      description: 'El vecindario convoca una votación in-situ para decidir el destino de los solares y locales comunes. Desplázate a las casillas de Urna habilitadas (Cooperativa [4], Red P2P [14], Centro Social [24], Tienda Ecológica [31]) para emitir tu voto.',
+      description: 'El vecindario convoca una votación in-situ para decidir el destino de los solares y locales comunes. Desplázate a las casillas de Urna habilitadas (Cooperativa [4], Red P2P [14], Centro Social [24], Tienda Ecológica [31]) para emitir tu voto. La confianza vecinal determina el peso de cada voto.',
       targetTileIds: [4, 14, 24, 31],
       votesCast: [],
+      trustAccumulated: 0,
+      requiredTrust: DEFAULT_REFERENDUM_REQUIRED_TRUST,
       rewardSummary: '+2 Legitimidad, +2 Bienestar y conversión automática de 1 bien a Común.'
     };
 
@@ -1867,7 +2344,11 @@ export function useCommonspolyGame() {
       activeModal: 'NEIGHBORHOOD_DECISION'
     }));
 
-    addLog('Decisión Barrial', `¡Referéndum convocado! Desplázate a las urnas en el tablero para votar.`, 'CARD');
+    addLog(
+      'Decisión Barrial',
+      '¡Referéndum convocado! Desplázate a las urnas en el tablero para votar según tu Reputación Vecinal.',
+      'CARD'
+    );
   }, []);
 
   const castNeighborhoodVote = useCallback(() => {
@@ -1887,48 +2368,76 @@ export function useCommonspolyGame() {
 
     if (decision.votesCast.includes(player.id)) return;
 
+    const repProfile = getReputationProfile(player);
+    const requiredTrust = decision.requiredTrust ?? DEFAULT_REFERENDUM_REQUIRED_TRUST;
+    const prevTrust = decision.trustAccumulated ?? 0;
+    const nextTrustAccumulated = Number((prevTrust + repProfile.voteWeight).toFixed(2));
     const nextVotesCast = [...decision.votesCast, player.id];
-    const isQuorumReached = nextVotesCast.length >= Math.max(1, Math.min(2, currentState.players.length));
+    const isQuorumReached = nextTrustAccumulated >= requiredTrust;
 
-    const updatedPlayer: Character = {
-      ...player,
-      wellness: Math.min(10, player.wellness + 2),
-      legitimacy: player.legitimacy + 2
-    };
+    const repRes = applyReputationDelta(
+      {
+        ...player,
+        wellness: Math.min(10, player.wellness + 2),
+        legitimacy: player.legitimacy + (repProfile.voteWeight >= 1.5 ? 3 : 2)
+      },
+      2,
+      'Participación en referéndum barrial',
+      currentState.round
+    );
 
-    let updatedTiles = [...currentState.tiles];
+    let updatedTiles = currentState.tiles.map(t => ({ ...t }));
     if (isQuorumReached) {
       const targetResource = updatedTiles.find(t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state !== 'COMMON');
       if (targetResource) {
         targetResource.state = 'COMMON';
+        targetResource.transformedById = 'neighborhood_referendum';
+        targetResource.transformedByName = 'Referéndum Vecinal';
+        targetResource.transformedAtRound = currentState.round;
       }
     }
 
-    const nextDecision = isQuorumReached ? null : { ...decision, votesCast: nextVotesCast };
+    const nextDecision = isQuorumReached
+      ? null
+      : {
+          ...decision,
+          votesCast: nextVotesCast,
+          trustAccumulated: nextTrustAccumulated,
+          requiredTrust
+        };
     const nextModal = isQuorumReached ? null : 'NEIGHBORHOOD_DECISION';
 
     setState(prev => ({
       ...prev,
-      players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? updatedPlayer : p),
+      players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? repRes.player : p),
       tiles: updatedTiles,
       neighborhoodDecision: nextDecision,
       activeModal: nextModal
     }));
 
-    addLog('Decisión Barrial', `${player.name} emitió su voto in-situ con éxito (+2 Bienestar, +2 Legitimidad).`, 'SUCCESS', {
-      actorColor: player.color
-    });
+    const legitimacyEarned = repProfile.voteWeight >= 1.5 ? 3 : 2;
+    addLog(
+      'Decisión Barrial',
+      `${player.name} (${repProfile.label} · confianza ${repProfile.trustPercent}%, peso ${repProfile.voteWeight}x) votó in-situ (+2 Bienestar, +${legitimacyEarned} Legitimidad, +2 Rep. Vecinal · quórum ${nextTrustAccumulated.toFixed(2)}/${requiredTrust.toFixed(1)}).`,
+      'SUCCESS',
+      {
+        category: 'COOPERATIVE',
+        cooperativeAction: 'COLLECTIVE_VOTE',
+        actorColor: player.color
+      }
+    );
 
     if (isQuorumReached) {
-      addLog('Decisión Barrial', `¡Quorum alcanzado! El referéndum barrial triunfó y consolidó un nuevo Bien Común en el territorio.`, 'SUCCESS');
+      addLog('Decisión Barrial', `¡Quórum de confianza alcanzado (${nextTrustAccumulated.toFixed(2)}/${requiredTrust.toFixed(1)})! El referéndum barrial triunfó y consolidó un nuevo Bien Común en el territorio.`, 'SUCCESS');
     }
   }, []);
 
-  // Burocracia: Convertir 1 bien privado en público pagando 6 bienestar
+  // Burocracia: Convertir 1 bien privado en público pagando 6 bienestar (± modificador por Reputación Vecinal)
   const executeBureaucracy = useCallback((tileId: number) => {
     const currentState = stateRef.current;
     const player = currentState.players[currentState.activePlayerIndex];
-    if (!player || player.wellness <= 6) {
+    const costInfo = getEffectiveBureaucracyCost(player);
+    if (!player || player.wellness <= costInfo.effectiveCost) {
       setState(prev => ({ ...prev, activeModal: null }));
       advanceToNextTurn();
       return;
@@ -1936,26 +2445,44 @@ export function useCommonspolyGame() {
 
     const tile = currentState.tiles.find(t => t.id === tileId);
     if (tile && tile.state === 'PRIVATE') {
-      player.wellness -= 6;
+      player.wellness -= costInfo.effectiveCost;
+      const repRes = applyReputationDelta(
+        player,
+        2,
+        `Gestión pública de "${tile.name}" en Burocracia`,
+        currentState.round
+      );
       const updatedTiles = currentState.tiles.map(t =>
-        t.id === tile.id ? { ...t, state: 'PUBLIC' as const } : t
+        t.id === tile.id
+          ? {
+              ...t,
+              state: 'PUBLIC' as const,
+              transformedById: repRes.player.id,
+              transformedByName: repRes.player.name,
+              transformedAtRound: currentState.round
+            }
+          : t
       );
       setState(prev => ({
         ...prev,
         tiles: updatedTiles,
-        players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? { ...player } : p),
+        players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? repRes.player : p),
         activeModal: null
       }));
       playSound.unlockPublic(getTileCoords3D(tile.id));
-      recordPlayerMetric(player.id, { publicsUnlocked: 1, cooperativeActions: 1, wellnessInvested: 6 }, updatedTiles);
+      recordPlayerMetric(repRes.player.id, { publicsUnlocked: 1, cooperativeActions: 1, wellnessInvested: costInfo.effectiveCost }, updatedTiles);
+      const repCostNote =
+        costInfo.reputationDelta !== 0
+          ? ` (ajuste reputación ${costInfo.reputationDelta > 0 ? `+${costInfo.reputationDelta}` : costInfo.reputationDelta})`
+          : '';
       addLog(
-        player.name,
-        `Gestión Pública: ${player.name} utilizó la Burocracia para transformar "${tile.name}" en bien público por 6 pts de Bienestar.`,
+        repRes.player.name,
+        `Gestión Pública: ${repRes.player.name} transformó "${tile.name}" en bien público por ${costInfo.effectiveCost} Bienestar${repCostNote} (+2 Reputación Vecinal → ${formatSignedScore(repRes.nextScore)}).`,
         'SUCCESS',
         {
           category: 'COOPERATIVE',
           cooperativeAction: 'BUROCRACIA',
-          actorColor: player.color,
+          actorColor: repRes.player.color,
           target: tile.name,
           highlight: false
         }
@@ -1980,12 +2507,19 @@ export function useCommonspolyGame() {
     donor.wellness -= amount;
     receiver.wellness += amount;
     donor.legitimacy += amount * 2;
+    const repGain = 1 + amount;
+    const repRes = applyReputationDelta(
+      donor,
+      repGain,
+      `Donación solidaria a ${receiver.name} en Crowdfunding`,
+      currentState.round
+    );
     playSound.unlockCommon();
 
     setState(prev => ({
       ...prev,
       players: prev.players.map(p => {
-        if (p.id === donor.id) return { ...donor };
+        if (p.id === donor.id) return repRes.player;
         if (p.id === receiver.id) return { ...receiver };
         return p;
       }),
@@ -1997,7 +2531,7 @@ export function useCommonspolyGame() {
 
     addLog(
       donor.name,
-      `Apoyo Mutuo: ${donor.name} donó ${amount} pts de Bienestar a ${receiver.name} mediante Crowdfunding barrial (+${amount * 2} Legitimidad).`,
+      `Apoyo Mutuo: ${donor.name} donó ${amount} Bienestar a ${receiver.name} en Crowdfunding (+${amount * 2} Legitimidad, +${repGain} Reputación Vecinal → ${formatSignedScore(repRes.nextScore)}).`,
       'SUCCESS',
       {
         category: 'COOPERATIVE',
@@ -2147,8 +2681,69 @@ export function useCommonspolyGame() {
   }, []);
 
   const closeModal = useCallback(() => {
-    const activeModal = stateRef.current.activeModal;
+    const currentState = stateRef.current;
+    const activeModal = currentState.activeModal;
+    const activePlayer = currentState.players[currentState.activePlayerIndex];
     playSound.modalClose();
+
+    if (activeModal === 'BUREAUCRACY' && activePlayer) {
+      const burCost = getEffectiveBureaucracyCost(activePlayer).effectiveCost;
+      const hasPrivateTiles = currentState.tiles.some(
+        t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state === 'PRIVATE'
+      );
+      if (hasPrivateTiles && activePlayer.wellness > burCost) {
+        const repRes = applyReputationDelta(
+          activePlayer,
+          -1,
+          'Rehusó trámite público en Burocracia disponiendo de recursos',
+          currentState.round
+        );
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map((p, idx) =>
+            idx === prev.activePlayerIndex ? repRes.player : p
+          ),
+          activeModal: null
+        }));
+        addLog(
+          activePlayer.name,
+          `Rehusó iniciar trámite público en Burocracia (-1 Reputación Vecinal → ${formatSignedScore(repRes.nextScore)}).`,
+          'INFO'
+        );
+      } else {
+        setState(prev => ({ ...prev, activeModal: null }));
+      }
+      advanceToNextTurn();
+      return;
+    }
+
+    if (activeModal === 'CROWDFUNDING' && activePlayer) {
+      if (activePlayer.wellness > 2) {
+        const repRes = applyReputationDelta(
+          activePlayer,
+          -1,
+          'Evitó aportar a la caja solidaria en Crowdfunding',
+          currentState.round
+        );
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map((p, idx) =>
+            idx === prev.activePlayerIndex ? repRes.player : p
+          ),
+          activeModal: null
+        }));
+        addLog(
+          activePlayer.name,
+          `Conservó su Bienestar sin donar en Crowdfunding (-1 Reputación Vecinal → ${formatSignedScore(repRes.nextScore)}).`,
+          'INFO'
+        );
+      } else {
+        setState(prev => ({ ...prev, activeModal: null }));
+      }
+      advanceToNextTurn();
+      return;
+    }
+
     setState(prev => ({ ...prev, activeModal: null }));
 
     if (activeModal === 'DETENTION_RESCUE' && pendingRoundAdvanceRef.current) {
@@ -2156,11 +2751,6 @@ export function useCommonspolyGame() {
       setTimeout(() => {
         startNextRound();
       }, 300);
-      return;
-    }
-
-    if (activeModal === 'BUREAUCRACY' || activeModal === 'CROWDFUNDING') {
-      advanceToNextTurn();
     }
   }, []);
 
@@ -2204,6 +2794,8 @@ export function useCommonspolyGame() {
     if (!loaded) return false;
     playSound.uiClick();
     seenAchievementLogsRef.current = new Set(loaded.state.logs.map(l => l.id));
+    lastCrisisIdRef.current = loaded.state.activeCrisis?.id ?? null;
+    lastWeatherKindRef.current = loaded.state.activeWeatherEvent?.kind ?? null;
     prevCompletedSectorsRef.current = detectCompletedGoodCategories(loaded.state);
     prevVictoryTriggeredRef.current =
       loaded.state.phase === 'GAME_OVER' && loaded.state.gameResult === 'VICTORY';
@@ -2283,6 +2875,8 @@ export function useCommonspolyGame() {
     playSound.uiClick();
     achievementQueueRef.current = [];
     pendingRoundAdvanceRef.current = false;
+    lastCrisisIdRef.current = null;
+    lastWeatherKindRef.current = null;
     clearSavedGameFromStorage();
     setSavedGameMeta(null);
     setState(prev => ({
@@ -2297,6 +2891,10 @@ export function useCommonspolyGame() {
       weatherMode: 'AUTO',
       weatherIntensity: 0.85,
       timeOfDayMode: 'AUTO',
+      activeCrisis: null,
+      turnsSinceLastCrisis: 0,
+      activeWeatherEvent: null,
+      turnsSinceLastWeatherEvent: 0,
       currentGlobalCard: null,
       currentSituationCard: null,
       gameResult: undefined,

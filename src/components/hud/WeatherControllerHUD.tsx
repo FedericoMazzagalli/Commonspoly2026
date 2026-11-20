@@ -30,6 +30,7 @@ import {
 import { GameEngineState, TimeOfDayMode, WeatherMode } from '../../types/game';
 import { resolveWeather } from '../../utils/weather';
 import { resolveCardAtmosphere, resolveGameTimeOfDay } from '../../utils/atmosphere';
+import { formatWeatherImpactSummary } from '../../utils/weatherEvents';
 import { playSound } from '../../utils/audio';
 
 interface WeatherControllerHUDProps {
@@ -50,7 +51,14 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
   onToggleMeteorologicalInsight
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const condition = resolveWeather(state.tiles, state.weatherMode, state.weatherIntensity ?? 0.85);
+  const condition = resolveWeather(
+    state.tiles,
+    state.weatherMode,
+    state.weatherIntensity ?? 0.85,
+    state.round,
+    state.activePlayerIndex,
+    state.activeWeatherEvent
+  );
   const timeInfo = resolveGameTimeOfDay(
     state.round,
     state.activePlayerIndex,
@@ -241,6 +249,27 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
             <Info className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
             <span>{condition.description}</span>
           </p>
+
+          {state.activeWeatherEvent && (
+            <div
+              className={`p-2 rounded-xl border text-[10px] space-y-1 ${
+                state.activeWeatherEvent.severity === 'BENEFICIAL'
+                  ? 'bg-emerald-950/60 border-emerald-600/50 text-emerald-100'
+                  : 'bg-orange-950/60 border-orange-600/50 text-orange-100'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 font-bold">
+                <span>{state.activeWeatherEvent.title}</span>
+                <span className="tabular-nums">
+                  {state.activeWeatherEvent.turnsRemaining}t ·{' '}
+                  {formatWeatherImpactSummary(state.activeWeatherEvent)}
+                </span>
+              </div>
+              <p className="opacity-90 leading-snug">
+                Casillas afectadas: {state.activeWeatherEvent.affectedTileNames.join(', ')}.
+              </p>
+            </div>
+          )}
 
           {/* Desglose de bienes ambientales */}
           <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-[10px] tabular-nums">

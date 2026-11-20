@@ -1,0 +1,165 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        isValidId(userId) &&
+        request.auth.uid == userId;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll([
+          'uid',
+          'displayAlias',
+          'leadCharacterId',
+          'efficiencyPct',
+          'boardRecoveryPct',
+          'teamSynergyPct',
+          'tierLabel',
+          'result',
+          'round',
+          'commonCount',
+          'totalResourceTiles',
+          'totalCooperativeActions',
+          'playersCount',
+          'teamSummary',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'displayAlias',
+          'leadCharacterId',
+          'efficiencyPct',
+          'boardRecoveryPct',
+          'teamSynergyPct',
+          'tierLabel',
+          'result',
+          'round',
+          'commonCount',
+          'totalResourceTiles',
+          'totalCooperativeActions',
+          'playersCount',
+          'teamSummary',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isValidId(data.uid) &&
+        data.uid == request.auth.uid &&
+        data.displayAlias is string &&
+        data.displayAlias.size() >= 1 &&
+        data.displayAlias.size() <= 48 &&
+        data.leadCharacterId is string &&
+        data.leadCharacterId.size() >= 1 &&
+        data.leadCharacterId.size() <= 32 &&
+        data.leadCharacterId.matches('^[a-z0-9_\\-]+$') &&
+        data.efficiencyPct is int &&
+        data.efficiencyPct >= 0 &&
+        data.efficiencyPct <= 100 &&
+        data.boardRecoveryPct is int &&
+        data.boardRecoveryPct >= 0 &&
+        data.boardRecoveryPct <= 100 &&
+        data.teamSynergyPct is int &&
+        data.teamSynergyPct >= 0 &&
+        data.teamSynergyPct <= 100 &&
+        data.tierLabel is string &&
+        data.tierLabel.size() >= 1 &&
+        data.tierLabel.size() <= 48 &&
+        data.result in ['VICTORY', 'DRAW', 'DEFEAT'] &&
+        data.round is int &&
+        data.round >= 1 &&
+        data.round <= 20 &&
+        data.commonCount is int &&
+        data.commonCount >= 0 &&
+        data.commonCount <= 40 &&
+        data.totalResourceTiles is int &&
+        data.totalResourceTiles >= 1 &&
+        data.totalResourceTiles <= 40 &&
+        data.totalCooperativeActions is int &&
+        data.totalCooperativeActions >= 0 &&
+        data.totalCooperativeActions <= 9999 &&
+        data.playersCount is int &&
+        data.playersCount >= 2 &&
+        data.playersCount <= 8 &&
+        data.teamSummary is string &&
+        data.teamSummary.size() >= 1 &&
+        data.teamSummary.size() <= 120 &&
+        data.isPublic is bool &&
+        data.isPublic == true &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isBetterPersonalBest(nextData, prevData) {
+      return nextData.efficiencyPct > prevData.efficiencyPct ||
+        (nextData.efficiencyPct == prevData.efficiencyPct && nextData.round < prevData.round) ||
+        (nextData.efficiencyPct == prevData.efficiencyPct &&
+          nextData.round == prevData.round &&
+          nextData.totalCooperativeActions > prevData.totalCooperativeActions);
+    }
+
+    match /leaderboard/{userId} {
+      allow get: if isValidId(userId) && existing().isPublic == true;
+
+      allow list: if resource.data.efficiencyPct >= 0 &&
+        request.query.limit != null &&
+        request.query.limit <= 50;
+
+      allow create: if isVerifiedOwner(userId) &&
+        isValidLeaderboardEntry(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedOwner(userId) &&
+        isValidLeaderboardEntry(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayAlias',
+          'leadCharacterId',
+          'efficiencyPct',
+          'boardRecoveryPct',
+          'teamSynergyPct',
+          'tierLabel',
+          'result',
+          'round',
+          'commonCount',
+          'totalResourceTiles',
+          'totalCooperativeActions',
+          'playersCount',
+          'teamSummary',
+          'updatedAt'
+        ]) &&
+        isBetterPersonalBest(incoming(), existing());
+
+      allow delete: if false;
+    }
+  }
+}

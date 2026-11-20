@@ -9,10 +9,13 @@
 import {
   Character,
   CrisisSeverity,
+  DynamicWeatherEvent,
   GoodType,
   Tile,
   UnexpectedCrisisEvent
 } from '../types/game';
+import { doesWeatherEventAffectTile } from './weatherEvents';
+import { getReputationProfile } from './reputation';
 
 interface CrisisTemplate {
   id: string;
@@ -124,23 +127,58 @@ export function getSkillForGoodType(player: Character | undefined, goodType?: Go
 export function getEffectiveUnlockCost(
   tile: Tile | undefined,
   player: Character | undefined,
-  crisis: UnexpectedCrisisEvent | null | undefined
+  crisis: UnexpectedCrisisEvent | null | undefined,
+  weatherEvent?: DynamicWeatherEvent | null
 ): {
   baseCost: number;
   crisisDelta: number;
+  weatherDelta: number;
+  reputationDelta: number;
+  characterBonusDelta: number;
   effectiveCost: number;
   skillPoints: number;
 } {
   const skillPoints = getSkillForGoodType(player, tile?.goodType);
   const baseCost = Math.max(0, 10 - skillPoints);
   const affected = doesCrisisAffectTile(tile, crisis);
-  const rawDelta = affected && crisis ? crisis.unlockCostDelta : 0;
-  const effectiveCost = Math.max(0, baseCost + rawDelta);
+  let rawDelta = affected && crisis ? crisis.unlockCostDelta : 0;
+
+  const weatherAffected = doesWeatherEventAffectTile(tile, weatherEvent);
+  const weatherDelta = weatherAffected && weatherEvent ? weatherEvent.unlockCostDelta : 0;
+  const reputationDelta = player ? getReputationProfile(player).transactionCostDelta : 0;
+
+  // Bonificador de Temple: Observación Sistemática (-1 al sobrecoste durante Crisis activas)
+  let characterBonusDelta = 0;
+  if (player?.id === 'temple' && rawDelta > 0) {
+    rawDelta = Math.max(0, rawDelta - 1);
+    characterBonusDelta -= 1;
+  }
+
+  // Bonificadores de especialidad de personaje por tipo de bien
+  if (player && tile?.goodType) {
+    if (
+      (player.id === 'carolina' && tile.goodType === 'HEALTH') ||
+      (player.id === 'chelsea' && tile.goodType === 'KNOWLEDGE') ||
+      ((player.id === 'moha' || player.id === 'prafulla') && tile.goodType === 'URBAN') ||
+      ((player.id === 'whina' || player.id === 'yayo') && tile.goodType === 'ENVIRONMENT')
+    ) {
+      characterBonusDelta -= 1;
+    }
+  }
+
+  const nonTempleBonus = player?.id === 'temple' ? 0 : characterBonusDelta;
+  const actualCost = Math.max(
+    0,
+    baseCost + rawDelta + weatherDelta + reputationDelta + nonTempleBonus
+  );
 
   return {
     baseCost,
-    crisisDelta: effectiveCost - baseCost,
-    effectiveCost,
+    crisisDelta: affected && crisis ? rawDelta : 0,
+    weatherDelta,
+    reputationDelta,
+    characterBonusDelta,
+    effectiveCost: actualCost,
     skillPoints
   };
 }
@@ -149,18 +187,36 @@ export function getEffectiveResourceReward(
   tile: Tile | undefined,
   baseWellness: number,
   baseLegitimacy: number,
-  crisis: UnexpectedCrisisEvent | null | undefined
+  crisis: UnexpectedCrisisEvent | null | undefined,
+  player?: Character,
+  weatherEvent?: DynamicWeatherEvent | null
 ): {
   wellness: number;
   legitimacy: number;
   crisisDelta: number;
+  weatherDelta: number;
 } {
   const affected = doesCrisisAffectTile(tile, crisis);
   const delta = affected && crisis ? crisis.commonYieldDelta : 0;
+  const weatherAffected = doesWeatherEventAffectTile(tile, weatherEvent);
+  const weatherDelta = weatherAffected && weatherEvent ? weatherEvent.resourceYieldDelta : 0;
+  let extraWellness = 0;
+  let extraLegitimacy = 0;
+
+  if (player && tile) {
+    if (player.id === 'prafulla' && tile.state === 'PUBLIC') {
+      extraWellness += 1;
+    }
+    if (player.id === 'chelsea' && tile.goodType === 'KNOWLEDGE') {
+      extraLegitimacy += 1;
+    }
+  }
+
   return {
-    wellness: Math.max(1, baseWellness + delta),
-    legitimacy: Math.max(1, baseLegitimacy + (delta > 0 ? 1 : 0)),
-    crisisDelta: delta
+    wellness: Math.max(1, baseWellness + delta + weatherDelta + extraWellness),
+    legitimacy: Math.max(1, baseLegitimacy + (delta > 0 ? 1 : 0) + (weatherDelta > 0 ? 1 : 0) + extraLegitimacy),
+    crisisDelta: delta,
+    weatherDelta
   };
 }
 

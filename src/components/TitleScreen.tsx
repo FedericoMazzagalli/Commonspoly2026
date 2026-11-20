@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { Play, Sparkles, BookOpen, Users, Volume2, VolumeX, Trophy, RotateCcw, Trash2 } from 'lucide-react';
+import { Play, Sparkles, BookOpen, Users, Volume2, VolumeX, Trophy, RotateCcw, Trash2, Globe } from 'lucide-react';
 import { playSound } from '../utils/audio';
 import {
   SavedGameMetadata,
@@ -18,6 +18,10 @@ interface TitleScreenProps {
   onQuickStart: () => void;
   onOpenRules: () => void;
   onOpenAchievements?: () => void;
+  onOpenLeaderboard?: () => void;
+  leaderboardTopPct?: number | null;
+  leaderboardCount?: number;
+  localBestPct?: number | null;
   achievementsUnlockedCount?: number;
   achievementsTotalCount?: number;
   isModalOpen?: boolean;
@@ -33,6 +37,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onQuickStart,
   onOpenRules,
   onOpenAchievements,
+  onOpenLeaderboard,
+  leaderboardTopPct = null,
+  leaderboardCount = 0,
+  localBestPct = null,
   achievementsUnlockedCount = 0,
   achievementsTotalCount = 10,
   isModalOpen = false,
@@ -150,6 +158,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               <span className="text-emerald-300 font-semibold">
                 {savedGameMeta.commonCount}/{savedGameMeta.totalResourceTiles} Comunes
               </span>
+              {savedGameMeta.lastEndedTurnBy && (
+                <>
+                  <span className="text-slate-600" aria-hidden="true">·</span>
+                  <span className="text-slate-400">Últ. turno: {savedGameMeta.lastEndedTurnBy}</span>
+                </>
+              )}
               {savedTimeText && (
                 <>
                   <span className="text-slate-600" aria-hidden="true">·</span>
@@ -197,6 +211,29 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <span>Consultar Reglas Oficiales y Glosario</span>
           </button>
 
+          {onOpenLeaderboard && (
+            <button
+              type="button"
+              onClick={() => {
+                playSound.modalOpen();
+                onOpenLeaderboard();
+              }}
+              className="text-xs font-semibold text-teal-300 hover:text-teal-200 flex items-center gap-1.5 transition-colors tabular-nums"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>
+                Leaderboard Global
+                {leaderboardTopPct !== null
+                  ? ` (Top ${leaderboardTopPct}%${localBestPct !== null ? ` · Tú ${localBestPct}%` : ''})`
+                  : leaderboardCount > 0
+                  ? ` (${leaderboardCount})`
+                  : localBestPct !== null
+                  ? ` (Tu récord ${localBestPct}%)`
+                  : ''}
+              </span>
+            </button>
+          )}
+
           {onOpenAchievements && (
             <button
               type="button"
@@ -216,7 +253,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
       {/* Control Hint Line */}
       <div className="pb-4 text-[11px] text-slate-500 font-mono tracking-wide">
-        Espacio / Enter Iniciar · Cámara Isométrica / Cenital · 20 Rondas de Carrera contra el Tiempo
+        Espacio / Enter Iniciar · Cámara 3D · Tutorial de Onboarding con Voz (Tecla T) · 20 Rondas de Carrera contra el Tiempo
       </div>
 
     </div>

@@ -9,14 +9,21 @@
  * - AUTO: Cálculo ecológico automático según el estado de los bienes medioambientales.
  */
 
-import { Tile, WeatherType, WeatherMode, WeatherCondition } from '../types/game';
+import {
+  DynamicWeatherEvent,
+  Tile,
+  WeatherType,
+  WeatherMode,
+  WeatherCondition
+} from '../types/game';
 
 export function resolveWeather(
   tiles: Tile[],
   mode: WeatherMode = 'AUTO',
   manualIntensity = 0.85,
   round = 1,
-  activePlayerIndex = 0
+  activePlayerIndex = 0,
+  activeWeatherEvent?: DynamicWeatherEvent | null
 ): WeatherCondition {
   const envTiles = tiles.filter(t => t.goodType === 'ENVIRONMENT');
   const envCommonCount = envTiles.filter(t => t.state === 'COMMON').length;
@@ -29,6 +36,9 @@ export function resolveWeather(
 
   if (mode !== 'AUTO') {
     resolvedType = mode;
+  } else if (activeWeatherEvent) {
+    resolvedType = activeWeatherEvent.weatherType;
+    intensity = Math.max(0.84, intensity);
   } else {
     // Ciclo dinámico automático de clima según turno y ronda combinados con equilibrio ecológico
     const weatherCycle: WeatherType[] = ['SUNNY', 'RAIN', 'SNOW', 'DROUGHT', 'TEMPERATE'];
@@ -54,7 +64,10 @@ export function resolveWeather(
   let label = 'Día Soleado';
   let description = 'Cielo radiante y luz solar cálida sobre el territorio comunitario.';
 
-  if (resolvedType === 'RAIN') {
+  if (mode === 'AUTO' && activeWeatherEvent) {
+    label = activeWeatherEvent.title;
+    description = activeWeatherEvent.description;
+  } else if (resolvedType === 'RAIN') {
     label = 'Lluvia Regenerativa';
     description = `Precipitaciones vivificantes fertilizan los bienes comunes (${envCommonCount}/${totalEnvTiles} comunes).`;
   } else if (resolvedType === 'SNOW') {
@@ -100,7 +113,8 @@ export function predictWeatherForecast(
   currentRound = 1,
   currentPlayerIndex = 0,
   playerCount = 4,
-  steps = 3
+  steps = 3,
+  activeWeatherEvent?: DynamicWeatherEvent | null
 ): WeatherForecastStep[] {
   const safePlayers = Math.max(1, playerCount);
   const forecast: WeatherForecastStep[] = [];
@@ -109,12 +123,17 @@ export function predictWeatherForecast(
     const totalTurns = currentPlayerIndex + offset;
     const projectedPlayerIdx = totalTurns % safePlayers;
     const projectedRound = Math.min(20, currentRound + Math.floor(totalTurns / safePlayers));
+    const projectedEvent =
+      activeWeatherEvent && offset <= activeWeatherEvent.turnsRemaining
+        ? activeWeatherEvent
+        : null;
     const condition = resolveWeather(
       tiles,
       mode,
       manualIntensity,
       projectedRound,
-      projectedPlayerIdx
+      projectedPlayerIdx,
+      projectedEvent
     );
     const isFavorableForSituationCards =
       condition.type === 'RAIN' || condition.type === 'SUNNY' || condition.type === 'TEMPERATE';

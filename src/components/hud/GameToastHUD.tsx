@@ -18,10 +18,25 @@ import {
   Sparkles,
   Layers,
   Award,
+  CloudRain,
+  Snowflake,
+  Sun,
+  Wind,
+  ShieldCheck,
+  ShieldAlert,
   X
 } from 'lucide-react';
-import { GameEngineState, GameLogEntry, GoodType } from '../../types/game';
+import {
+  GameEngineState,
+  GameLogEntry,
+  GoodType,
+  ReputationTierId,
+  WeatherType
+} from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { resolveWeather } from '../../utils/weather';
+import { formatWeatherImpactSummary } from '../../utils/weatherEvents';
+import { formatSignedScore, getReputationProfile } from '../../utils/reputation';
 
 interface GameToastHUDProps {
   state: GameEngineState;
@@ -29,7 +44,18 @@ interface GameToastHUDProps {
   topOffsetClass?: string;
 }
 
-type ToastTone = 'COMMON' | 'PUBLIC' | 'GLOBAL' | 'AGORA' | 'COOP' | 'HAZARD';
+type ToastTone =
+  | 'COMMON'
+  | 'PUBLIC'
+  | 'GLOBAL'
+  | 'AGORA'
+  | 'COOP'
+  | 'HAZARD'
+  | 'WEATHER_HAZARD'
+  | 'WEATHER_BENEFICIAL'
+  | 'WEATHER_SHIFT'
+  | 'REPUTATION_UP'
+  | 'REPUTATION_DOWN';
 
 interface ToastItem {
   id: string;
@@ -39,6 +65,7 @@ interface ToastItem {
   message: string;
   round: number;
   actorColor?: string;
+  weatherType?: WeatherType;
 }
 
 const GOOD_CATEGORY_LABELS: Record<GoodType, string> = {
@@ -63,6 +90,9 @@ export const GameToastHUD: React.FC<GameToastHUDProps> = ({
   const isInitializedRef = useRef(false);
   const prevCompletedCategoriesRef = useRef<Set<GoodType>>(new Set());
   const prevAgoraReadyRef = useRef<boolean>(false);
+  const prevWeatherEventIdRef = useRef<string | null>(state.activeWeatherEvent?.id ?? null);
+  const prevResolvedWeatherTypeRef = useRef<WeatherType | null>(null);
+  const prevReputationTiersRef = useRef<Map<string, ReputationTierId>>(new Map());
 
   const pushToast = useCallback((toast: Omit<ToastItem, 'id'>, playAlertSfx = true) => {
     const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -248,10 +278,195 @@ export const GameToastHUD: React.FC<GameToastHUDProps> = ({
     prevAgoraReadyRef.current = isReady;
   }, [state.players, state.phase, state.round, pushToast]);
 
+  // 4. Alertas visuales cuando cambia el clima dinámico o se activa un evento meteorológico
+  useEffect(() => {
+    if (state.phase === 'TITLE' || state.phase === 'SETUP') {
+      prevWeatherEventIdRef.current = state.activeWeatherEvent?.id ?? null;
+      prevResolvedWeatherTypeRef.current = null;
+      return;
+    }
+
+    const resolved = resolveWeather(
+      state.tiles,
+      state.weatherMode,
+      state.weatherIntensity ?? 0.85,
+      state.round,
+      state.activePlayerIndex,
+      state.activeWeatherEvent
+    );
+
+    const activeEvent = state.activeWeatherEvent ?? null;
+    const currentEventId = activeEvent?.id ?? null;
+    let emittedWeatherEventToast = false;
+
+    if (currentEventId && currentEventId !== prevWeatherEventIdRef.current && activeEvent) {
+      const tone: ToastTone =
+        activeEvent.severity === 'BENEFICIAL' ? 'WEATHER_BENEFICIAL' : 'WEATHER_HAZARD';
+      const impact = formatWeatherImpactSummary(activeEvent);
+      const affectedPreview = activeEvent.affectedTileNames.slice(0, 3).join(', ');
+      const extraCount =
+        activeEvent.affectedTileNames.length > 3
+          ? ` (+${activeEvent.affectedTileNames.length - 3})`
+          : '';
+
+      pushToast(
+        {
+          tone,
+          categoryLabel: 'Alerta Meteorológica',
+          title: `${activeEvent.title} · ${activeEvent.totalTurns} turnos`,
+          message: `${impact} en ${affectedPreview}${extraCount}.`,
+          round: state.round,
+          weatherType: activeEvent.weatherType
+        },
+        false
+      );
+      emittedWeatherEventToast = true;
+    }
+
+    if (
+      !emittedWeatherEventToast &&
+      prevResolvedWeatherTypeRef.current !== null &&
+      prevResolvedWeatherTypeRef.current !== resolved.type
+    ) {
+      pushToast(
+        {
+          tone: 'WEATHER_SHIFT',
+          categoryLabel: 'Cambio de Clima',
+          title: `Clima actual: ${resolved.label}`,
+          message: resolved.description,
+          round: state.round,
+          weatherType: resolved.type
+        },
+        true
+      );
+    }
+
+    prevWeatherEventIdRef.current = currentEventId;
+    prevResolvedWeatherTypeRef.current = resolved.type;
+  }, [
+    state.activeWeatherEvent,
+    state.tiles,
+    state.weatherMode,
+    state.weatherIntensity,
+    state.round,
+    state.activePlayerIndex,
+    state.phase,
+    pushToast
+  ]);
+
+  // 5. Detectar cambios de nivel en la Reputación Vecinal de cualquier jugadora
+  useEffect(() => {
+    const tierRank: Record<ReputationTierId, number> = {
+      DISTRUSTED: 0,
+      SUSPECT: 1,
+      NEUTRAL: 2,
+      TRUSTED: 3,
+      EXEMPLARY: 4
+    };
+
+    if (state.phase === 'TITLE' || state.phase === 'SETUP') {
+      const resetMap = new Map<string, ReputationTierId>();
+      state.players.forEach(p => {
+        resetMap.set(p.id, getReputationProfile(p).tierId);
+      });
+      prevReputationTiersRef.current = resetMap;
+      return;
+    }
+
+    if (prevReputationTiersRef.current.size === 0) {
+      state.players.forEach(p => {
+        prevReputationTiersRef.current.set(p.id, getReputationProfile(p).tierId);
+      });
+      return;
+    }
+
+    const nextMap = new Map<string, ReputationTierId>();
+    state.players.forEach(player => {
+      const profile = getReputationProfile(player);
+      const prevTier = prevReputationTiersRef.current.get(player.id);
+      nextMap.set(player.id, profile.tierId);
+
+      if (prevTier && prevTier !== profile.tierId) {
+        const isUpgrade = tierRank[profile.tierId] > tierRank[prevTier];
+        const costText =
+          profile.transactionCostDelta === 0
+            ? 'precios estándar'
+            : profile.transactionCostDelta < 0
+            ? `${profile.transactionCostDelta} coste en transacciones`
+            : `+${profile.transactionCostDelta} recargo en transacciones`;
+
+        pushToast(
+          {
+            tone: isUpgrade ? 'REPUTATION_UP' : 'REPUTATION_DOWN',
+            categoryLabel: 'Reputación Vecinal',
+            title: `${player.name}: ${profile.label} (${formatSignedScore(profile.score)})`,
+            message: `Ahora aplica ${costText}, peso de voto ${profile.voteWeight}x y ${profile.trustPercent}% de confianza barrial.`,
+            round: state.round,
+            actorColor: player.color
+          },
+          true
+        );
+      }
+    });
+
+    prevReputationTiersRef.current = nextMap;
+  }, [state.players, state.phase, state.round, pushToast]);
+
   if (toasts.length === 0) return null;
 
-  const getToneStyle = (tone: ToastTone) => {
+  const getWeatherIcon = (wType?: WeatherType) => {
+    switch (wType) {
+      case 'RAIN':
+        return <CloudRain className="w-4 h-4" />;
+      case 'SNOW':
+        return <Snowflake className="w-4 h-4" />;
+      case 'SUNNY':
+        return <Sun className="w-4 h-4" />;
+      case 'DROUGHT':
+        return <Flame className="w-4 h-4" />;
+      case 'TEMPERATE':
+      default:
+        return <Wind className="w-4 h-4" />;
+    }
+  };
+
+  const getToneStyle = (tone: ToastTone, weatherType?: WeatherType) => {
     switch (tone) {
+      case 'WEATHER_HAZARD':
+        return {
+          border: 'border-orange-500/70',
+          iconWrap: 'bg-orange-500/15 text-orange-300',
+          labelColor: 'text-orange-300',
+          icon: getWeatherIcon(weatherType)
+        };
+      case 'WEATHER_BENEFICIAL':
+        return {
+          border: 'border-emerald-400/70',
+          iconWrap: 'bg-emerald-500/15 text-emerald-300',
+          labelColor: 'text-emerald-300',
+          icon: getWeatherIcon(weatherType)
+        };
+      case 'WEATHER_SHIFT':
+        return {
+          border: 'border-cyan-500/70',
+          iconWrap: 'bg-cyan-500/15 text-cyan-300',
+          labelColor: 'text-cyan-300',
+          icon: getWeatherIcon(weatherType)
+        };
+      case 'REPUTATION_UP':
+        return {
+          border: 'border-emerald-500/70',
+          iconWrap: 'bg-emerald-500/15 text-emerald-300',
+          labelColor: 'text-emerald-300',
+          icon: <ShieldCheck className="w-4 h-4" />
+        };
+      case 'REPUTATION_DOWN':
+        return {
+          border: 'border-rose-500/70',
+          iconWrap: 'bg-rose-500/15 text-rose-300',
+          labelColor: 'text-rose-300',
+          icon: <ShieldAlert className="w-4 h-4" />
+        };
       case 'COMMON':
         return {
           border: 'border-emerald-500/60',
@@ -309,7 +524,7 @@ export const GameToastHUD: React.FC<GameToastHUDProps> = ({
     >
       <AnimatePresence initial={false}>
         {toasts.map(toast => {
-          const style = getToneStyle(toast.tone);
+          const style = getToneStyle(toast.tone, toast.weatherType);
           return (
             <motion.div
               key={toast.id}
