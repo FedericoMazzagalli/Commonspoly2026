@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { Skull, AlertTriangle, Check } from 'lucide-react';
 import { Tile } from '../../types/game';
+import { useI18n } from '../../i18n';
 
 interface TragedyVoteModalProps {
   tiles: Tile[];
@@ -14,6 +15,7 @@ interface TragedyVoteModalProps {
 }
 
 export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onConfirmPrivatization }) => {
+  const { t } = useI18n();
   // Solo los que sean comunes y no inalienables
   const commonTiles = tiles.filter(
     t => t.state === 'COMMON' && t.category !== 'INALIENABLE_COMMON'
@@ -50,10 +52,10 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
           </div>
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-red-400">
-              Casilla Especial · Golpe Neoliberal
+              {t.modals.tragedyVoteTitle}
             </div>
             <h2 className="text-2xl font-black text-white">
-              La Tragedia de los Comunes
+              {t.modals.tragedyVoteTitle}
             </h2>
           </div>
         </div>
@@ -61,13 +63,12 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
         {/* Description */}
         <div className="py-4 space-y-3">
           <p className="text-sm text-slate-300 leading-relaxed">
-            ¡Presión extrema sobre los recursos comunitarios! Debéis privatizar de forma obligatoria 
-            <strong className="text-red-400"> {needed} Bienes Comunes</strong> (los Bienes Comunes Inalienables rosas quedan a salvo).
+            {t.rules.specTragedy}
           </p>
 
           <div className="flex items-center gap-2 text-xs font-semibold text-amber-300 bg-amber-950/40 p-2.5 rounded-lg border border-amber-800/60">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>Selecciona {needed} bienes comunes para devolver a manos privadas ({selectedIds.length}/{needed}):</span>
+            <span>{t.common.common} → {t.common.private} ({selectedIds.length}/{needed})</span>
           </div>
 
           {/* List of common tiles */}
@@ -85,7 +86,7 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
                         : 'border-slate-800 bg-slate-800/50 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    <div className="font-bold">{tile.name} ({tile.goodType || 'Bien'})</div>
+                    <div className="font-bold">{tile.name} ({tile.goodType || t.common.common})</div>
                     {isSelected && <Check className="w-4 h-4 text-red-400" />}
                   </button>
                 );
@@ -93,7 +94,7 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
             </div>
           ) : (
             <div className="p-4 bg-slate-800/50 rounded-xl text-center text-xs text-slate-400">
-              No hay bienes comunes convertidos actualmente para privatizar.
+              0 {t.hud.commonPlural}
             </div>
           )}
         </div>
@@ -105,7 +106,7 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
             onClick={handleConfirm}
             className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-2 transition-all shadow-lg active:scale-95"
           >
-            <span>Confirmar Privatización Forzosa</span>
+            <span>{t.modals.confirmPrivatization}</span>
           </button>
         </div>
 

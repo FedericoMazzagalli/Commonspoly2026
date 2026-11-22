@@ -41,9 +41,15 @@ import {
   Sun,
   Wind,
   ShieldCheck,
-  Vote
+  Vote,
+  Film,
+  Menu,
+  Camera,
+  Activity,
+  Bug,
+  Accessibility
 } from 'lucide-react';
-import { GameEngineState, AmbientMode, WeatherMode, TimeOfDayMode } from '../../types/game';
+import { GameEngineState, AmbientMode, WeatherMode, TimeOfDayMode, TutorialBoardFocus } from '../../types/game';
 import { BitacoraHUD } from './BitacoraHUD';
 import { GameLogComponent } from './GameLogComponent';
 import { GlobalResourceTracker } from './GlobalResourceTracker';
@@ -62,6 +68,14 @@ import { AudioVisualizer } from './AudioVisualizer';
 import { WeatherOverlay } from './WeatherOverlay';
 import { MeteorologicalInsightHUD } from './MeteorologicalInsightHUD';
 import { CollectiveImpactHUD } from './CollectiveImpactHUD';
+import { PerformanceMonitorHUD } from './PerformanceMonitorHUD';
+import { EconomyDebugHUD } from './EconomyDebugHUD';
+import { OfflineIndicator } from './OfflineIndicator';
+import { LanguageSelector } from './LanguageSelector';
+import { useI18n } from '../../i18n';
+import type { BoardPerformanceTelemetry } from '../../utils/performanceTelemetry';
+import type { AccessibilitySettings } from '../../utils/accessibility';
+import type { SandboxMutation } from '../../store/gameEngine';
 import { playSound, audioManager } from '../../utils/audio';
 import { resolveWeather } from '../../utils/weather';
 import { hapticsManager } from '../../utils/haptics';
@@ -78,6 +92,7 @@ interface GameOverlayHUDProps {
   isRulesOpen?: boolean;
   isShortcutsOpen?: boolean;
   isAchievementsOpen?: boolean;
+  isWeatherSettingsOpen?: boolean;
   isGameHistoryOpen?: boolean;
   isEvolutionOpen?: boolean;
   isDockCollapsed?: boolean;
@@ -100,7 +115,9 @@ interface GameOverlayHUDProps {
   onToggleDock?: () => void;
   isTutorialOpen?: boolean;
   onToggleTutorial?: () => void;
+  onCloseTutorial?: () => void;
   onTutorialVisibilityChange?: (visible: boolean) => void;
+  onTutorialBoardFocusChange?: (focus: TutorialBoardFocus) => void;
   onSetCameraMode: (mode: 'ISOMETRIC' | 'TOP_DOWN' | 'FOLLOW') => void;
   onToggleSound: () => void;
   onToggleHaptics?: () => void;
@@ -113,6 +130,30 @@ interface GameOverlayHUDProps {
   savedGameMeta?: SavedGameMetadata | null;
   onSaveGame?: () => void;
   onPauseToTitle?: () => void;
+  onOpenCinemaMode?: () => void;
+  replayFramesCount?: number;
+  onOpenWeatherSettings?: () => void;
+  boardTelemetryRef?: React.MutableRefObject<BoardPerformanceTelemetry>;
+  isPerformanceMonitorOpen?: boolean;
+  onTogglePerformanceMonitor?: () => void;
+  onClosePerformanceMonitor?: () => void;
+  isEconomyDebugOpen?: boolean;
+  onToggleEconomyDebug?: () => void;
+  onCloseEconomyDebug?: () => void;
+  onSelectTileFromDebug?: (tileId: number) => void;
+  isSpeculatorHeatmapEnabled?: boolean;
+  onToggleSpeculatorHeatmap?: () => void;
+  isSpeculatorTrajectoriesEnabled?: boolean;
+  onToggleSpeculatorTrajectories?: () => void;
+  accessibilitySettings?: AccessibilitySettings;
+  onOpenAccessibility?: () => void;
+  onApplySandboxMutation?: (mutation: SandboxMutation) => void;
+  onSimulateDiceRoll?: (forcedRoll?: number) => void;
+  onSimulateSpeculatorsTurn?: () => void;
+  onRestorePreSandbox?: () => void;
+  canRestoreSandbox?: boolean;
+  isRemoteMultiplayerTurn?: boolean;
+  remoteTurnOwnerName?: string | null;
 }
 
 export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
@@ -120,6 +161,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   isRulesOpen = false,
   isShortcutsOpen = false,
   isAchievementsOpen = false,
+  isWeatherSettingsOpen = false,
   isGameHistoryOpen: controlledHistoryOpen,
   isEvolutionOpen: controlledEvolutionOpen,
   isDockCollapsed: controlledDockCollapsed,
@@ -143,6 +185,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   onCloseEvolution,
   onToggleDock,
   onTutorialVisibilityChange,
+  onCloseTutorial,
+  onTutorialBoardFocusChange,
   onSetCameraMode,
   onToggleSound,
   onToggleHaptics,
@@ -154,34 +198,62 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   onSendCooperativeChat,
   savedGameMeta,
   onSaveGame,
-  onPauseToTitle
+  onPauseToTitle,
+  onOpenCinemaMode,
+  replayFramesCount = 0,
+  onOpenWeatherSettings,
+  boardTelemetryRef,
+  isPerformanceMonitorOpen = false,
+  onTogglePerformanceMonitor,
+  onClosePerformanceMonitor,
+  isEconomyDebugOpen = false,
+  onToggleEconomyDebug,
+  onCloseEconomyDebug,
+  onSelectTileFromDebug,
+  isSpeculatorHeatmapEnabled = true,
+  onToggleSpeculatorHeatmap,
+  isSpeculatorTrajectoriesEnabled = true,
+  onToggleSpeculatorTrajectories,
+  accessibilitySettings,
+  onOpenAccessibility,
+  onApplySandboxMutation,
+  onSimulateDiceRoll,
+  onSimulateSpeculatorsTurn,
+  onRestorePreSandbox,
+  canRestoreSandbox = false,
+  isRemoteMultiplayerTurn = false,
+  remoteTurnOwnerName = null
 }) => {
+  const { t } = useI18n();
   const [internalDockCollapsed, setInternalDockCollapsed] = useState(false);
   const [internalHistoryOpen, setInternalHistoryOpen] = useState(false);
   const [internalEvolutionOpen, setInternalEvolutionOpen] = useState(false);
   const [showTutorial, setShowTutorial] = useState<boolean | undefined>(undefined);
   const [internalTutorialVisible, setInternalTutorialVisible] = useState(false);
   const [isAudioMixerOpen, setIsAudioMixerOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMeteorologicalInsightOpen, setIsMeteorologicalInsightOpen] = useState(false);
   const [isCollectiveImpactOpen, setIsCollectiveImpactOpen] = useState(false);
   const [spatialEnabled, setSpatialEnabled] = useState(() => audioManager.isSpatialEnabled());
   const [ambientVol, setAmbientVol] = useState(() => audioManager.getAmbientVolume());
   const [sfxVol, setSfxVol] = useState(() => audioManager.getSfxVolume());
   const [justSaved, setJustSaved] = useState(false);
-  const [saveLabel, setSaveLabel] = useState<'Guardado' | 'Auto-guardado'>('Guardado');
+  const [saveType, setSaveType] = useState<'MANUAL' | 'AUTO'>('MANUAL');
   const prevAutosaveCountRef = useRef<number>(savedGameMeta?.autosaveCount ?? 0);
 
   useEffect(() => {
     const nextCount = savedGameMeta?.autosaveCount ?? 0;
     if (nextCount > prevAutosaveCountRef.current) {
       prevAutosaveCountRef.current = nextCount;
-      setSaveLabel('Auto-guardado');
+      setSaveType('AUTO');
       setJustSaved(true);
       const timer = window.setTimeout(() => setJustSaved(false), 1800);
       return () => window.clearTimeout(timer);
     }
     prevAutosaveCountRef.current = nextCount;
   }, [savedGameMeta?.autosaveCount]);
+
+  const saveLabel = saveType === 'AUTO' ? t.common.autoSaved : t.common.saved;
 
   const isDockCollapsed = controlledDockCollapsed ?? internalDockCollapsed;
   const isGameHistoryOpen = controlledHistoryOpen ?? internalHistoryOpen;
@@ -323,30 +395,112 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         <div className="w-full flex items-center justify-between gap-3 pointer-events-auto">
           
           {/* Brand & Round Tracker */}
-          <div className="flex items-center gap-3 bg-slate-900/90 border border-teal-800/80 px-4 py-2 rounded-2xl shadow-xl">
+          <div
+            data-tutorial-target="top-status"
+            className="flex items-center gap-2 sm:gap-3 bg-slate-900/90 border border-teal-800/80 px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl shadow-xl min-h-[44px]"
+          >
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-teal-400" />
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0" />
               <h1 className="text-sm font-black tracking-tight text-white uppercase hidden sm:block">
                 Commonspoly
               </h1>
             </div>
             <span className="text-slate-600 hidden sm:inline" aria-hidden="true">·</span>
-            <div className="text-xs font-bold text-teal-300">
-              Ronda <span className="text-white text-sm tabular-nums">{state.round}</span> / 20
+            <div className="text-xs font-bold text-teal-300 whitespace-nowrap">
+              {t.hud.roundLabel} <span className="text-white text-sm tabular-nums">{state.round}</span>/20
             </div>
             <span className="text-slate-600" aria-hidden="true">·</span>
-            {/* Legitimidad colectiva */}
-            <div className="text-xs text-slate-300 flex items-center gap-1.5">
-              <Award className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden md:inline">Legitimidad Colectiva:</span>
+            <div className="text-xs text-slate-300 flex items-center gap-1 whitespace-nowrap">
+              <Award className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="hidden md:inline">{t.common.legitimacy}:</span>
               <span className={`font-bold tabular-nums ${totalLegitimacy >= requiredLegitimacyForAgora ? 'text-emerald-400' : 'text-amber-300'}`}>
-                {totalLegitimacy} / {requiredLegitimacyForAgora}
+                {totalLegitimacy}/{requiredLegitimacyForAgora}
               </span>
             </div>
+            {state.isSandboxSession && (
+              <>
+                <span className="text-slate-600" aria-hidden="true">·</span>
+                <span className="px-2 py-0.5 rounded-lg bg-amber-950/90 border border-amber-500/60 text-amber-200 text-[10px] font-bold whitespace-nowrap">
+                  {t.hud.sandboxBadge}
+                </span>
+              </>
+            )}
+            {state.dailyChallengeDate && !state.isSandboxSession && (
+              <>
+                <span className="text-slate-600 hidden sm:inline" aria-hidden="true">·</span>
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-lg bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 text-[10px] font-bold whitespace-nowrap tabular-nums">
+                  {t.hud.dailyBadge} {state.dailyChallengeDate}
+                </span>
+              </>
+            )}
+            {state.multiplayerRoomCode && (
+              <>
+                <span className="text-slate-600 hidden sm:inline" aria-hidden="true">·</span>
+                <span className="px-2 py-0.5 rounded-lg bg-sky-950/90 border border-sky-500/60 text-sky-200 text-[10px] font-mono font-bold whitespace-nowrap">
+                  {t.hud.roomBadge} {state.multiplayerRoomCode}
+                </span>
+              </>
+            )}
+            <OfflineIndicator inline />
           </div>
 
-          {/* Right Utility Actions */}
-          <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-2xl shadow-xl">
+          {/* Mobile Compact Utility Controls (< md) */}
+          <div className="flex md:hidden items-center gap-1.5 bg-slate-900/90 border border-slate-800 px-1.5 py-1 rounded-2xl shadow-xl shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const next =
+                  state.cameraMode === 'ISOMETRIC'
+                    ? 'TOP_DOWN'
+                    : state.cameraMode === 'TOP_DOWN'
+                    ? 'FOLLOW'
+                    : 'ISOMETRIC';
+                onSetCameraMode(next);
+              }}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-200 hover:text-white hover:bg-slate-800 transition-colors"
+              title={t.hud.cameraBtn}
+              aria-label={t.hud.cameraBtn}
+            >
+              <Camera className="w-4 h-4 text-teal-300" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onToggleSound}
+              className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl transition-colors ${
+                state.soundEnabled
+                  ? 'text-teal-300 hover:text-white hover:bg-slate-800'
+                  : 'text-rose-400 bg-rose-950/40'
+              }`}
+              title={t.hud.audioBtn}
+              aria-label={t.hud.audioBtn}
+            >
+              {state.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+
+            <button
+              type="button"
+              data-tutorial-target="mobile-menu-btn"
+              onClick={() => {
+                playSound.uiToggle(!isMobileMenuOpen);
+                setIsMobileMenuOpen(prev => !prev);
+              }}
+              className={`min-h-[44px] px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                isMobileMenuOpen
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-100'
+              }`}
+              aria-label={t.hud.menuBtn}
+              aria-expanded={isMobileMenuOpen}
+            >
+              {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              <span>{t.hud.menuBtn}</span>
+            </button>
+          </div>
+
+          {/* Right Utility Actions (Desktop md+) */}
+          <div className="hidden md:flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-2xl shadow-xl">
+            <LanguageSelector variant="compact" />
             {/* Camera switcher */}
             <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl text-xs">
               <button
@@ -354,27 +508,27 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 className={`px-2 py-1 rounded-lg font-medium transition-colors ${
                   state.cameraMode === 'ISOMETRIC' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
                 }`}
-                title="Vista Isométrica de Mesa (Atajo: 1)"
+                title={`${t.hud.camIsometric} (1)`}
               >
-                Isométrica
+                {t.hud.camIsometric}
               </button>
               <button
                 onClick={() => onSetCameraMode('TOP_DOWN')}
                 className={`px-2 py-1 rounded-lg font-medium transition-colors ${
                   state.cameraMode === 'TOP_DOWN' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
                 }`}
-                title="Vista Cenital Táctica (Atajo: 2)"
+                title={`${t.hud.camTopDown} (2)`}
               >
-                Cenital
+                {t.hud.camTopDown}
               </button>
               <button
                 onClick={() => onSetCameraMode('FOLLOW')}
                 className={`px-2 py-1 rounded-lg font-medium transition-colors ${
                   state.cameraMode === 'FOLLOW' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
                 }`}
-                title="Seguir al Personaje Activo (Atajo: 3)"
+                title={`${t.hud.camFollow} (3)`}
               >
-                Seguimiento
+                {t.hud.camFollow}
               </button>
             </div>
 
@@ -638,6 +792,28 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                       </div>
                     </div>
                   )}
+
+                  {onOpenWeatherSettings && (
+                    <div className="pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAudioMixerOpen(false);
+                          playSound.modalOpen();
+                          onOpenWeatherSettings();
+                        }}
+                        className="w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 border bg-slate-950 hover:bg-slate-900 border-slate-700 text-sky-300 transition-colors whitespace-nowrap"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <CloudRain className="w-3.5 h-3.5 shrink-0" />
+                          <span>Configuración Avanzada de Clima</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 tabular-nums">
+                          {Math.round((state.weatherAdvancedConfig?.eventFrequencyMultiplier ?? 1) * 100)}%
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -650,12 +826,12 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   ? 'bg-emerald-600 text-white font-bold'
                   : 'text-emerald-300 hover:text-white hover:bg-slate-800'
               }`}
-              title="Collective Impact: Eficiencia del equipo preservando comunes frente a especuladores"
-              aria-label="Abrir Collective Impact"
+              title={t.hud.collectiveImpact}
+              aria-label={t.hud.collectiveImpact}
               aria-expanded={isCollectiveImpactOpen}
             >
               <BarChart3 className="w-4 h-4 shrink-0" />
-              <span className="hidden xl:inline">Collective Impact</span>
+              <span className="hidden xl:inline">{t.hud.collectiveImpact}</span>
             </button>
 
             <button
@@ -666,13 +842,55 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   ? 'bg-cyan-600 text-white font-bold'
                   : 'text-cyan-300 hover:text-white hover:bg-slate-800'
               }`}
-              title="Meteorological Insight: Análisis estratégico del clima y recursos"
-              aria-label="Abrir Meteorological Insight"
+              title={t.hud.weatherCtrl}
+              aria-label={t.hud.weatherCtrl}
               aria-expanded={isMeteorologicalInsightOpen}
             >
               <Radar className="w-4 h-4 shrink-0" />
-              <span className="hidden xl:inline">Meteorological Insight</span>
+              <span className="hidden xl:inline">{t.hud.weatherCtrl}</span>
             </button>
+
+            {onTogglePerformanceMonitor && (
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.uiToggle(!isPerformanceMonitorOpen);
+                  onTogglePerformanceMonitor();
+                }}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                  isPerformanceMonitorOpen
+                    ? 'bg-teal-600 text-white font-bold'
+                    : 'text-teal-300 hover:text-white hover:bg-slate-800'
+                }`}
+                title={`${t.hud.perfMonitor} (F)`}
+                aria-label={t.hud.perfMonitor}
+                aria-expanded={isPerformanceMonitorOpen}
+              >
+                <Activity className="w-4 h-4 shrink-0" />
+                <span className="hidden xl:inline">{t.hud.perfMonitor}</span>
+              </button>
+            )}
+
+            {onToggleEconomyDebug && (
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.uiToggle(!isEconomyDebugOpen);
+                  onToggleEconomyDebug();
+                }}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                  isEconomyDebugOpen
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-amber-300 hover:text-white hover:bg-slate-800'
+                }`}
+                title={`${t.hud.economyDebug} (E)`}
+                aria-label={t.hud.economyDebug}
+                aria-expanded={isEconomyDebugOpen}
+              >
+                <Bug className="w-4 h-4 shrink-0" />
+                <span className="hidden xl:inline">{t.hud.economyDebug}</span>
+              </button>
+            )}
 
             <button
               onClick={() => {
@@ -684,11 +902,11 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 }
               }}
               className="px-2.5 py-1.5 rounded-xl text-teal-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold"
-              title="Tutorial Interactivo de Onboarding con Voz (Atajo: T)"
-              aria-label="Abrir tutorial interactivo de onboarding con narrador de voz"
+              title={`${t.hud.tutorialBtn} (T)`}
+              aria-label={t.hud.tutorialBtn}
             >
               <HelpCircle className="w-4 h-4 text-teal-400 shrink-0" />
-              <span className="hidden lg:inline">Tutorial con Voz</span>
+              <span className="hidden lg:inline">{t.hud.tutorialBtn}</span>
               <kbd className="hidden xl:inline-block px-1 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-400 border border-slate-700">
                 T
               </kbd>
@@ -702,14 +920,32 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   ? 'bg-teal-600 text-white font-bold'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
-              title="Abrir Chat y Narrativa de Sesión (Atajo: G)"
-              aria-label="Abrir Chat y Narrativa de Sesión"
+              title={`${t.hud.historyLog} (G)`}
+              aria-label={t.hud.historyLog}
               aria-expanded={isGameHistoryOpen}
             >
               <History className="w-4 h-4 shrink-0 text-teal-400" />
-              <span className="hidden xl:inline">Chat y Narrativa</span>
+              <span className="hidden xl:inline">{t.hud.historyLog}</span>
               <span className="text-[11px] opacity-80 tabular-nums">({state.logs.length + state.chatMessages.length})</span>
             </button>
+
+            {onOpenCinemaMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.modalOpen();
+                  onOpenCinemaMode();
+                }}
+                disabled={replayFramesCount === 0}
+                className="px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors text-amber-300 hover:text-white hover:bg-slate-800 disabled:opacity-40"
+                title={`${t.hud.cinemaMode} (C)`}
+                aria-label={t.hud.cinemaMode}
+              >
+                <Film className="w-4 h-4 shrink-0 text-amber-400" />
+                <span className="hidden xl:inline">{t.hud.cinemaMode}</span>
+                <span className="text-[11px] opacity-80 tabular-nums">({replayFramesCount})</span>
+              </button>
+            )}
 
             {onOpenAchievements && (
               <button
@@ -723,12 +959,12 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                     ? 'bg-amber-500 text-slate-950 font-bold'
                     : 'text-amber-300 hover:text-white hover:bg-slate-800'
                 }`}
-                title="Logros Locales (Atajo: L)"
-                aria-label="Abrir Logros Locales"
+                title={`${t.title.localAchievements} (L)`}
+                aria-label={t.title.localAchievements}
                 aria-expanded={isAchievementsOpen}
               >
                 <Trophy className="w-4 h-4 shrink-0" />
-                <span className="hidden xl:inline">Logros</span>
+                <span className="hidden xl:inline">{t.title.localAchievements}</span>
                 <span className="text-[11px] opacity-90 tabular-nums">
                   ({unlockedAchievementsCount}/{achievementsList.length})
                 </span>
@@ -747,11 +983,26 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                     ? 'bg-teal-600 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800'
                 }`}
-                title="Atajos de Teclado (Atajo: ?)"
-                aria-label="Abrir guía de atajos de teclado"
+                title={`${t.hud.shortcuts} (?)`}
+                aria-label={t.hud.shortcuts}
                 aria-expanded={isShortcutsOpen}
               >
                 <Keyboard className="w-4 h-4" />
+              </button>
+            )}
+
+            {onOpenAccessibility && (
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.modalOpen();
+                  onOpenAccessibility();
+                }}
+                className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                title={t.hud.accessibility}
+                aria-label={t.hud.accessibility}
+              >
+                <Accessibility className="w-4 h-4 text-teal-300" />
               </button>
             )}
 
@@ -761,8 +1012,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 onOpenRules();
               }}
               className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Manual de Reglas (Atajo: B)"
-              aria-label="Abrir Manual de Reglas"
+              title={`${t.hud.helpRules} (B)`}
+              aria-label={t.hud.helpRules}
             >
               <BookOpen className="w-4 h-4" />
             </button>
@@ -772,7 +1023,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 type="button"
                 onClick={() => {
                   onSaveGame();
-                  setSaveLabel('Guardado');
+                  setSaveType('MANUAL');
                   setJustSaved(true);
                   window.setTimeout(() => setJustSaved(false), 1800);
                 }}
@@ -783,12 +1034,12 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 }`}
                 title={
                   savedGameMeta
-                    ? `Auto-guardado por fin de turno · Ronda ${savedGameMeta.round}${
+                    ? `${t.common.autoSaved} · ${t.hud.roundLabel} ${savedGameMeta.round}${
                         savedGameMeta.lastEndedTurnBy ? ` (${savedGameMeta.lastEndedTurnBy})` : ''
                       } · ${formatSavedTimestamp(savedGameMeta.savedAt)}`
-                    : 'Guardar partida manualmente en LocalStorage'
+                    : t.hud.saveGame
                 }
-                aria-label="Guardar partida manualmente"
+                aria-label={t.hud.saveGame}
               >
                 {justSaved ? (
                   <>
@@ -798,7 +1049,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 ) : (
                   <>
                     <Save className="w-4 h-4 shrink-0" />
-                    <span className="hidden xl:inline">Guardar</span>
+                    <span className="hidden xl:inline">{t.hud.saveGame}</span>
                   </>
                 )}
               </button>
@@ -809,8 +1060,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 type="button"
                 onClick={onPauseToTitle}
                 className="p-2 rounded-xl text-slate-300 hover:text-amber-300 hover:bg-slate-800 transition-colors shrink-0"
-                title="Guardar y volver al título"
-                aria-label="Guardar y volver al título"
+                title={t.hud.exitTitle}
+                aria-label={t.hud.exitTitle}
               >
                 <Home className="w-4 h-4" />
               </button>
@@ -819,17 +1070,289 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
 
         </div>
 
+        {/* MOBILE DRAWER MENU (< md) */}
+        {isMobileMenuOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menú táctico de partida"
+            className="md:hidden fixed inset-x-3 top-16 bottom-4 z-50 bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl p-4 overflow-y-auto pointer-events-auto space-y-4 text-slate-100"
+          >
+            <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800">
+              <span className="text-sm font-black text-white uppercase tracking-wide">
+                {t.hud.menuBtn}
+              </span>
+              <div className="flex items-center gap-2">
+                <LanguageSelector variant="compact" />
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-950 border border-slate-800 text-slate-300 hover:text-white"
+                  aria-label={t.common.close}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Cámara 3D */}
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                {t.hud.cameraBtn}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: 'ISOMETRIC', label: t.hud.camIsometric },
+                    { id: 'TOP_DOWN', label: t.hud.camTopDown },
+                    { id: 'FOLLOW', label: t.hud.camFollow }
+                  ] as const
+                ).map(cam => (
+                  <button
+                    key={cam.id}
+                    type="button"
+                    onClick={() => onSetCameraMode(cam.id)}
+                    className={`min-h-[44px] px-2 rounded-xl text-xs font-bold transition-colors ${
+                      state.cameraMode === cam.id
+                        ? 'bg-teal-600 text-white'
+                        : 'bg-slate-950 border border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {cam.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Trackers embebidos en móvil */}
+            <div className="space-y-3">
+              <GlobalResourceTracker
+                state={state}
+                isEvolutionOpen={isEvolutionOpen}
+                onToggleEvolution={() => {
+                  setIsMobileMenuOpen(false);
+                  handleToggleEvolution();
+                }}
+                isCollectiveImpactOpen={isCollectiveImpactOpen}
+                onToggleCollectiveImpact={() => {
+                  setIsMobileMenuOpen(false);
+                  handleToggleCollectiveImpact();
+                }}
+              />
+              <WeatherControllerHUD
+                state={state}
+                onSetWeatherMode={onSetWeatherMode}
+                onSetWeatherIntensity={onSetWeatherIntensity}
+                onSetTimeOfDayMode={onSetTimeOfDayMode}
+                isMeteorologicalInsightOpen={isMeteorologicalInsightOpen}
+                onToggleMeteorologicalInsight={() => {
+                  setIsMobileMenuOpen(false);
+                  handleToggleMeteorologicalInsight();
+                }}
+                onOpenAdvancedWeatherSettings={() => {
+                  setIsMobileMenuOpen(false);
+                  onOpenWeatherSettings?.();
+                }}
+              />
+            </div>
+
+            {/* Paneles y Utilidades */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  handleToggleCollectiveImpact();
+                }}
+                className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-emerald-300 text-xs font-bold flex items-center gap-2"
+              >
+                <BarChart3 className="w-4 h-4 shrink-0" />
+                <span>{t.hud.collectiveImpact}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  handleToggleMeteorologicalInsight();
+                }}
+                className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-cyan-300 text-xs font-bold flex items-center gap-2"
+              >
+                <Radar className="w-4 h-4 shrink-0" />
+                <span>{t.hud.weatherCtrl}</span>
+              </button>
+
+              {onTogglePerformanceMonitor && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    playSound.uiToggle(!isPerformanceMonitorOpen);
+                    onTogglePerformanceMonitor();
+                  }}
+                  className={`min-h-[44px] px-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                    isPerformanceMonitorOpen
+                      ? 'bg-teal-600 border-teal-500 text-white'
+                      : 'bg-slate-950 border-slate-800 text-teal-300'
+                  }`}
+                >
+                  <Activity className="w-4 h-4 shrink-0" />
+                  <span>{t.hud.perfMonitor}</span>
+                </button>
+              )}
+
+              {onToggleEconomyDebug && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    playSound.uiToggle(!isEconomyDebugOpen);
+                    onToggleEconomyDebug();
+                  }}
+                  className={`min-h-[44px] px-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                    isEconomyDebugOpen
+                      ? 'bg-amber-500 border-amber-400 text-slate-950'
+                      : 'bg-slate-950 border-slate-800 text-amber-300'
+                  }`}
+                >
+                  <Bug className="w-4 h-4 shrink-0" />
+                  <span>{t.hud.economyDebug}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  handleToggleHistory();
+                }}
+                className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-teal-300 text-xs font-bold flex items-center gap-2"
+              >
+                <History className="w-4 h-4 shrink-0" />
+                <span>{t.hud.historyLog} ({state.logs.length + state.chatMessages.length})</span>
+              </button>
+
+              {onOpenCinemaMode && (
+                <button
+                  type="button"
+                  disabled={replayFramesCount === 0}
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    playSound.modalOpen();
+                    onOpenCinemaMode();
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-amber-300 text-xs font-bold flex items-center gap-2 disabled:opacity-40"
+                >
+                  <Film className="w-4 h-4 shrink-0" />
+                  <span>{t.hud.cinemaMode} ({replayFramesCount})</span>
+                </button>
+              )}
+
+              {onOpenAchievements && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    playSound.modalOpen();
+                    onOpenAchievements();
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-amber-300 text-xs font-bold flex items-center gap-2"
+                >
+                  <Trophy className="w-4 h-4 shrink-0" />
+                  <span>{t.title.localAchievements} ({unlockedAchievementsCount}/{achievementsList.length})</span>
+                </button>
+              )}
+
+              {onOpenAccessibility && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    playSound.modalOpen();
+                    onOpenAccessibility();
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-teal-300 text-xs font-bold flex items-center gap-2"
+                >
+                  <Accessibility className="w-4 h-4 shrink-0" />
+                  <span>{t.hud.accessibility}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  playSound.modalOpen();
+                  onOpenRules();
+                }}
+                className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-bold flex items-center gap-2"
+              >
+                <BookOpen className="w-4 h-4 shrink-0 text-teal-400" />
+                <span>{t.hud.helpRules}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  playSound.uiToggle(true);
+                  if (onToggleTutorial) onToggleTutorial();
+                  else setShowTutorial(prev => !prev);
+                }}
+                className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-teal-300 text-xs font-bold flex items-center gap-2"
+              >
+                <HelpCircle className="w-4 h-4 shrink-0" />
+                <span>{t.hud.tutorialBtn}</span>
+              </button>
+
+              {onSaveGame && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSaveGame();
+                    setSaveType('MANUAL');
+                    setJustSaved(true);
+                    window.setTimeout(() => setJustSaved(false), 1800);
+                  }}
+                  className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-emerald-300 text-xs font-bold flex items-center gap-2"
+                >
+                  <Save className="w-4 h-4 shrink-0" />
+                  <span>{justSaved ? saveLabel : t.hud.saveGame}</span>
+                </button>
+              )}
+            </div>
+
+            {onPauseToTitle && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  onPauseToTitle();
+                }}
+                className="w-full min-h-[44px] px-4 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-amber-300 text-xs font-bold flex items-center justify-center gap-2"
+              >
+                <Home className="w-4 h-4" />
+                <span>{t.hud.exitTitle}</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* 2. SUB-ROW: PlayerTurnIndicator (Top-Left) & GlobalResourceTracker (Top-Right) */}
         <div className="w-full flex flex-col md:flex-row items-start justify-between gap-2.5">
           <div className="max-w-full md:max-w-[calc(100%-21rem)] flex flex-col gap-2">
-            <PlayerTurnIndicator
-              players={state.players}
-              activePlayerIndex={state.activePlayerIndex}
-              phase={state.phase}
-              currentDiceRoll={state.currentDiceRoll}
-            />
-            {/* REGISTRO DE CHAT Y ACCIONES: Últimos 5 mensajes e historial de bots y jugadores */}
-            <GameChatLog state={state} />
+            <div data-tutorial-target="player-indicator" className="w-fit max-w-full">
+              <PlayerTurnIndicator
+                players={state.players}
+                activePlayerIndex={state.activePlayerIndex}
+                phase={state.phase}
+                currentDiceRoll={state.currentDiceRoll}
+              />
+            </div>
+            {/* REGISTRO DE CHAT Y ACCIONES: oculto en móviles muy estrechos para liberar tablero */}
+            <div className="hidden sm:block">
+              <GameChatLog state={state} />
+            </div>
 
             {/* BANNER DE CRISIS INESPERADA ACTIVA */}
             {state.activeCrisis && (
@@ -910,8 +1433,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             )}
           </div>
 
-          {/* Top-Right Cluster: Weather Controller & Global Resource Tracker */}
-          <div className="self-end md:self-start shrink-0 flex flex-col sm:flex-row items-end sm:items-start gap-2">
+          {/* Top-Right Cluster: Weather Controller & Global Resource Tracker (Desktop md+) */}
+          <div className="hidden md:flex self-end md:self-start shrink-0 flex-col sm:flex-row items-end sm:items-start gap-2">
             <WeatherControllerHUD
               state={state}
               onSetWeatherMode={onSetWeatherMode}
@@ -919,14 +1442,17 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               onSetTimeOfDayMode={onSetTimeOfDayMode}
               isMeteorologicalInsightOpen={isMeteorologicalInsightOpen}
               onToggleMeteorologicalInsight={handleToggleMeteorologicalInsight}
+              onOpenAdvancedWeatherSettings={onOpenWeatherSettings}
             />
-            <GlobalResourceTracker
-              state={state}
-              isEvolutionOpen={isEvolutionOpen}
-              onToggleEvolution={handleToggleEvolution}
-              isCollectiveImpactOpen={isCollectiveImpactOpen}
-              onToggleCollectiveImpact={handleToggleCollectiveImpact}
-            />
+            <div data-tutorial-target="resources-tracker">
+              <GlobalResourceTracker
+                state={state}
+                isEvolutionOpen={isEvolutionOpen}
+                onToggleEvolution={handleToggleEvolution}
+                isCollectiveImpactOpen={isCollectiveImpactOpen}
+                onToggleCollectiveImpact={handleToggleCollectiveImpact}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -997,6 +1523,37 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         onClose={() => setIsCollectiveImpactOpen(false)}
       />
 
+      {/* 5F. MONITOR DE RENDIMIENTO 3D (FPS, memoria y frustum culling en vivo) */}
+      {boardTelemetryRef && onClosePerformanceMonitor && (
+        <PerformanceMonitorHUD
+          isOpen={isPerformanceMonitorOpen}
+          telemetryRef={boardTelemetryRef}
+          onClose={onClosePerformanceMonitor}
+          cameraMode={state.cameraMode}
+          postProcessingEnabled={postProcessingEnabled}
+        />
+      )}
+
+      {/* 5G. PANEL DEBUG DE ECONOMÍA Y ESPECULACIÓN EN TIEMPO REAL */}
+      {onCloseEconomyDebug && (
+        <EconomyDebugHUD
+          isOpen={isEconomyDebugOpen}
+          state={state}
+          onClose={onCloseEconomyDebug}
+          onSelectTile={onSelectTileFromDebug}
+          isHeatmapEnabled={isSpeculatorHeatmapEnabled}
+          onToggleHeatmap={onToggleSpeculatorHeatmap}
+          isTrajectoriesEnabled={isSpeculatorTrajectoriesEnabled}
+          onToggleTrajectories={onToggleSpeculatorTrajectories}
+          accessibilitySettings={accessibilitySettings}
+          onApplySandboxMutation={onApplySandboxMutation}
+          onSimulateDiceRoll={onSimulateDiceRoll}
+          onSimulateSpeculatorsTurn={onSimulateSpeculatorsTurn}
+          onRestorePreSandbox={onRestorePreSandbox}
+          canRestoreSandbox={canRestoreSandbox}
+        />
+      )}
+
       {/* 4. UNIFIED BOTTOM CONTROL DOCK (Centered, collapsible, zero occlusion) */}
       <div className="w-full flex flex-col items-center pointer-events-auto">
         
@@ -1028,60 +1585,63 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
           <button
             onClick={handleToggleDock}
             className="px-4 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors shadow-lg"
-            title="Mostrar / ocultar controles (Atajo: H)"
+            title={`${isDockCollapsed ? t.hud.dockExpand : t.hud.dockCollapse} (H)`}
           >
             {isDockCollapsed ? (
               <>
                 <ChevronUp className="w-3.5 h-3.5" />
-                <span>Mostrar Controles</span>
+                <span>{t.hud.dockExpand}</span>
               </>
             ) : (
               <>
                 <ChevronDown className="w-3.5 h-3.5" />
-                <span>Ocultar Controles</span>
+                <span>{t.hud.dockCollapse}</span>
               </>
             )}
           </button>
         </div>
 
         {!isDockCollapsed && (
-          <div className="w-full max-w-4xl bg-slate-900/95 border border-teal-800/80 rounded-2xl shadow-2xl p-4 md:p-5 text-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div
+            data-tutorial-target="bottom-dock"
+            className="w-full max-w-4xl bg-slate-900/95 border border-teal-800/80 rounded-2xl shadow-2xl p-3 sm:p-4 md:p-5 text-slate-100 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4"
+          >
             
             {/* Active Turn Persona & Current Tile Info */}
-            <div className="flex items-center gap-3.5">
+            <div className="flex items-center gap-3 sm:gap-3.5 w-full md:w-auto">
               <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-md shrink-0"
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-white font-black text-base sm:text-lg shadow-md shrink-0"
                 style={{ backgroundColor: activePlayer?.color || '#0d9488' }}
               >
                 {activePlayer?.name.charAt(0)}
               </div>
 
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-base text-white">
-                    Turno de {activePlayer?.name}
+              <div className="space-y-0.5 min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-extrabold text-sm sm:text-base text-white truncate">
+                    {t.hud.playerTurn} · {activePlayer?.name}
                   </h3>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-teal-300 border border-slate-700">
-                    {activePlayer?.controller === 'HUMAN' ? 'Jugador Local' : 'Bot Cooperativo'}
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
+                    {activePlayer?.controller === 'HUMAN' ? t.setup.humanLocal : t.setup.botCoop}
                   </span>
                 </div>
 
-                <div className="text-xs text-slate-400 flex items-center gap-2">
-                  <span>Casilla: <strong className="text-slate-200">{currentTile?.name || 'Iniciando'}</strong></span>
+                <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
+                  <span className="truncate"><strong className="text-slate-200">{currentTile?.name || t.common.loading}</strong></span>
                   {currentTile?.state && (
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
                       currentTile.state === 'COMMON' ? 'bg-emerald-950 text-emerald-300' :
                       currentTile.state === 'PUBLIC' ? 'bg-slate-800 text-slate-300' : 'bg-rose-950 text-rose-300'
                     }`}>
-                      {currentTile.state === 'COMMON' ? 'Común' : currentTile.state === 'PUBLIC' ? 'Público' : 'Privado'}
+                      {currentTile.state === 'COMMON' ? t.common.common : currentTile.state === 'PUBLIC' ? t.common.public : t.common.private}
                     </span>
                   )}
                 </div>
 
                 <div className="text-[11px] text-slate-400 flex items-center flex-wrap gap-x-2.5 gap-y-0.5 pt-0.5 tabular-nums">
-                  <span className="text-rose-400 font-medium">Bienestar: {activePlayer?.wellness}</span>
+                  <span className="text-rose-400 font-medium">{t.common.wellness}: {activePlayer?.wellness}</span>
                   <span className="text-slate-600" aria-hidden="true">·</span>
-                  <span className="text-amber-400 font-medium">Legitimidad: {activePlayer?.legitimacy}</span>
+                  <span className="text-amber-400 font-medium">{t.common.legitimacy}: {activePlayer?.legitimacy}</span>
                   <span className="text-slate-600" aria-hidden="true">·</span>
                   <span
                     className={`font-semibold inline-flex items-center gap-1 ${
@@ -1095,7 +1655,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   >
                     <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                     <span>
-                      Rep. Vecinal: {activeRep.label} ({formatSignedScore(activeRep.score)}) · Voto {activeRep.voteWeight}x
+                      {activeRep.label} ({formatSignedScore(activeRep.score)}) · {activeRep.voteWeight}x
                     </span>
                   </span>
                 </div>
@@ -1103,30 +1663,35 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             </div>
 
             {/* Action Buttons Zone */}
-            <div className="flex items-center gap-2.5 flex-wrap justify-end">
-              
+            <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap justify-center md:justify-end w-full md:w-auto">
+              {isRemoteMultiplayerTurn && (
+                <div className="px-3.5 py-2.5 rounded-xl bg-sky-950/90 border border-sky-500/50 text-sky-100 text-xs font-bold whitespace-nowrap">
+                  {t.hud.waitingTurnOf}: {remoteTurnOwnerName || '...'}
+                </div>
+              )}
+
               {/* Botón Tirar Dado (cuando está listo) */}
-              {state.phase === 'PLAYER_TURN_READY' && (
+              {!isRemoteMultiplayerTurn && state.phase === 'PLAYER_TURN_READY' && (
                 <>
                   {activePlayer?.inAgora && activePlayer.roundsInAgora < 3 && activePlayer.wellness > 1 && onStayInAgora && (
                     <button
                       type="button"
                       onClick={onStayInAgora}
-                      title="Permanecer en el Ágora esperando refuerzos (-1 Bienestar)"
-                      className="px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all whitespace-nowrap shrink-0"
+                      title={t.hud.stayAgora}
+                      className="min-h-[44px] px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all whitespace-nowrap shrink-0"
                     >
                       <Flame className="w-4 h-4" />
-                      <span>Esperar en Ágora (-1 Bienestar · {activePlayer.roundsInAgora}/3)</span>
+                      <span>{t.hud.stayAgora} ({activePlayer.roundsInAgora}/3)</span>
                     </button>
                   )}
 
                   <button
                     onClick={onRollDice}
-                    title="Lanzar dado 3D (Atajo: R o Espacio)"
-                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-sm flex items-center gap-2 shadow-lg active:scale-95 transition-all whitespace-nowrap shrink-0"
+                    title={`${t.hud.rollDice} (R)`}
+                    className="min-h-[44px] px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-sm flex items-center gap-2 shadow-lg active:scale-95 transition-all whitespace-nowrap shrink-0"
                   >
                     <Dices className="w-5 h-5" />
-                    <span>{activePlayer?.inAgora ? 'Salir del Ágora (Dado)' : 'Tirar Dado 3D'}</span>
+                    <span>{t.hud.rollDice}</span>
                     {activePlayer?.controller === 'HUMAN' && (
                       <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-slate-950/20 border border-slate-950/30 text-[10px] font-mono font-bold text-slate-950">
                         R
@@ -1137,38 +1702,38 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               )}
 
               {/* Botón Rescate Solidario si hay una compañera detenida */}
-              {detainedTeammate && activePlayer?.controller === 'HUMAN' && state.phase === 'PLAYER_TURN_READY' && onOpenDetentionRescue && (
+              {!isRemoteMultiplayerTurn && detainedTeammate && activePlayer?.controller === 'HUMAN' && state.phase === 'PLAYER_TURN_READY' && onOpenDetentionRescue && (
                 <button
                   type="button"
                   onClick={onOpenDetentionRescue}
-                  className="px-4 py-2.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors whitespace-nowrap shrink-0"
-                  title={`Rescatar a ${detainedTeammate.name} del Centro de Detención`}
+                  className="min-h-[44px] px-4 py-2.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors whitespace-nowrap shrink-0"
+                  title={`${t.modals.bailOut}: ${detainedTeammate.name}`}
                 >
                   <HeartHandshake className="w-4 h-4" />
-                  <span>Rescatar a {detainedTeammate.name}</span>
+                  <span>{t.modals.bailOut} ({detainedTeammate.name})</span>
                 </button>
               )}
 
               {/* Botón Desbloquear Bien (10 pts ± crisis) */}
-              {state.phase === 'TILE_ACTION_DECISION' && canUnlockCurrentTile && (
+              {!isRemoteMultiplayerTurn && state.phase === 'TILE_ACTION_DECISION' && canUnlockCurrentTile && (
                 <button
                   onClick={onUnlockTile}
-                  title="Desbloquear / Comunizar bien actual (Atajo: D)"
-                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all"
+                  title={`${t.hud.unlockTile} (D)`}
+                  className="min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all"
                 >
-                  <Sparkles className="w-4 h-4" />
+                  <Sparkles className="w-4 h-4 shrink-0" />
                   <span>
-                    Desbloquear a {currentTile?.state === 'PRIVATE' ? 'Público' : 'Común'} 
+                    {t.hud.unlockTile} ({currentTile?.state === 'PRIVATE' ? t.common.public : t.common.common})
                     <span className="text-[10px] opacity-80 ml-1 tabular-nums">
-                      (-{neededWellnessToUnlock} Bienestar
+                      (-{neededWellnessToUnlock} {t.common.wellness}
                       {unlockCostInfo.crisisDelta !== 0
-                        ? ` · Crisis ${unlockCostInfo.crisisDelta > 0 ? `+${unlockCostInfo.crisisDelta}` : unlockCostInfo.crisisDelta}`
+                        ? ` · ${unlockCostInfo.crisisDelta > 0 ? `+${unlockCostInfo.crisisDelta}` : unlockCostInfo.crisisDelta}`
                         : ''}
                       {unlockCostInfo.weatherDelta !== 0
-                        ? ` · Clima ${unlockCostInfo.weatherDelta > 0 ? `+${unlockCostInfo.weatherDelta}` : unlockCostInfo.weatherDelta}`
+                        ? ` · ${unlockCostInfo.weatherDelta > 0 ? `+${unlockCostInfo.weatherDelta}` : unlockCostInfo.weatherDelta}`
                         : ''}
                       {unlockCostInfo.reputationDelta !== 0
-                        ? ` · Rep. ${unlockCostInfo.reputationDelta > 0 ? `+${unlockCostInfo.reputationDelta}` : unlockCostInfo.reputationDelta}`
+                        ? ` · ${unlockCostInfo.reputationDelta > 0 ? `+${unlockCostInfo.reputationDelta}` : unlockCostInfo.reputationDelta}`
                         : ''})
                     </span>
                   </span>
@@ -1181,16 +1746,16 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               )}
 
               {/* Botón Pasar / Ganar puntos */}
-              {state.phase === 'TILE_ACTION_DECISION' && (
+              {!isRemoteMultiplayerTurn && state.phase === 'TILE_ACTION_DECISION' && (
                 <button
                   onClick={onPassTile}
-                  title="Pasar turno (Atajo: P)"
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-2 transition-colors"
+                  title={`${t.hud.passTurn} (P)`}
+                  className="min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-2 transition-colors"
                 >
                   <span>
                     {currentTile?.state === 'PUBLIC'
-                      ? `Pasar (+${publicPassReward.wellness} Bienestar / +${publicPassReward.legitimacy} Legitimidad)`
-                      : 'Pasar Turno'}
+                      ? `${t.hud.passReward} (+${publicPassReward.wellness} / +${publicPassReward.legitimacy})`
+                      : t.hud.passTurn}
                   </span>
                   {activePlayer?.controller === 'HUMAN' && (
                     <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-[10px] font-mono font-bold text-slate-300">
@@ -1201,14 +1766,14 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               )}
 
               {/* Botón Entrar al Ágora Central */}
-              {canEnterAgora && state.phase === 'PLAYER_TURN_READY' && (
+              {!isRemoteMultiplayerTurn && canEnterAgora && state.phase === 'PLAYER_TURN_READY' && (
                 <button
                   onClick={onTryEnterAgora}
-                  title="Entrar al Ágora Central (Atajo: A)"
-                  className="px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all"
+                  title={`${t.hud.enterAgora} (A)`}
+                  className="min-h-[44px] px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all"
                 >
                   <Flame className="w-4 h-4" />
-                  <span>¡Entrar al Ágora Central!</span>
+                  <span>{t.hud.enterAgora}</span>
                   {activePlayer?.controller === 'HUMAN' && (
                     <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-pink-950/50 border border-pink-400/40 text-[10px] font-mono font-bold text-pink-100">
                       A
@@ -1218,7 +1783,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               )}
 
               {/* Botón Referéndum Barrial (convocar o abrir votación in-situ) */}
-              {onTriggerNeighborhoodDecision &&
+              {!isRemoteMultiplayerTurn && onTriggerNeighborhoodDecision &&
                 activePlayer?.controller === 'HUMAN' &&
                 (state.phase === 'PLAYER_TURN_READY' ||
                   (state.phase === 'TILE_ACTION_DECISION' && Boolean(state.neighborhoodDecision))) && (
@@ -1228,8 +1793,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                       playSound.modalOpen();
                       onTriggerNeighborhoodDecision();
                     }}
-                    title="Abrir o convocar Referéndum Barrial in-situ ponderado por Reputación Vecinal"
-                    className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 tabular-nums border ${
+                    title={t.hud.neighborhoodVote}
+                    className={`min-h-[44px] px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 tabular-nums border ${
                       state.neighborhoodDecision
                         ? 'bg-teal-950/90 hover:bg-teal-900 text-teal-200 border-teal-500/70 shadow-md'
                         : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
@@ -1238,8 +1803,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                     <Vote className="w-4 h-4 text-teal-300 shrink-0" />
                     <span>
                       {state.neighborhoodDecision && referendumSummary
-                        ? `Referéndum (${referendumSummary.trustAccumulated.toFixed(1)}/${referendumSummary.requiredTrust.toFixed(1)})`
-                        : 'Referéndum Barrial'}
+                        ? `${t.hud.referendumProgress} (${referendumSummary.trustAccumulated.toFixed(1)}/${referendumSummary.requiredTrust.toFixed(1)})`
+                        : t.hud.neighborhoodVote}
                     </span>
                   </button>
                 )}
@@ -1251,22 +1816,26 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
 
       </div>
 
-      {/* 6. TUTORIAL OVERLAY CONTEXTUAL (Primeros 3 turnos y bajo demanda) */}
+      {/* 6. TUTORIAL INTERACTIVO PASO A PASO Y GUÍA EN VIVO (Rondas 1–2 y bajo demanda) */}
       <TutorialOverlay
         state={state}
         isOpen={controlledTutorialOpen !== undefined ? controlledTutorialOpen : showTutorial}
         onClose={() => {
-          setShowTutorial(false);
-          if (controlledTutorialOpen && onToggleTutorial) {
-            onToggleTutorial();
+          if (onCloseTutorial) {
+            onCloseTutorial();
+          } else {
+            setShowTutorial(false);
           }
         }}
         onOpenRules={onOpenRules}
-        disableEscapeKey={isRulesOpen || isShortcutsOpen || isAchievementsOpen}
+        disableEscapeKey={
+          isRulesOpen || isShortcutsOpen || isAchievementsOpen || isWeatherSettingsOpen
+        }
         onVisibilityChange={(visible) => {
           setInternalTutorialVisible(visible);
           onTutorialVisibilityChange?.(visible);
         }}
+        onBoardFocusChange={onTutorialBoardFocusChange}
       />
 
       {/* 7. CAPA ATMOSFÉRICA CSS SUPERPUESTA SOBRE EL HUD SEGÚN weatherMode */}
@@ -1274,6 +1843,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         weatherType={activeWeather.type}
         weatherMode={state.weatherMode}
         intensity={activeWeather.intensity}
+        overlayOpacityScale={state.weatherAdvancedConfig?.hudOverlayOpacity ?? 0.85}
       />
 
     </div>

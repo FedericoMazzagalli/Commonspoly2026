@@ -13,6 +13,7 @@ import {
   formatSignedScore,
   getReputationProfile
 } from '../../utils/reputation';
+import { useI18n } from '../../i18n';
 
 interface NeighborhoodDecisionModalProps {
   decision: NeighborhoodDecision | null;
@@ -31,6 +32,7 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
   onCastVote,
   onClose
 }) => {
+  const { t } = useI18n();
   if (!decision) return null;
 
   const playerTile = tiles.find(t => t.id === activePlayer.position);
@@ -50,8 +52,8 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Referéndum In-Situ · Decisión Barrial"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm"
+      aria-label={t.modals.neighborhoodDecisionTitle}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88"
     >
       <div className="w-full max-w-lg bg-slate-900 border-2 border-teal-500 rounded-2xl shadow-2xl p-6 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
         
@@ -63,7 +65,7 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
             </div>
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-teal-400">
-                Referéndum In-Situ · Decisión Barrial
+                {t.modals.neighborhoodDecisionTitle}
               </div>
               <h2 className="text-xl font-black text-white">
                 {decision.title}
@@ -79,7 +81,7 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
                 onClose();
               }}
               className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              aria-label="Cerrar ventana de referéndum"
+              aria-label={t.common.close}
             >
               <X className="w-4 h-4" />
             </button>
@@ -97,10 +99,10 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
             <div className="flex items-center justify-between gap-2">
               <span className="font-bold text-slate-200 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
-                <span>Quórum de Confianza Vecinal</span>
+                <span>{t.hud.referendumProgress}</span>
               </span>
               <span className="font-bold text-teal-300">
-                {trustSummary.trustAccumulated.toFixed(2)} / {trustSummary.requiredTrust.toFixed(1)} pts
+                {trustSummary.trustAccumulated.toFixed(2)} / {trustSummary.requiredTrust.toFixed(1)} {t.common.points}
               </span>
             </div>
 
@@ -113,7 +115,7 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
 
             <div className="flex items-center justify-between text-[11px] text-slate-400">
               <span>
-                Tu voto ({activePlayer.name}):{' '}
+                {activePlayer.name}:{' '}
                 <strong
                   className={
                     activeRep.tone === 'POSITIVE'
@@ -127,13 +129,13 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
                 </strong>
               </span>
               <span className="text-slate-200 font-semibold">
-                Confianza {activeRep.trustPercent}% · Peso {activeRep.voteWeight}x
+                {activeRep.trustPercent}% · {activeRep.voteWeight}x
               </span>
             </div>
 
             {trustSummary.voters.length > 0 && (
               <div className="pt-1.5 border-t border-slate-800/80 flex items-center gap-2 flex-wrap text-[10px] text-slate-400">
-                <span>Ya votaron:</span>
+                <span>{t.hud.neighborhoodVote}:</span>
                 {trustSummary.voters.map(v => (
                   <span key={v.player.id} className="text-slate-200 font-semibold">
                     {v.player.name} ({v.profile.voteWeight}x)
@@ -146,29 +148,29 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
           <div className="p-3.5 rounded-xl bg-teal-950/40 border border-teal-800/60 text-xs space-y-1.5">
             <div className="flex items-center gap-2 font-bold text-teal-300">
               <MapPin className="w-4 h-4 text-teal-400 shrink-0" />
-              <span>Casillas de Urna Habilitadas:</span>
+              <span>{t.hud.neighborhoodVote}</span>
             </div>
             <p className="text-slate-200 pl-6 text-[11px]">
-              {targetTileNames} (marcadores brillantes en el tablero 3D)
+              {targetTileNames}
             </p>
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs space-y-2">
             <div className="flex items-center justify-between font-bold gap-2">
-              <span className="text-slate-300">Posición actual:</span>
+              <span className="text-slate-300">{t.modals.ownerState}:</span>
               <span
                 className={`text-[11px] font-bold ${
                   isAtPollingStation ? 'text-emerald-300' : 'text-amber-300'
                 }`}
               >
-                {playerTile?.name || 'Desconocido'} · {isAtPollingStation ? 'En Urna In-Situ' : 'Fuera de Urna'}
+                {playerTile?.name || '—'} · {isAtPollingStation ? '✓' : '—'}
               </span>
             </div>
 
             {!isAtPollingStation && (
               <p className="text-amber-200/90 text-[11px] flex items-center gap-1.5 pt-1">
                 <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Desplaza tu ficha a una casilla de urna habilitada para emitir tu voto.</span>
+                <span>{targetTileNames}</span>
               </p>
             )}
 
@@ -176,7 +178,7 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
               <p className="text-emerald-200 text-[11px] flex items-center gap-1.5 pt-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span>
-                  En posición: tu voto aportará +{activeRep.voteWeight}x de confianza al quórum y +2 Reputación Vecinal.
+                  +{activeRep.voteWeight}x ({t.hud.referendumProgress})
                 </span>
               </p>
             )}
@@ -184,21 +186,21 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
             {hasAlreadyVoted && (
               <p className="text-teal-200 text-[11px] flex items-center gap-1.5 pt-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                <span>Ya has emitido tu voto en este referéndum.</span>
+                <span>✓ {t.modals.castVote}</span>
               </p>
             )}
           </div>
 
           <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/80 text-[11px] text-slate-300 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-teal-400 shrink-0" />
-            <span><strong>Recompensa Colectiva:</strong> {decision.rewardSummary}</span>
+            <span>{decision.rewardSummary}</span>
           </div>
         </div>
 
         {/* Actions */}
         <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
           <span className="text-xs text-slate-400 tabular-nums">
-            Votos emitidos: {decision.votesCast.length} · Confianza mesa {trustSummary.collectiveTrustPercent}%
+            {decision.votesCast.length} · {trustSummary.collectiveTrustPercent}%
           </span>
           <button
             type="button"
@@ -210,7 +212,7 @@ export const NeighborhoodDecisionModal: React.FC<NeighborhoodDecisionModalProps>
             className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95 tabular-nums whitespace-nowrap shrink-0"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>Emitir Voto ({activeRep.voteWeight}x)</span>
+            <span>{t.modals.castVote} ({activeRep.voteWeight}x)</span>
           </button>
         </div>
 

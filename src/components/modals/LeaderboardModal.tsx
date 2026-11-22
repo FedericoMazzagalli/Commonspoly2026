@@ -17,6 +17,8 @@ import {
   HeartHandshake,
   UploadCloud,
   UserCheck,
+  Calendar,
+  Play,
   X
 } from 'lucide-react';
 import { type User } from '../../firebase';
@@ -28,7 +30,9 @@ import {
   LocalBestRecord,
   saveLeaderboardAlias
 } from '../../utils/leaderboard';
+import { DailyChallengeConfig, DailyChallengeEntry } from '../../utils/dailyChallenge';
 import { OFFICIAL_CHARACTERS } from '../../data/characters';
+import { useI18n } from '../../i18n';
 
 interface LeaderboardModalProps {
   isOpen: boolean;
@@ -39,6 +43,12 @@ interface LeaderboardModalProps {
   isAuthBusy: boolean;
   localBest: LocalBestRecord | null;
   latestMatchEfficiencyPct?: number | null;
+  dailyConfig?: DailyChallengeConfig;
+  dailyEntries?: DailyChallengeEntry[];
+  isDailyLoading?: boolean;
+  localDailyBestPct?: number | null;
+  onStartDailyChallenge?: () => void;
+  onRefreshDaily?: () => void;
   onClose: () => void;
   onRefresh: () => void;
   onSignInGoogle: () => void;
@@ -79,14 +89,28 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   isAuthBusy,
   localBest,
   latestMatchEfficiencyPct = null,
+  dailyConfig,
+  dailyEntries = [],
+  isDailyLoading = false,
+  localDailyBestPct = null,
+  onStartDailyChallenge,
+  onRefreshDaily,
   onClose,
   onRefresh,
   onSignInGoogle,
   onSignOut,
   onSyncPendingRecord
 }) => {
+  const { t } = useI18n();
+  const [activeBoardTab, setActiveBoardTab] = useState<'GLOBAL' | 'DAILY'>('GLOBAL');
   const [aliasInput, setAliasInput] = useState<string>(() => loadSavedLeaderboardAlias());
   const [aliasSavedFeedback, setAliasSavedFeedback] = useState(false);
+
+  const getLocalizedResultLabel = (res: LeaderboardEntry['result']): string => {
+    if (res === 'VICTORY') return t.common.victory;
+    if (res === 'DRAW') return t.common.draw;
+    return t.common.inconclusive;
+  };
 
   const userRankInfo = useMemo(() => {
     if (!authUser) return null;
@@ -120,7 +144,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Clasificación Global de Eficiencia Cooperativa"
+      aria-label={t.leaderboard.title}
       className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-950/85 overflow-y-auto"
       onClick={onClose}
     >
@@ -136,19 +160,19 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-white tracking-tight">
-                Clasificación Global · Leaderboard
+                {t.leaderboard.title}
               </h2>
               <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap tabular-nums mt-0.5">
-                <span>Récords de Eficiencia Cooperativa al finalizar partida</span>
+                <span>{t.leaderboard.subtitle}</span>
                 <span aria-hidden="true">·</span>
                 <span className="text-teal-300 font-semibold">
-                  {entries.length} {entries.length === 1 ? 'registro global' : 'registros globales'}
+                  {entries.length} {t.leaderboard.recordsCount}
                 </span>
                 {topEntry && (
                   <>
                     <span aria-hidden="true">·</span>
                     <span className="text-amber-300 font-semibold">
-                      Top #1: {topEntry.efficiencyPct}%
+                      {t.leaderboard.topRank} #1: {topEntry.efficiencyPct}%
                     </span>
                   </>
                 )}
@@ -161,25 +185,92 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
               type="button"
               onClick={() => {
                 playSound.uiClick();
-                onRefresh();
+                if (activeBoardTab === 'DAILY') {
+                  onRefreshDaily?.();
+                } else {
+                  onRefresh();
+                }
               }}
-              disabled={isLoading}
+              disabled={activeBoardTab === 'DAILY' ? isDailyLoading : isLoading}
               className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 disabled:opacity-50 transition-colors"
-              title="Actualizar clasificación"
-              aria-label="Actualizar clasificación"
+              title={t.leaderboard.refresh}
+              aria-label={t.leaderboard.refresh}
             >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${
+                  (activeBoardTab === 'DAILY' ? isDailyLoading : isLoading) ? 'animate-spin' : ''
+                }`}
+              />
             </button>
             <button
               type="button"
               onClick={onClose}
               className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              aria-label="Cerrar clasificación global"
-              title="Cerrar (Esc)"
+              aria-label={t.common.close}
+              title={t.common.close}
             >
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Pestañas Global vs Reto Diario */}
+        <div className="pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800 gap-1 self-start">
+            <button
+              type="button"
+              onClick={() => setActiveBoardTab('GLOBAL')}
+              className={`min-h-[36px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                activeBoardTab === 'GLOBAL'
+                  ? 'bg-teal-500 text-slate-950'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>{t.leaderboard.globalTab} ({entries.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveBoardTab('DAILY')}
+              className={`min-h-[36px] px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                activeBoardTab === 'DAILY'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{t.leaderboard.dailyTab} ({dailyEntries.length})</span>
+            </button>
+          </div>
+
+          {dailyConfig && (
+            <div className="flex items-center gap-2.5 text-[11px] text-slate-300 tabular-nums flex-wrap">
+              <span className="text-amber-300 font-bold">
+                {dailyConfig.challengeDate}
+              </span>
+              <span className="text-slate-600" aria-hidden="true">·</span>
+              <span>{dailyConfig.title}</span>
+              {localDailyBestPct !== null && (
+                <>
+                  <span className="text-slate-600" aria-hidden="true">·</span>
+                  <span className="text-emerald-300 font-bold">{t.title.todayBest}: {localDailyBestPct}%</span>
+                </>
+              )}
+              {onStartDailyChallenge && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onStartDailyChallenge();
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[11px] inline-flex items-center gap-1"
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>{t.leaderboard.playDailyCta}</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Estado de Cuenta & Comparativa Personal */}
@@ -190,31 +281,31 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
                   <UserCheck className="w-4 h-4 shrink-0" />
                   <span className="truncate">
-                    Sesión activa: {authUser.displayName || 'Jugadora verificada'}
+                    {authUser.displayName || t.title.youLabel}
                   </span>
                 </div>
                 <div className="text-xs text-slate-300 flex items-center flex-wrap gap-x-2.5 gap-y-1 tabular-nums">
                   {userRankInfo ? (
                     <>
                       <span className="font-bold text-white">
-                        Posición Global: #{userRankInfo.rank}
+                        #{userRankInfo.rank}
                       </span>
                       <span className="text-slate-600" aria-hidden="true">·</span>
                       <span className="text-teal-300 font-bold">
-                        Tu mejor marca: {userRankInfo.entry.efficiencyPct}%
+                        {t.title.yourRecord}: {userRankInfo.entry.efficiencyPct}%
                       </span>
                       <span className="text-slate-600" aria-hidden="true">·</span>
                       <span>
-                        {userRankInfo.entry.tierLabel} (Ronda {userRankInfo.entry.round}/20)
+                        {userRankInfo.entry.tierLabel} ({t.hud.roundLabel} {userRankInfo.entry.round}/20)
                       </span>
                     </>
                   ) : localBest ? (
                     <span className="text-amber-200">
-                      Tienes una marca local de <strong>{localBest.efficiencyPct}%</strong> lista para publicar en el Leaderboard Global.
+                      {t.title.yourRecord}: <strong>{localBest.efficiencyPct}%</strong>
                     </span>
                   ) : (
                     <span className="text-slate-400">
-                      Completa una partida hasta el final para registrar tu mejor Eficiencia Cooperativa.
+                      {t.leaderboard.subtitle}
                     </span>
                   )}
                 </div>
@@ -222,16 +313,16 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             ) : (
               <div className="space-y-1 min-w-0">
                 <div className="text-xs font-bold text-slate-200">
-                  Conecta tu cuenta de Google para publicar y comparar tu récord global
+                  {t.leaderboard.signInPrompt}
                 </div>
                 <div className="text-[11px] text-slate-400 tabular-nums">
                   {localBest ? (
                     <span>
-                      Récord local guardado: <strong className="text-amber-300">{localBest.efficiencyPct}%</strong> ({formatLeaderboardResultLabel(localBest.result)} · Ronda {localBest.round}/20)
+                      {t.title.yourRecord}: <strong className="text-amber-300">{localBest.efficiencyPct}%</strong> ({formatLeaderboardResultLabel(localBest.result)} · {t.hud.roundLabel} {localBest.round}/20)
                     </span>
                   ) : (
                     <span>
-                      Puedes consultar la tabla global libremente o iniciar sesión para guardar tu marca personal.
+                      {t.leaderboard.subtitle}
                     </span>
                   )}
                 </div>
@@ -250,7 +341,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Publicar récord ({localBest.efficiencyPct}%)</span>
+                  <span>{t.leaderboard.syncRecord} ({localBest.efficiencyPct}%)</span>
                 </button>
               )}
 
@@ -265,7 +356,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span>Cerrar sesión</span>
+                  <span>{t.leaderboard.signOut}</span>
                 </button>
               ) : (
                 <button
@@ -278,7 +369,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                   className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors shadow-lg whitespace-nowrap shrink-0"
                 >
                   <LogIn className="w-3.5 h-3.5" />
-                  <span>{isAuthBusy ? 'Conectando...' : 'Conectar con Google'}</span>
+                  <span>{isAuthBusy ? t.multiplayer.connecting : t.leaderboard.signInGoogle}</span>
                 </button>
               )}
             </div>
@@ -288,7 +379,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
             <form onSubmit={handleSaveAlias} className="flex items-center gap-2">
               <label htmlFor="leaderboard-alias-input" className="text-slate-400 shrink-0">
-                Alias público:
+                {t.leaderboard.aliasLabel}:
               </label>
               <input
                 id="leaderboard-alias-input"
@@ -296,25 +387,25 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 maxLength={48}
                 value={aliasInput}
                 onChange={e => setAliasInput(e.target.value)}
-                placeholder={authUser?.displayName || 'Ej: Cooperativa Lavapiés'}
+                placeholder={authUser?.displayName || t.leaderboard.aliasLabel}
                 className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 focus:border-teal-500 focus:outline-none text-xs text-white w-48 sm:w-56"
               />
               <button
                 type="submit"
                 className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold transition-colors whitespace-nowrap shrink-0"
               >
-                {aliasSavedFeedback ? 'Guardado' : 'Guardar alias'}
+                {aliasSavedFeedback ? t.leaderboard.aliasSaved : t.leaderboard.saveAlias}
               </button>
             </form>
 
             {personalReferencePct !== null && topEntry && (
               <div className="text-[11px] text-slate-300 tabular-nums">
-                Comparativa vs #1 Global ({topEntry.efficiencyPct}%):{' '}
+                {t.leaderboard.topRank} #1 ({topEntry.efficiencyPct}%):{' '}
                 {personalReferencePct >= topEntry.efficiencyPct ? (
-                  <strong className="text-emerald-300">¡Igualas o lideras el récord!</strong>
+                  <strong className="text-emerald-300">#1</strong>
                 ) : (
                   <strong className="text-amber-300">
-                    a {topEntry.efficiencyPct - personalReferencePct} pts porcentuales del liderazgo
+                    -{topEntry.efficiencyPct - personalReferencePct}%
                   </strong>
                 )}
               </div>
@@ -322,48 +413,132 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           </div>
         </div>
 
-        {/* Tabla de Clasificación Global */}
-        <div className="py-4 max-h-[48vh] overflow-y-auto pr-1">
+        {/* Tabla de Clasificación Global o Reto Diario */}
+        <div className="py-4 max-h-[46vh] overflow-y-auto pr-1">
           {errorMessage && (
             <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-3 mb-3">
-              <span>No se pudo cargar la clasificación global: {errorMessage}</span>
+              <span>{t.common.error}: {errorMessage}</span>
               <button
                 type="button"
-                onClick={onRefresh}
+                onClick={activeBoardTab === 'DAILY' ? onRefreshDaily : onRefresh}
                 className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 font-semibold shrink-0"
               >
-                Reintentar
+                {t.leaderboard.refresh}
               </button>
             </div>
           )}
 
-          {isLoading && entries.length === 0 ? (
+          {activeBoardTab === 'DAILY' ? (
+            isDailyLoading && dailyEntries.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-400">
+                {t.common.loading}
+              </div>
+            ) : dailyEntries.length === 0 ? (
+              <div className="py-12 text-center space-y-2">
+                <Calendar className="w-8 h-8 text-amber-400 mx-auto" />
+                <div className="text-sm font-bold text-slate-300">
+                  {t.leaderboard.emptyDaily}
+                </div>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  {t.leaderboard.dailyBannerTitle}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
+                      <th className="py-2.5 pr-2 font-semibold w-12">{t.leaderboard.rankCol}</th>
+                      <th className="py-2.5 px-2 font-semibold">{t.leaderboard.playerCol}</th>
+                      <th className="py-2.5 px-2 font-semibold text-right">{t.leaderboard.efficiencyCol}</th>
+                      <th className="py-2.5 px-2 font-semibold text-right">{t.debug.boardRecovery}</th>
+                      <th className="py-2.5 px-2 font-semibold">{t.leaderboard.resultCol}</th>
+                      <th className="py-2.5 px-2 font-semibold text-right">{t.leaderboard.roundCol}</th>
+                      <th className="py-2.5 pl-2 font-semibold text-right">{t.hud.commonPlural}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70 tabular-nums">
+                    {dailyEntries.map((entry, index) => {
+                      const rank = index + 1;
+                      const isCurrentUser = Boolean(authUser && entry.uid === authUser.uid);
+                      const resultVisual = getResultBadgeVisual(entry.result);
+                      const charMeta = OFFICIAL_CHARACTERS.find(c => c.id === entry.leadCharacterId);
+                      return (
+                        <tr
+                          key={entry.uid}
+                          className={
+                            isCurrentUser
+                              ? 'bg-amber-950/40 hover:bg-amber-950/60'
+                              : 'hover:bg-slate-950/60'
+                          }
+                        >
+                          <td className="py-2.5 pr-2 font-black text-amber-300">#{rank}</td>
+                          <td className="py-2.5 px-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: charMeta?.color || '#f59e0b' }}
+                              />
+                              <div className="min-w-0">
+                                <div className="font-bold text-white truncate">
+                                  {entry.displayAlias}
+                                  {isCurrentUser && <span className="text-amber-300"> · {t.title.youLabel}</span>}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {entry.tierLabel} · #{entry.seedNumber}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-black text-sm text-amber-300">
+                            {entry.efficiencyPct}%
+                          </td>
+                          <td className="py-2.5 px-2 text-right text-emerald-300 font-semibold">
+                            {entry.boardRecoveryPct}%
+                          </td>
+                          <td className="py-2.5 px-2">
+                            <span className={`inline-flex items-center gap-1 font-semibold ${resultVisual.textClass}`}>
+                              {resultVisual.icon}
+                              <span>{getLocalizedResultLabel(entry.result)}</span>
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2 text-right text-slate-200 font-semibold">
+                            {entry.round}/20
+                          </td>
+                          <td className="py-2.5 pl-2 text-right text-slate-200 font-semibold">
+                            {entry.commonCount}/{entry.totalResourceTiles}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : isLoading && entries.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-400">
-              Cargando clasificación global...
+              {t.common.loading}
             </div>
           ) : entries.length === 0 ? (
             <div className="py-12 text-center space-y-2">
               <Trophy className="w-8 h-8 text-slate-600 mx-auto" />
               <div className="text-sm font-bold text-slate-300">
-                Aún no hay puntuaciones publicadas en el Leaderboard Global
+                {t.leaderboard.emptyGlobal}
               </div>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Finaliza una partida y conecta tu cuenta de Google para inaugurar el primer récord mundial de Eficiencia Cooperativa.
-              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
-                    <th className="py-2.5 pr-2 font-semibold w-12">Puesto</th>
-                    <th className="py-2.5 px-2 font-semibold">Jugadora / Equipo</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Eficiencia</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Tablero</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Sinergia</th>
-                    <th className="py-2.5 px-2 font-semibold">Desenlace</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Ronda</th>
-                    <th className="py-2.5 pl-2 font-semibold text-right">Comunes</th>
+                    <th className="py-2.5 pr-2 font-semibold w-12">{t.leaderboard.rankCol}</th>
+                    <th className="py-2.5 px-2 font-semibold">{t.leaderboard.playerCol}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.leaderboard.efficiencyCol}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.debug.boardRecovery}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.debug.teamSynergy}</th>
+                    <th className="py-2.5 px-2 font-semibold">{t.leaderboard.resultCol}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.leaderboard.roundCol}</th>
+                    <th className="py-2.5 pl-2 font-semibold text-right">{t.hud.commonPlural}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/70 tabular-nums">
@@ -416,7 +591,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                                 <span className="truncate">{entry.displayAlias}</span>
                                 {isCurrentUser && (
                                   <span className="text-[10px] font-bold text-teal-300">
-                                    · Tú
+                                    · {t.title.youLabel}
                                   </span>
                                 )}
                               </div>
@@ -437,9 +612,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                                 diffVsPersonal > 0 ? 'text-amber-300' : 'text-emerald-300'
                               }`}
                             >
-                              {diffVsPersonal > 0
-                                ? `+${diffVsPersonal}% sobre ti`
-                                : `${diffVsPersonal}% vs tu marca`}
+                              {diffVsPersonal > 0 ? `+${diffVsPersonal}%` : `${diffVsPersonal}%`}
                             </div>
                           )}
                         </td>
@@ -455,7 +628,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                         <td className="py-2.5 px-2">
                           <span className={`inline-flex items-center gap-1 font-semibold ${resultVisual.textClass}`}>
                             {resultVisual.icon}
-                            <span>{resultVisual.label}</span>
+                            <span>{getLocalizedResultLabel(entry.result)}</span>
                           </span>
                         </td>
 
@@ -478,18 +651,18 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         {/* Footer */}
         <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3 flex-wrap text-xs text-slate-400">
           <span>
-            Se conserva automáticamente la Eficiencia Cooperativa más alta de cada jugadora verificada.
+            {t.leaderboard.subtitle}
           </span>
           <div className="flex items-center gap-3">
             <span className="hidden sm:inline">
-              Pulsa <kbd className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[11px] text-slate-200">Esc</kbd> para cerrar
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[11px] text-slate-200">Esc</kbd>
             </span>
             <button
               type="button"
               onClick={onClose}
               className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors whitespace-nowrap shrink-0"
             >
-              Cerrar
+              {t.common.close}
             </button>
           </div>
         </div>

@@ -15,22 +15,30 @@ interface WeatherOverlayProps {
   weatherType: WeatherType;
   weatherMode: WeatherMode;
   intensity: number;
+  overlayOpacityScale?: number;
 }
 
 export const WeatherOverlay: React.FC<WeatherOverlayProps> = ({
   weatherType,
   weatherMode,
-  intensity
+  intensity,
+  overlayOpacityScale = 0.85
 }) => {
-  const opacityClass =
-    intensity < 0.45 ? 'opacity-45' : intensity < 0.72 ? 'opacity-70' : 'opacity-95';
+  if (overlayOpacityScale <= 0.01) {
+    return null;
+  }
+
+  const baseAlpha =
+    intensity < 0.45 ? 0.48 : intensity < 0.72 ? 0.72 : 0.95;
+  const effectiveOpacity = Math.min(1, Math.max(0, baseAlpha * overlayOpacityScale));
 
   return (
     <div
       aria-hidden="true"
       data-weather-mode={weatherMode}
       data-weather-type={weatherType}
-      className={`pointer-events-none select-none absolute inset-0 z-20 overflow-hidden transition-opacity duration-700 ${opacityClass}`}
+      style={{ opacity: effectiveOpacity }}
+      className="pointer-events-none select-none absolute inset-0 z-20 overflow-hidden transition-opacity duration-500"
     >
       {weatherType === 'RAIN' && (
         <>

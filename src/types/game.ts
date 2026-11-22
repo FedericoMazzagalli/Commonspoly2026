@@ -271,6 +271,19 @@ export interface DynamicWeatherEvent {
   triggeredAtRound: number;
 }
 
+export interface WeatherAdvancedConfig {
+  /** Multiplicador de frecuencia de eventos dinámicos (0 = desactivado, 1 = estándar, 2 = extremo) */
+  eventFrequencyMultiplier: number;
+  /** Enfriamiento mínimo en turnos entre eventos meteorológicos (1 a 6) */
+  minCooldownTurns: number;
+  /** Escala de densidad y visibilidad de partículas climáticas 3D (0 a 1.5) */
+  particleDensityScale: number;
+  /** Escala de impacto atmosférico 3D: niebla, humedad, nubes e iluminación (0 a 1.5) */
+  atmosphereImpactScale: number;
+  /** Opacidad de la superposición atmosférica 2D sobre el HUD (0 a 1) */
+  hudOverlayOpacity: number;
+}
+
 export type AchievementCategory = 
   | 'RESCUE' 
   | 'AGORA' 
@@ -339,6 +352,7 @@ export interface GameEngineState {
   playerStats?: Record<string, PlayerContributionStats>;
   performanceHistory?: RoundPerformanceSnapshot[];
   turnHistory?: TurnCommonsSnapshot[];
+  replayFrames?: TurnReplayFrame[];
 
   // Modal context payloads
   speculatorAttackPayload?: {
@@ -366,6 +380,7 @@ export interface GameEngineState {
   ambientMode: AmbientMode;
   weatherMode: WeatherMode;
   weatherIntensity?: number;
+  weatherAdvancedConfig?: WeatherAdvancedConfig;
   timeOfDayMode?: TimeOfDayMode;
 
   // Motor de eventos de crisis inesperada
@@ -375,6 +390,31 @@ export interface GameEngineState {
   // Motor de eventos meteorológicos dinámicos
   activeWeatherEvent?: DynamicWeatherEvent | null;
   turnsSinceLastWeatherEvent?: number;
+
+  // Metadatos de sesión (Sandbox, Reto Diario determinista, Multijugador Online)
+  isSandboxSession?: boolean;
+  probabilitySandbox?: ProbabilitySandboxConfig;
+  dailyChallengeDate?: string | null;
+  seedNumber?: number | null;
+  multiplayerRoomId?: string | null;
+  multiplayerRoomCode?: string | null;
+}
+
+export type SandboxDiceProfile = 'FAIR' | 'LOW_BIASED' | 'HIGH_BIASED' | 'FORCED';
+
+export type SandboxSpeculatorMovementLogic =
+  | 'STANDARD_1D6'
+  | 'CHASE_NEAREST'
+  | 'AGGRESSIVE_MAX'
+  | 'FROZEN';
+
+export interface ProbabilitySandboxConfig {
+  enabled: boolean;
+  playerDiceProfile: SandboxDiceProfile;
+  forcedPlayerDice: number;
+  speculatorMovementLogic: SandboxSpeculatorMovementLogic;
+  forcedSpeculatorDice: number | null;
+  detentionChanceOverridePct: number | null;
 }
 
 export interface PlayerContributionStats {
@@ -421,3 +461,76 @@ export interface TurnCommonsSnapshot {
   privateCount: number;
   totalResourceTiles: number;
 }
+
+export interface ReplayPlayerSnapshot {
+  id: string;
+  name: string;
+  color: string;
+  controller: ControllerType;
+  position: number;
+  wellness: number;
+  legitimacy: number;
+  isDetained: boolean;
+  detentionRoundsLeft: number;
+  inAgora: boolean;
+  roundsInAgora: number;
+  neighborhoodReputation: number;
+}
+
+export interface TurnReplayFrame {
+  frameIndex: number;
+  round: number;
+  timestamp: string;
+  actorId: string;
+  actorName: string;
+  actorColor: string;
+  activePlayerIndex: number;
+  diceRoll: number | null;
+  eventSummary: string;
+  turnLogs: GameLogEntry[];
+  newestLogId?: string;
+  players: ReplayPlayerSnapshot[];
+  speculators: Speculator[];
+  tileStates: Record<number, GoodState>;
+  commonCount: number;
+  publicCount: number;
+  privateCount: number;
+  activeWeatherTitle?: string;
+  activeCrisisTitle?: string;
+}
+
+export type TutorialBoardFocus =
+  | 'NONE'
+  | 'LEGITIMACY_AND_GOAL'
+  | 'GOODS_STATES'
+  | 'ACTIVE_PLAYER_PAWN'
+  | 'TURN_DICE_AND_TILE'
+  | 'SPECULATORS_THREAT'
+  | 'AGORA_CENTRAL';
+
+export type BoardDangerZoneTier = 'NONE' | 'MODERATE' | 'HIGH' | 'CRITICAL' | 'PROTECTED';
+
+export interface BoardDangerZoneEntry {
+  tileId: number;
+  intensity: number; // 0..1
+  tier: BoardDangerZoneTier;
+  isIntendedTarget: boolean;
+  hitChancePct: number;
+  intendedByCount: number;
+}
+
+export interface SpeculatorTrajectory {
+  speculatorId: number;
+  speculatorName: string;
+  orderIndex: number;
+  fromTileId: number;
+  toTileId: number;
+  distance: number;
+  reason: 'IN_RANGE_ATTACK' | 'BLOCKED_MUTUAL_PROTECTION' | 'NEAREST_ISOLATED_CHASE' | 'EXPECTED_MIDPOINT';
+  inCurrentRollRange: boolean;
+  targetPlayerName?: string;
+  color: string;
+  colorHex: number;
+  pathTileIds: number[];
+}
+

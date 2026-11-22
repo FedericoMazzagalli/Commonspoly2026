@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { ShieldAlert, HeartHandshake, Lock, Check } from 'lucide-react';
 import { Character } from '../../types/game';
 import { formatSignedScore, getEffectiveBailCostPerRound, getReputationProfile } from '../../utils/reputation';
+import { useI18n } from '../../i18n';
 
 interface DetentionRescueModalProps {
   detainedPlayer: Character;
@@ -22,6 +23,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
   onRescue,
   onDismiss
 }) => {
+  const { t } = useI18n();
   const baseCostPerRound = (detainedPlayer.hasCitizenship && detainedPlayer.socialClass !== 'BAJA') ? 1 : 2;
   const potentialRescuers = allPlayers.filter(p => {
     if (p.id === detainedPlayer.id || p.isDetained) return false;
@@ -38,7 +40,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
   const totalCost = detainedPlayer.detentionRoundsLeft * selectedBail.effectivePerRound;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88">
       <div className="w-full max-w-lg bg-slate-900 border-2 border-rose-500 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
@@ -48,10 +50,10 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
           </div>
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-rose-400">
-              Centro de Detención · Represión Especulativa
+              {t.hud.detainedLabel}
             </div>
             <h2 className="text-2xl font-black text-white">
-              ¡{detainedPlayer.name} ha sido Detenido!
+              {t.modals.detentionRescueTitle} · {detainedPlayer.name}
             </h2>
           </div>
         </div>
@@ -59,35 +61,33 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
         {/* Narrative & Cost breakdown */}
         <div className="py-4 space-y-3">
           <p className="text-sm text-slate-300 leading-relaxed">
-            Un Especulador interceptó a <strong>{detainedPlayer.name}</strong> y lo ha encerrado 
-            durante <span className="font-bold text-rose-400">{detainedPlayer.detentionRoundsLeft} rondas</span>. 
-            Mientras permanezca entre rejas no podrá unirse al Ágora Central.
+            <strong>{detainedPlayer.name}</strong> — <span className="font-bold text-rose-400">{detainedPlayer.detentionRoundsLeft} {t.hud.roundLabel}</span>
           </p>
 
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-xs tabular-nums">
             <div className="flex justify-between items-center text-slate-400">
-              <span>Condición social:</span>
+              <span>{t.setup.socialClass}:</span>
               <span className="font-semibold text-slate-200">
-                {detainedPlayer.hasCitizenship ? 'Con Ciudadanía' : 'Sin Ciudadanía'} ({detainedPlayer.socialClass})
+                {detainedPlayer.hasCitizenship ? t.setup.citizenshipYes : t.setup.citizenshipNo} ({detainedPlayer.socialClass})
               </span>
             </div>
             <div className="flex justify-between items-center text-slate-400">
-              <span>Coste solidario base:</span>
+              <span>{t.setup.costLabel}:</span>
               <span className="font-semibold text-slate-200">
-                {baseCostPerRound} Bienestar por ronda
+                {baseCostPerRound} {t.common.wellness} / {t.hud.roundLabel}
               </span>
             </div>
             {selectedBail.reputationDelta !== 0 && selectedRescuer && (
               <div className="flex justify-between items-center text-slate-400">
-                <span>Ajuste por Reputación ({selectedRescuer.name}):</span>
+                <span>{t.debug.repModifier} ({selectedRescuer.name}):</span>
                 <span className={selectedBail.reputationDelta < 0 ? 'font-semibold text-emerald-300' : 'font-semibold text-amber-300'}>
-                  {selectedBail.reputationDelta > 0 ? `+${selectedBail.reputationDelta}` : selectedBail.reputationDelta} / ronda
+                  {selectedBail.reputationDelta > 0 ? `+${selectedBail.reputationDelta}` : selectedBail.reputationDelta} / {t.hud.roundLabel}
                 </span>
               </div>
             )}
             <div className="flex justify-between items-center text-amber-300 font-bold border-t border-slate-800 pt-2">
-              <span>Total para fianza colectiva:</span>
-              <span className="text-sm">{totalCost} Puntos de Bienestar</span>
+              <span>{t.modals.bailOut}:</span>
+              <span className="text-sm">{totalCost} {t.common.wellness}</span>
             </div>
           </div>
 
@@ -95,7 +95,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
           {potentialRescuers.length > 0 ? (
             <div className="space-y-2 pt-2">
               <label className="text-xs font-bold text-slate-300 block">
-                ¿Qué compañera solidaria aportará los {totalCost} puntos de su Bienestar? (+4 Rep. Vecinal)
+                {t.modals.bailOut} ({totalCost} {t.common.wellness})
               </label>
               <div className="space-y-2">
                 {potentialRescuers.map(rescuer => {
@@ -116,7 +116,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
                         <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: rescuer.color }} />
                         <span className="font-bold">{rescuer.name}</span>
                         <span className="text-slate-400 tabular-nums truncate">
-                          ({rescuer.wellness} Bienestar · {prof.label} {formatSignedScore(prof.score)} · {rescuerTotal} pts)
+                          ({rescuer.wellness} {t.common.wellness} · {prof.label} {formatSignedScore(prof.score)} · {rescuerTotal})
                         </span>
                       </div>
                       {chosenRescuerId === rescuer.id && <Check className="w-4 h-4 text-teal-400 shrink-0" />}
@@ -128,7 +128,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
           ) : (
             <div className="p-3 bg-amber-950/30 border border-amber-800/50 rounded-xl text-xs text-amber-300 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 shrink-0" />
-              <span>Ninguna compañera tiene actualmente suficiente Bienestar ({totalCost} pts) para liberarlo en este turno.</span>
+              <span>{t.common.wellness} &lt; {totalCost}</span>
             </div>
           )}
         </div>
@@ -139,7 +139,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
             onClick={onDismiss}
             className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-xs font-semibold"
           >
-            Permanecer Detenido
+            {t.common.cancel}
           </button>
 
           {potentialRescuers.length > 0 && (
@@ -148,7 +148,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
               className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all tabular-nums"
             >
               <HeartHandshake className="w-4 h-4" />
-              <span>Liberar Solidariamente ({totalCost} pts)</span>
+              <span>{t.modals.bailOut} ({totalCost})</span>
             </button>
           )}
         </div>

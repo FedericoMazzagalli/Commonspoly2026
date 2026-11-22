@@ -253,7 +253,7 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
   return (
     <aside
       aria-label="Panel de Chat y Narrativa de Sesión"
-      className="pointer-events-auto fixed top-16 right-3 md:right-6 bottom-6 w-[23rem] sm:w-[28rem] max-w-[94vw] z-40 flex flex-col bg-slate-900/95 border border-teal-700/80 rounded-2xl shadow-2xl overflow-hidden text-slate-100 select-text backdrop-blur-md"
+      className="pointer-events-auto fixed top-16 right-3 md:right-6 bottom-6 w-[23rem] sm:w-[28rem] max-w-[94vw] z-40 flex flex-col bg-slate-900/95 border border-teal-700/80 rounded-2xl shadow-2xl overflow-hidden text-slate-100 select-text"
     >
       {/* CABECERA */}
       <div className="px-4 py-3 bg-slate-950/90 border-b border-teal-900/50 flex flex-col gap-2.5">

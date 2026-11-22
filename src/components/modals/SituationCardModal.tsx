@@ -7,6 +7,7 @@
 import React from 'react';
 import { HelpCircle, Check, Sparkles, CloudSun } from 'lucide-react';
 import { SituationCard, Character, WeatherCondition } from '../../types/game';
+import { useI18n } from '../../i18n';
 
 interface SituationCardModalProps {
   card: SituationCard | null;
@@ -16,19 +17,20 @@ interface SituationCardModalProps {
 }
 
 export const SituationCardModal: React.FC<SituationCardModalProps> = ({ card, player, weather, onConfirm }) => {
+  const { t } = useI18n();
   if (!card) return null;
 
   const isFavorable = weather && (weather.type === 'RAIN' || weather.type === 'SUNNY' || weather.type === 'TEMPERATE');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88">
       <div className="w-full max-w-lg bg-slate-900 border-2 border-sky-500/80 rounded-2xl shadow-2xl p-6 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2 text-sky-400 font-bold text-xs uppercase tracking-widest">
             <HelpCircle className="w-4 h-4" />
-            <span>Carta de Situación ('S')</span>
+            <span>{t.modals.situationCardTitle}</span>
           </div>
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-950 text-sky-300 border border-sky-800">
             {player.name}
@@ -59,12 +61,8 @@ export const SituationCardModal: React.FC<SituationCardModalProps> = ({ card, pl
             }`}>
               <CloudSun className="w-4 h-4 shrink-0 text-teal-400" />
               <div>
-                <strong className="block text-white font-bold">Clima Dinámico Activo: {weather.label}</strong>
-                <span>
-                  {isFavorable
-                    ? 'Clima favorable: +20% de probabilidad de éxito y bonus de recursos (+1 extra).'
-                    : 'Clima adverso: Desafío de resiliencia comunitaria en la resolución de la situación.'}
-                </span>
+                <strong className="block text-white font-bold">{t.title.weatherLabel}: {weather.label}</strong>
+                <span>{weather.description}</span>
               </div>
             </div>
           )}
@@ -77,7 +75,7 @@ export const SituationCardModal: React.FC<SituationCardModalProps> = ({ card, pl
             className="px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
           >
             <Check className="w-4 h-4" />
-            <span>Aceptar y Continuar</span>
+            <span>{t.modals.resolveCard}</span>
           </button>
         </div>
 

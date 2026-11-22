@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { GameEngineState, GoodType } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { useI18n } from '../../i18n';
 
 interface GlobalResourceTrackerProps {
   state: GameEngineState;
@@ -50,6 +51,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
   isCollectiveImpactOpen = false,
   onToggleCollectiveImpact
 }) => {
+  const { t } = useI18n();
   const [isExpanded, setIsExpanded] = useState(true);
   const [pulseGain, setPulseGain] = useState(false);
 
@@ -106,28 +108,28 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
   const categories: CategoryStats[] = [
     buildCategoryStats(
       'KNOWLEDGE',
-      'Conocimiento',
+      t.common.knowledge,
       'from-sky-500 to-indigo-400',
       'text-sky-300',
       <BookOpen className="w-3 h-3 text-sky-400 shrink-0" />
     ),
     buildCategoryStats(
       'URBAN',
-      'Urbano',
+      t.common.urban,
       'from-amber-500 to-orange-400',
       'text-amber-300',
       <Building2 className="w-3 h-3 text-amber-400 shrink-0" />
     ),
     buildCategoryStats(
       'ENVIRONMENT',
-      'Medioambiente',
+      t.common.environment,
       'from-emerald-500 to-teal-400',
       'text-emerald-300',
       <Trees className="w-3 h-3 text-emerald-400 shrink-0" />
     ),
     buildCategoryStats(
       'HEALTH',
-      'Salud',
+      t.common.health,
       'from-rose-500 to-pink-400',
       'text-rose-300',
       <HeartPulse className="w-3 h-3 text-rose-400 shrink-0" />
@@ -136,8 +138,8 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
 
   return (
     <section
-      aria-label="Progreso Global de Bienes Comunales"
-      className={`pointer-events-auto w-72 sm:w-80 bg-slate-900/90 border rounded-2xl shadow-xl text-slate-100 overflow-hidden transition-colors duration-300 ${
+      aria-label={t.hud.globalCommons}
+      className={`pointer-events-auto w-full md:w-72 lg:w-80 bg-slate-900/90 border rounded-2xl shadow-xl text-slate-100 overflow-hidden transition-colors duration-300 ${
         pulseGain ? 'border-emerald-400 shadow-emerald-500/20' : 'border-teal-800/70'
       }`}
     >
@@ -151,7 +153,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
               }`}
             />
             <h2 className="text-[11px] font-extrabold uppercase tracking-wider text-teal-200 truncate">
-              Bienes Comunales
+              {t.hud.globalCommons}
             </h2>
           </div>
 
@@ -175,8 +177,8 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                     ? 'bg-emerald-600 text-white'
                     : 'text-emerald-300 hover:text-white hover:bg-slate-800'
                 }`}
-                title="Collective Impact: Eficiencia del equipo vs especuladores"
-                aria-label="Abrir panel Collective Impact"
+                title={t.hud.collectiveImpact}
+                aria-label={t.hud.collectiveImpact}
                 aria-expanded={isCollectiveImpactOpen}
               >
                 <BarChart3 className="w-3.5 h-3.5" />
@@ -194,8 +196,8 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                     ? 'bg-teal-600 text-white'
                     : 'text-teal-300 hover:text-white hover:bg-slate-800'
                 }`}
-                title="Evolución D3: Comunes vs Privatizados por turno (Atajo: V)"
-                aria-label="Abrir gráfico de evolución D3"
+                title={t.hud.evolutionChart}
+                aria-label={t.hud.evolutionChart}
                 aria-expanded={isEvolutionOpen}
               >
                 <LineChart className="w-3.5 h-3.5" />
@@ -208,8 +210,8 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                 setIsExpanded(!isExpanded);
               }}
               className="p-0.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title={isExpanded ? 'Contraer categorías' : 'Ver las 4 categorías'}
-              aria-label={isExpanded ? 'Contraer categorías' : 'Ver las 4 categorías'}
+              title={isExpanded ? t.hud.dockCollapse : t.hud.dockExpand}
+              aria-label={isExpanded ? t.hud.dockCollapse : t.hud.dockExpand}
             >
               {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
@@ -222,7 +224,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
           aria-valuenow={commonPercent}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label="Porcentaje global de bienes comunalizados"
+          aria-label={t.hud.globalCommons}
           className="relative h-2.5 w-full rounded-full bg-slate-950 border border-slate-800 overflow-hidden flex"
         >
           <motion.div
@@ -247,7 +249,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
               animate={{ width: `${publicPercent}%` }}
               transition={{ duration: 0.65, ease: 'easeOut' }}
               className="h-full bg-sky-500/45"
-              title={`${totalPublic} bienes públicos en transición`}
+              title={`${totalPublic} ${t.hud.publicPlural}`}
             />
           )}
         </div>
@@ -256,15 +258,15 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
         <div className="flex items-center justify-between text-[10px] text-slate-400 tabular-nums">
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>Comunes: {totalCommon}</span>
+            <span>{t.hud.commonPlural}: {totalCommon}</span>
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-sky-400/70" />
-            <span>Públicos: {totalPublic}</span>
+            <span>{t.hud.publicPlural}: {totalPublic}</span>
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-rose-400/70" />
-            <span>Privados: {totalPrivate}</span>
+            <span>{t.hud.privatePlural}: {totalPrivate}</span>
           </span>
         </div>
       </div>

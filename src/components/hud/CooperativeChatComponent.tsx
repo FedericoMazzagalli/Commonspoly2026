@@ -156,6 +156,7 @@ export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> =
 
   return (
     <aside
+      data-tutorial-target="coop-chat"
       aria-label="Chat Rápido Cooperativo"
       className={`pointer-events-auto fixed right-3 md:right-6 ${bottomOffsetClass} ${zIndexClass} w-72 sm:w-80 max-w-[88vw] select-none transition-all duration-300`}
     >

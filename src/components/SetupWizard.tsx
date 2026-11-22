@@ -19,13 +19,16 @@ import {
   RefreshCw,
   Volume2,
   Award,
-  Box
+  Box,
+  CloudSun
 } from 'lucide-react';
 import { OFFICIAL_CHARACTERS } from '../data/characters';
 import { SetupInitialRolls, DifficultyLevel } from '../types/game';
 import { playSound } from '../utils/audio';
 import { useVoiceNarrator, NARRATIVE_PROFILES } from '../utils/voiceNarrator';
 import { Avatar3DPreview } from './Avatar3DPreview';
+import { useI18n } from '../i18n';
+import { LanguageSelector } from './hud/LanguageSelector';
 
 interface SetupWizardProps {
   onComplete: (
@@ -33,9 +36,15 @@ interface SetupWizardProps {
     rolls: SetupInitialRolls
   ) => void;
   onCancel: () => void;
+  onOpenWeatherSettings?: () => void;
 }
 
-export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }) => {
+export const SetupWizard: React.FC<SetupWizardProps> = ({
+  onComplete,
+  onCancel,
+  onOpenWeatherSettings
+}) => {
+  const { t } = useI18n();
   const [step, setStep] = useState<1 | 2>(1);
   const [enableTutorialOnStart, setEnableTutorialOnStart] = useState<boolean>(true);
   const [expandedCharId, setExpandedCharId] = useState<string | null>('carolina');
@@ -138,9 +147,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
   };
 
   const getStateLabel = (val: number) => {
-    if (val <= 2) return { text: 'Privado', bg: 'bg-rose-950 text-rose-300 border-rose-800' };
-    if (val <= 4) return { text: 'Público', bg: 'bg-slate-800 text-slate-300 border-slate-700' };
-    return { text: 'Común', bg: 'bg-emerald-950 text-emerald-300 border-emerald-700' };
+    if (val <= 2) return { text: t.common.private, bg: 'bg-rose-950 text-rose-300 border-rose-800' };
+    if (val <= 4) return { text: t.common.public, bg: 'bg-slate-800 text-slate-300 border-slate-700' };
+    return { text: t.common.common, bg: 'bg-emerald-950 text-emerald-300 border-emerald-700' };
   };
 
   const handleFinish = () => {
@@ -165,28 +174,29 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-5xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-5 md:p-7 text-slate-100 my-auto">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 bg-slate-950/90 overflow-y-auto">
+      <div className="w-full max-w-5xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-4 sm:p-5 md:p-7 text-slate-100 my-auto">
         
         {/* Header con pasos */}
         <div className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-slate-800 gap-4">
           <div>
             <div className="flex items-center gap-2 text-teal-400 text-sm font-semibold tracking-wider uppercase mb-1">
               <Sparkles className="w-4 h-4" />
-              <span>Preparación Oficial · Commonspoly Edición Verde</span>
+              <span>{t.setup.officialPrep}</span>
             </div>
             <h2 className="text-2xl md:text-3xl font-extrabold text-white">
-              {step === 1 ? '1. Elige tu Equipo Ciudadano' : '2. Tirada Inicial de Dificultad y Recursos'}
+              {step === 1 ? t.setup.step1Title : t.setup.step2Title}
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 text-sm font-medium">
+          <div className="flex items-center gap-2 text-sm font-medium flex-wrap">
+            <LanguageSelector variant="compact" />
             <span className={`px-3 py-1 rounded-full text-xs font-bold ${step === 1 ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
-              Paso 1: Personajes ({selectedChars.length})
+              {t.setup.step1Badge} ({selectedChars.length})
             </span>
             <ChevronRight className="w-4 h-4 text-slate-600" />
             <span className={`px-3 py-1 rounded-full text-xs font-bold ${step === 2 ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
-              Paso 2: Dificultad
+              {t.setup.step2Badge}
             </span>
           </div>
         </div>
@@ -196,8 +206,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
           <div className="py-5 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <p className="text-slate-300 text-sm leading-relaxed">
-                Commonspoly se juega en equipo colaborando entre <strong className="text-teal-400">2 y 8 personajes</strong>.
-                Pulsa <strong className="text-white">Inspeccionar 3D</strong> en cualquiera para ver su avatar, biografía y bonificador único.
+                {t.setup.teamIntro}
               </p>
 
               {!expandedChar && (
@@ -207,7 +216,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                   className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-700/50 text-xs font-semibold transition-colors"
                 >
                   <Box className="w-3.5 h-3.5" />
-                  <span>Abrir Visor 3D</span>
+                  <span>{t.setup.open3dViewer}</span>
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -220,7 +229,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                   <div className="flex items-center gap-2 text-xs text-slate-400">
                     <Box className="w-4 h-4 text-teal-400" />
                     <span className="font-semibold text-slate-200">
-                      Inspector 3D · Personaje {expandedIndex + 1} de {OFFICIAL_CHARACTERS.length}
+                      {t.setup.inspectorTitle} {expandedIndex + 1} {t.common.of} {OFFICIAL_CHARACTERS.length}
                     </span>
                   </div>
 
@@ -229,8 +238,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                       type="button"
                       onClick={() => cycleExpandedChar(-1)}
                       className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
-                      title="Personaje anterior"
-                      aria-label="Personaje anterior"
+                      title={t.setup.prevChar}
+                      aria-label={t.setup.prevChar}
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
@@ -238,8 +247,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                       type="button"
                       onClick={() => cycleExpandedChar(1)}
                       className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
-                      title="Siguiente personaje"
-                      aria-label="Siguiente personaje"
+                      title={t.setup.nextChar}
+                      aria-label={t.setup.nextChar}
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -248,7 +257,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                       onClick={() => handleToggleExpand(expandedChar.id)}
                       className="ml-1 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition-colors"
                     >
-                      <span>Contraer</span>
+                      <span>{t.setup.collapse}</span>
                       <ChevronUp className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -282,9 +291,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                         <span>
                           {expandedSelection
                             ? selectedChars.length <= 2
-                              ? 'Mínimo 2 en equipo'
-                              : 'En el equipo (Quitar)'
-                            : 'Añadir al equipo'}
+                              ? t.setup.minTwo
+                              : t.setup.inTeamRemove
+                            : t.setup.addToTeam}
                         </span>
                       </button>
 
@@ -301,12 +310,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                           {expandedSelection.controller === 'HUMAN' ? (
                             <>
                               <User className="w-3.5 h-3.5" />
-                              <span>Humano</span>
+                              <span>{t.setup.humanLabel}</span>
                             </>
                           ) : (
                             <>
                               <Bot className="w-3.5 h-3.5" />
-                              <span>Bot IA</span>
+                              <span>{t.setup.botAiLabel}</span>
                             </>
                           )}
                         </button>
@@ -329,10 +338,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                         </div>
                         <p className="text-xs text-slate-400 mt-1">
                           <span className="text-teal-300 font-semibold">
-                            {expandedChar.hasCitizenship ? 'Con Ciudadanía' : 'Sin Ciudadanía'}
+                            {expandedChar.hasCitizenship ? t.setup.citizenshipYes : t.setup.citizenshipNo}
                           </span>
                           {' · '}
-                          <span>Clase {expandedChar.socialClass.toLowerCase()}</span>
+                          <span>{t.setup.socialClass} {expandedChar.socialClass.toLowerCase()}</span>
                           {' · '}
                           <span>{expandedChar.identityTag}</span>
                         </p>
@@ -340,7 +349,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
 
                       <div className="rounded-xl bg-slate-900/75 border border-slate-800 p-3.5">
                         <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">
-                          Biografía Temática
+                          {t.setup.thematicBio}
                         </div>
                         <p className="text-sm text-slate-200 leading-relaxed">
                           «{expandedChar.bio}»
@@ -356,7 +365,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                             <div className="flex items-center gap-2">
                               <Award className="w-4 h-4 text-amber-400 shrink-0" />
                               <span className="text-xs font-extrabold uppercase tracking-wide text-amber-300">
-                                Bonificador Único · {expandedChar.uniqueBonus.title}
+                                {t.setup.uniqueBonus} · {expandedChar.uniqueBonus.title}
                               </span>
                             </div>
                             <span className="text-[11px] font-semibold text-teal-300">
@@ -373,34 +382,34 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                     {/* Habilidades + Coste real en Bienestar */}
                     <div>
                       <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-2">
-                        Habilidades Cooperativas y Coste de Transformación
+                        {t.setup.skillsAndCost}
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                         {[
                           {
-                            label: 'Cuidar',
-                            domain: 'Salud',
+                            label: t.common.care,
+                            domain: t.common.health,
                             val: expandedChar.skills.care,
                             good: 'HEALTH',
                             boxClass: 'bg-purple-950/60 border-purple-800/50 text-purple-300'
                           },
                           {
-                            label: 'Ocupar',
-                            domain: 'Urbano',
+                            label: t.common.occupy,
+                            domain: t.common.urban,
                             val: expandedChar.skills.occupy,
                             good: 'URBAN',
                             boxClass: 'bg-orange-950/60 border-orange-800/50 text-orange-300'
                           },
                           {
-                            label: 'Compartir',
-                            domain: 'Saber',
+                            label: t.common.share,
+                            domain: t.common.knowledge,
                             val: expandedChar.skills.share,
                             good: 'KNOWLEDGE',
                             boxClass: 'bg-yellow-950/60 border-yellow-800/50 text-yellow-300'
                           },
                           {
-                            label: 'Regenerar',
-                            domain: 'Entorno',
+                            label: t.common.regenerate,
+                            domain: t.common.environment,
                             val: expandedChar.skills.regenerate,
                             good: 'ENVIRONMENT',
                             boxClass: 'bg-emerald-950/60 border-emerald-800/50 text-emerald-300'
@@ -418,7 +427,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                               </div>
                               <div className="text-[11px] font-bold mt-1">{item.label}</div>
                               <div className="text-[10px] text-slate-400">
-                                {item.domain} · Coste {effectiveBase}
+                                {item.domain} · {t.setup.costLabel} {effectiveBase}
                                 {hasBonusDiscount ? ' (-1)' : ''}
                               </div>
                             </div>
@@ -485,7 +494,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                       </p>
 
                       <div className="text-[11px] text-slate-400 border-t border-slate-700/60 pt-2 mb-2">
-                        <span className="text-teal-300 font-medium">{char.hasCitizenship ? 'Con Ciudadanía' : 'Sin Ciudadanía'}</span> · {char.socialClass}
+                        <span className="text-teal-300 font-medium">{char.hasCitizenship ? t.setup.citizenshipYes : t.setup.citizenshipNo}</span> · {char.socialClass}
                       </div>
 
                       {char.uniqueBonus && (
@@ -499,19 +508,19 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                       <div className="grid grid-cols-4 gap-1 text-center text-[10px] mb-2.5">
                         <div className="bg-purple-950/60 border border-purple-800/40 rounded p-1">
                           <div className="text-purple-300 font-bold">{char.skills.care}</div>
-                          <div className="text-slate-400 text-[9px]">Cuidar</div>
+                          <div className="text-slate-400 text-[9px] truncate">{t.common.care}</div>
                         </div>
                         <div className="bg-orange-950/60 border border-orange-800/40 rounded p-1">
                           <div className="text-orange-300 font-bold">{char.skills.occupy}</div>
-                          <div className="text-slate-400 text-[9px]">Ocupar</div>
+                          <div className="text-slate-400 text-[9px] truncate">{t.common.occupy}</div>
                         </div>
                         <div className="bg-yellow-950/60 border border-yellow-800/40 rounded p-1">
                           <div className="text-yellow-300 font-bold">{char.skills.share}</div>
-                          <div className="text-slate-400 text-[9px]">Compartir</div>
+                          <div className="text-slate-400 text-[9px] truncate">{t.common.share}</div>
                         </div>
                         <div className="bg-emerald-950/60 border border-emerald-800/40 rounded p-1">
                           <div className="text-emerald-300 font-bold">{char.skills.regenerate}</div>
-                          <div className="text-slate-400 text-[9px]">Regenerar</div>
+                          <div className="text-slate-400 text-[9px] truncate">{t.common.regenerate}</div>
                         </div>
                       </div>
                     </div>
@@ -527,7 +536,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                         }`}
                       >
                         <Box className="w-3.5 h-3.5" />
-                        <span>{isExpanded ? 'Ocultar 3D' : 'Inspeccionar 3D'}</span>
+                        <span>{isExpanded ? t.setup.hide3d : t.setup.inspect3d}</span>
                         {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
 
@@ -545,12 +554,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                           {current.controller === 'HUMAN' ? (
                             <>
                               <User className="w-3.5 h-3.5" />
-                              <span>Humano (Tú / Local)</span>
+                              <span>{t.setup.humanLocal}</span>
                             </>
                           ) : (
                             <>
                               <Bot className="w-3.5 h-3.5" />
-                              <span>Bot Cooperativo (IA)</span>
+                              <span>{t.setup.botCoop}</span>
                             </>
                           )}
                         </button>
@@ -569,20 +578,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
             <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-5 text-sm text-slate-300 leading-relaxed">
               <p className="font-semibold text-white mb-2 flex items-center gap-2">
                 <Dices className="w-4 h-4 text-teal-400" />
-                Regla Oficial de Preparación: Tirada de Estado Inicial
+                {t.setup.officialRuleTitle}
               </p>
-              Tira los 4 dados (uno por cada tipo de bien). El resultado asigna el estado inicial: 
-              <span className="font-bold text-rose-300 ml-1">1-2: Privado</span>, 
-              <span className="font-bold text-slate-300 ml-1">3-4: Público</span>, 
-              <span className="font-bold text-emerald-300 ml-1">5-6: Común</span>. 
-              La suma total (4 a 24) determina el Grado de Dificultad y el número de Especuladores al acecho.
+              {t.setup.officialRuleBody}
             </div>
 
             {/* Tirada de dados */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {/* Salud */}
               <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-800/60 text-center space-y-2">
-                <div className="text-xs uppercase font-bold text-purple-300 tracking-wider">Bienes de Salud</div>
+                <div className="text-xs uppercase font-bold text-purple-300 tracking-wider">{t.setup.healthGoods}</div>
                 <div className="text-4xl font-extrabold text-white tabular-nums">{rolls.health}</div>
                 <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStateLabel(rolls.health).bg}`}>
                   {getStateLabel(rolls.health).text}
@@ -591,7 +596,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
 
               {/* Urbanos */}
               <div className="p-4 rounded-xl bg-orange-950/30 border border-orange-800/60 text-center space-y-2">
-                <div className="text-xs uppercase font-bold text-orange-300 tracking-wider">Bienes Urbanos</div>
+                <div className="text-xs uppercase font-bold text-orange-300 tracking-wider">{t.setup.urbanGoods}</div>
                 <div className="text-4xl font-extrabold text-white tabular-nums">{rolls.urban}</div>
                 <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStateLabel(rolls.urban).bg}`}>
                   {getStateLabel(rolls.urban).text}
@@ -600,7 +605,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
 
               {/* Conocimiento */}
               <div className="p-4 rounded-xl bg-yellow-950/30 border border-yellow-800/60 text-center space-y-2">
-                <div className="text-xs uppercase font-bold text-yellow-300 tracking-wider">Conocimiento</div>
+                <div className="text-xs uppercase font-bold text-yellow-300 tracking-wider">{t.setup.knowledgeGoods}</div>
                 <div className="text-4xl font-extrabold text-white tabular-nums">{rolls.knowledge}</div>
                 <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStateLabel(rolls.knowledge).bg}`}>
                   {getStateLabel(rolls.knowledge).text}
@@ -609,7 +614,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
 
               {/* Medioambiente */}
               <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-800/60 text-center space-y-2">
-                <div className="text-xs uppercase font-bold text-emerald-300 tracking-wider">Medioambientales</div>
+                <div className="text-xs uppercase font-bold text-emerald-300 tracking-wider">{t.setup.environmentGoods}</div>
                 <div className="text-4xl font-extrabold text-white tabular-nums">{rolls.environment}</div>
                 <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStateLabel(rolls.environment).bg}`}>
                   {getStateLabel(rolls.environment).text}
@@ -625,7 +630,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                 className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-600/50 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-md active:scale-95"
               >
                 <RefreshCw className={`w-4 h-4 ${isRolling ? 'animate-spin' : ''}`} />
-                <span>{isRolling ? 'Lanzando Dados...' : 'Lanzar Dados Nuevamente'}</span>
+                <span>{isRolling ? t.setup.rollingDice : t.setup.rerollDice}</span>
               </button>
             </div>
 
@@ -633,23 +638,23 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="space-y-1 text-center md:text-left">
                 <div className="text-xs font-semibold text-slate-400">
-                  Puntuación Suma Total: <span className="text-white font-bold text-base">{totalSum} / 24</span>
+                  {t.setup.totalSumScore}: <span className="text-white font-bold text-base">{totalSum} / 24</span>
                 </div>
                 <div className="text-lg font-extrabold flex items-center justify-center md:justify-start gap-2">
                   <ShieldAlert className="w-5 h-5 text-amber-400" />
                   <span>
-                    Dificultad: {difficulty === 'MAD_MAX' ? 'Mad Max (4-10)' : difficulty === 'EN_TRANSICION' ? 'En Transición (11-17)' : 'Comunlandia (18-24)'}
+                    {t.setup.difficultyLabel}: {difficulty === 'MAD_MAX' ? t.setup.diffMadMax : difficulty === 'EN_TRANSICION' ? t.setup.diffTransition : t.setup.diffComunlandia}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  {difficulty === 'MAD_MAX' && 'En tu sociedad predominan los Bienes Privados. ¡1 Especulador en juego!'}
-                  {difficulty === 'EN_TRANSICION' && 'Sociedad diversa con mezcla de públicos y comunes. ¡2 Especuladores en juego!'}
-                  {difficulty === 'COMUNLANDIA' && 'Cerca de la utopía comunitaria, ¡pero 3 Especuladores ferozmente al acecho!'}
+                  {difficulty === 'MAD_MAX' && t.setup.diffDescMadMax}
+                  {difficulty === 'EN_TRANSICION' && t.setup.diffDescTransition}
+                  {difficulty === 'COMUNLANDIA' && t.setup.diffDescComunlandia}
                 </p>
               </div>
 
               <div className="px-5 py-3 rounded-lg bg-slate-900 border border-slate-700 text-center shrink-0">
-                <div className="text-xs text-slate-400">Especuladores</div>
+                <div className="text-xs text-slate-400">{t.setup.speculatorsTitle}</div>
                 <div className="text-2xl font-black text-rose-400 tabular-nums">{speculatorsCount}</div>
               </div>
             </div>
@@ -663,13 +668,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                   </div>
                   <div>
                     <div className="text-xs font-bold text-white flex items-center gap-2">
-                      <span>Tutorial de Onboarding con Voz Guiada</span>
+                      <span>{t.setup.voiceTutorialTitle}</span>
                       <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                        Recomendado
+                        {t.setup.recommended}
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Activa la locución por voz interactiva al comenzar para explicar las mecánicas básicas paso a paso.
+                      {t.setup.voiceTutorialDesc}
                     </p>
                   </div>
                 </div>
@@ -687,7 +692,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                 <div className="pt-2.5 border-t border-teal-800/40 flex flex-col gap-2 text-xs">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                     <span className="text-[11px] text-teal-300/90 font-semibold">
-                      Voz narrativa del tutorial (8 personajes + Ágora):
+                      {t.setup.narrativeVoiceLabel}
                     </span>
                     <span className="text-[10px] text-slate-400">
                       <strong className="text-white">{voice.currentProfile.name}</strong> · {voice.currentProfile.tagline}
@@ -727,20 +732,43 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                 </div>
               )}
             </div>
+            {onOpenWeatherSettings && (
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <CloudSun className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span>{t.setup.weatherCardTitle}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {t.setup.weatherCardDesc}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound.modalOpen();
+                    onOpenWeatherSettings();
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 font-bold text-xs whitespace-nowrap shrink-0 transition-colors"
+                >
+                  {t.setup.configWeatherBtn}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* Footer con acciones */}
-        <div className="flex items-center justify-between pt-6 border-t border-slate-800 gap-4">
+        <div className="flex flex-wrap items-center justify-between pt-5 border-t border-slate-800 gap-3">
           <button
             onClick={() => {
               playSound.uiClick();
               if (step === 2) setStep(1);
               else onCancel();
             }}
-            className="px-5 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-semibold transition-colors"
+            className="min-h-[44px] px-5 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 text-sm font-semibold transition-colors"
           >
-            {step === 2 ? 'Volver a Personajes' : 'Cancelar'}
+            {step === 2 ? t.setup.backToChars : t.common.cancel}
           </button>
 
           {step === 1 ? (
@@ -749,9 +777,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                 playSound.uiClick();
                 setStep(2);
               }}
-              className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
+              className="min-h-[44px] px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
             >
-              <span>Continuar a Dificultad</span>
+              <span>{t.setup.continueToDiff}</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
@@ -760,10 +788,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete, onCancel }
                 playSound.unlockCommon();
                 handleFinish();
               }}
-              className="px-8 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-xl active:scale-95"
+              className="min-h-[44px] px-7 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-xl active:scale-95"
             >
               <Users className="w-4 h-4" />
-              <span>¡Comenzar Partida!</span>
+              <span>{t.setup.startMatchBtn}</span>
             </button>
           )}
         </div>

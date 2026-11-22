@@ -427,7 +427,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
 
       {/* MODAL / DRAWER: HISTORIAL COMPLETO DE ACCIONES DE BOTS Y JUGADORES */}
       {isHistoryModalOpen && (
-        <div className="fixed inset-0 z-50 pointer-events-auto flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 pointer-events-auto flex items-center justify-center p-3 sm:p-4 bg-slate-950/88 animate-fadeIn">
           <div className="relative w-full max-w-2xl bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden text-slate-100">
             
             {/* Cabecera del modal */}

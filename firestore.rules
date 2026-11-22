@@ -12,6 +12,14 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidChallengeDate(dateKey) {
+      return dateKey is string && dateKey.size() == 10 && dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidRoomId(roomId) {
+      return roomId is string && roomId.size() >= 9 && roomId.size() <= 16 && roomId.matches('^room_[A-Z0-9]{4,8}$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -116,6 +124,90 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidDailyChallengeEntry(data, challengeDate) {
+      return data.keys().hasAll([
+          'uid',
+          'challengeDate',
+          'seedNumber',
+          'displayAlias',
+          'leadCharacterId',
+          'efficiencyPct',
+          'boardRecoveryPct',
+          'teamSynergyPct',
+          'tierLabel',
+          'result',
+          'round',
+          'commonCount',
+          'totalResourceTiles',
+          'totalCooperativeActions',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'challengeDate',
+          'seedNumber',
+          'displayAlias',
+          'leadCharacterId',
+          'efficiencyPct',
+          'boardRecoveryPct',
+          'teamSynergyPct',
+          'tierLabel',
+          'result',
+          'round',
+          'commonCount',
+          'totalResourceTiles',
+          'totalCooperativeActions',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isValidId(data.uid) &&
+        data.uid == request.auth.uid &&
+        isValidChallengeDate(data.challengeDate) &&
+        data.challengeDate == challengeDate &&
+        data.seedNumber is int &&
+        data.seedNumber >= 1 &&
+        data.seedNumber <= 4294967295 &&
+        data.displayAlias is string &&
+        data.displayAlias.size() >= 1 &&
+        data.displayAlias.size() <= 48 &&
+        data.leadCharacterId is string &&
+        data.leadCharacterId.size() >= 1 &&
+        data.leadCharacterId.size() <= 32 &&
+        data.leadCharacterId.matches('^[a-z0-9_\\-]+$') &&
+        data.efficiencyPct is int &&
+        data.efficiencyPct >= 0 &&
+        data.efficiencyPct <= 100 &&
+        data.boardRecoveryPct is int &&
+        data.boardRecoveryPct >= 0 &&
+        data.boardRecoveryPct <= 100 &&
+        data.teamSynergyPct is int &&
+        data.teamSynergyPct >= 0 &&
+        data.teamSynergyPct <= 100 &&
+        data.tierLabel is string &&
+        data.tierLabel.size() >= 1 &&
+        data.tierLabel.size() <= 48 &&
+        data.result in ['VICTORY', 'DRAW', 'DEFEAT'] &&
+        data.round is int &&
+        data.round >= 1 &&
+        data.round <= 20 &&
+        data.commonCount is int &&
+        data.commonCount >= 0 &&
+        data.commonCount <= 40 &&
+        data.totalResourceTiles is int &&
+        data.totalResourceTiles >= 1 &&
+        data.totalResourceTiles <= 40 &&
+        data.totalCooperativeActions is int &&
+        data.totalCooperativeActions >= 0 &&
+        data.totalCooperativeActions <= 9999 &&
+        data.isPublic is bool &&
+        data.isPublic == true &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     function isBetterPersonalBest(nextData, prevData) {
       return nextData.efficiencyPct > prevData.efficiencyPct ||
         (nextData.efficiencyPct == prevData.efficiencyPct && nextData.round < prevData.round) ||
@@ -124,6 +216,148 @@ service cloud.firestore {
           nextData.totalCooperativeActions > prevData.totalCooperativeActions);
     }
 
+    function isValidRoom(data) {
+      return data.keys().hasAll([
+          'roomCode',
+          'hostUid',
+          'status',
+          'isPublic',
+          'difficulty',
+          'maxPlayers',
+          'memberUids',
+          'members',
+          'stateVersion',
+          'phase',
+          'round',
+          'activePlayerIndex',
+          'currentDiceRoll',
+          'playersSummary',
+          'speculatorsSummary',
+          'tileStates',
+          'gameResult',
+          'gameResultDetails',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'roomCode',
+          'hostUid',
+          'status',
+          'isPublic',
+          'difficulty',
+          'maxPlayers',
+          'memberUids',
+          'members',
+          'stateVersion',
+          'phase',
+          'round',
+          'activePlayerIndex',
+          'currentDiceRoll',
+          'playersSummary',
+          'speculatorsSummary',
+          'tileStates',
+          'gameResult',
+          'gameResultDetails',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.roomCode is string &&
+        data.roomCode.size() >= 4 &&
+        data.roomCode.size() <= 8 &&
+        data.roomCode.matches('^[A-Z0-9]+$') &&
+        isValidId(data.hostUid) &&
+        data.status in ['WAITING', 'PLAYING', 'FINISHED'] &&
+        data.isPublic is bool &&
+        data.difficulty in ['COMUNLANDIA', 'EN_TRANSICION', 'MAD_MAX'] &&
+        data.maxPlayers is int &&
+        data.maxPlayers >= 2 &&
+        data.maxPlayers <= 4 &&
+        data.memberUids is list &&
+        data.memberUids.size() <= 4 &&
+        (data.memberUids.size() == 0 || data.memberUids[0] is string) &&
+        data.members is list &&
+        data.members.size() <= 4 &&
+        (data.members.size() == 0 || data.members[0] is map) &&
+        data.stateVersion is int &&
+        data.stateVersion >= 1 &&
+        data.stateVersion <= 999999 &&
+        data.phase is string &&
+        data.phase.size() >= 3 &&
+        data.phase.size() <= 48 &&
+        data.round is int &&
+        data.round >= 1 &&
+        data.round <= 20 &&
+        data.activePlayerIndex is int &&
+        data.activePlayerIndex >= 0 &&
+        data.activePlayerIndex <= 7 &&
+        data.currentDiceRoll is int &&
+        data.currentDiceRoll >= 0 &&
+        data.currentDiceRoll <= 6 &&
+        data.playersSummary is list &&
+        data.playersSummary.size() >= 1 &&
+        data.playersSummary.size() <= 8 &&
+        data.playersSummary[0] is map &&
+        data.speculatorsSummary is list &&
+        data.speculatorsSummary.size() >= 1 &&
+        data.speculatorsSummary.size() <= 3 &&
+        data.speculatorsSummary[0] is map &&
+        data.tileStates is list &&
+        data.tileStates.size() == 40 &&
+        data.tileStates[0] is string &&
+        data.gameResult in ['NONE', 'VICTORY', 'DRAW', 'DEFEAT'] &&
+        data.gameResultDetails is string &&
+        data.gameResultDetails.size() <= 240 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidActionIntent(data) {
+      return data.keys().hasAll([
+          'uid',
+          'hostUid',
+          'displayAlias',
+          'actionType',
+          'payloadText',
+          'targetRound',
+          'processed',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'hostUid',
+          'displayAlias',
+          'actionType',
+          'payloadText',
+          'targetRound',
+          'processed',
+          'createdAt'
+        ]) &&
+        isValidId(data.uid) &&
+        isValidId(data.hostUid) &&
+        data.displayAlias is string &&
+        data.displayAlias.size() >= 1 &&
+        data.displayAlias.size() <= 32 &&
+        data.actionType in [
+          'ROLL_DICE',
+          'UNLOCK_TILE',
+          'PASS_TILE',
+          'TRY_AGORA',
+          'STAY_AGORA',
+          'RESOLVE_CARD',
+          'CLOSE_MODAL',
+          'RESCUE_PLAYER',
+          'CHAT'
+        ] &&
+        data.payloadText is string &&
+        data.payloadText.size() <= 180 &&
+        data.targetRound is int &&
+        data.targetRound >= 1 &&
+        data.targetRound <= 20 &&
+        data.processed is bool &&
+        data.createdAt is timestamp;
+    }
+
+    // Global Leaderboard
     match /leaderboard/{userId} {
       allow get: if isValidId(userId) && existing().isPublic == true;
 
@@ -160,6 +394,173 @@ service cloud.firestore {
         isBetterPersonalBest(incoming(), existing());
 
       allow delete: if false;
+    }
+
+    // Deterministic Daily Challenge Leaderboard
+    match /dailyChallenges/{challengeDate}/entries/{userId} {
+      allow get: if isValidChallengeDate(challengeDate) &&
+        isValidId(userId) &&
+        existing().isPublic == true;
+
+      allow list: if isValidChallengeDate(challengeDate) &&
+        resource.data.efficiencyPct >= 0 &&
+        request.query.limit != null &&
+        request.query.limit <= 50;
+
+      allow create: if isValidChallengeDate(challengeDate) &&
+        isVerifiedOwner(userId) &&
+        isValidDailyChallengeEntry(incoming(), challengeDate) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidChallengeDate(challengeDate) &&
+        isVerifiedOwner(userId) &&
+        isValidDailyChallengeEntry(incoming(), challengeDate) &&
+        incoming().uid == existing().uid &&
+        incoming().challengeDate == existing().challengeDate &&
+        incoming().seedNumber == existing().seedNumber &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayAlias',
+          'leadCharacterId',
+          'efficiencyPct',
+          'boardRecoveryPct',
+          'teamSynergyPct',
+          'tierLabel',
+          'result',
+          'round',
+          'commonCount',
+          'totalResourceTiles',
+          'totalCooperativeActions',
+          'updatedAt'
+        ]) &&
+        isBetterPersonalBest(incoming(), existing());
+
+      allow delete: if false;
+    }
+
+    // Online Cooperative Multiplayer Rooms
+    match /rooms/{roomId} {
+      allow get: if isSignedIn() &&
+        isValidRoomId(roomId) &&
+        (existing().isPublic == true || request.auth.uid in existing().memberUids);
+
+      allow list: if isSignedIn() &&
+        resource.data.isPublic == true &&
+        resource.data.status == 'WAITING' &&
+        request.query.limit != null &&
+        request.query.limit <= 25;
+
+      allow create: if isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        isValidRoomId(roomId) &&
+        isValidRoom(incoming()) &&
+        incoming().hostUid == request.auth.uid &&
+        incoming().status == 'WAITING' &&
+        incoming().memberUids.size() == 1 &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        isValidRoomId(roomId) &&
+        isValidRoom(incoming()) &&
+        existing().status != 'FINISHED' &&
+        incoming().hostUid == existing().hostUid &&
+        incoming().roomCode == existing().roomCode &&
+        incoming().difficulty == existing().difficulty &&
+        incoming().maxPlayers == existing().maxPlayers &&
+        incoming().isPublic == existing().isPublic &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action 1: Host launches or synchronizes authoritative match state
+          (
+            request.auth.uid == existing().hostUid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'stateVersion',
+              'phase',
+              'round',
+              'activePlayerIndex',
+              'currentDiceRoll',
+              'playersSummary',
+              'speculatorsSummary',
+              'tileStates',
+              'gameResult',
+              'gameResultDetails',
+              'updatedAt'
+            ])
+          ) ||
+          // Action 2: Authenticated user joins a WAITING room with available seats
+          (
+            existing().status == 'WAITING' &&
+            !(request.auth.uid in existing().memberUids) &&
+            request.auth.uid in incoming().memberUids &&
+            incoming().memberUids.size() == existing().memberUids.size() + 1 &&
+            existing().memberUids.size() < existing().maxPlayers &&
+            incoming().members.size() == existing().members.size() + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'members', 'updatedAt'])
+          ) ||
+          // Action 3: Room member updates character choice or ready toggle while WAITING
+          (
+            existing().status == 'WAITING' &&
+            request.auth.uid in existing().memberUids &&
+            incoming().memberUids == existing().memberUids &&
+            incoming().members.size() == existing().members.size() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['members', 'updatedAt'])
+          ) ||
+          // Action 4: Member leaves non-finished room cleanly
+          (
+            request.auth.uid in existing().memberUids &&
+            !(request.auth.uid in incoming().memberUids) &&
+            incoming().memberUids.size() + 1 == existing().memberUids.size() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'members', 'status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if false;
+
+      // Room Turn Action & Chat Queue
+      match /actions/{actionId} {
+        allow get: if isSignedIn() &&
+          isValidRoomId(roomId) &&
+          isValidId(actionId) &&
+          request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberUids;
+
+        allow list: if isSignedIn() &&
+          resource.data.hostUid == request.auth.uid &&
+          request.query.limit != null &&
+          request.query.limit <= 25;
+
+        allow create: if isSignedIn() &&
+          request.auth.token.email_verified == true &&
+          isValidRoomId(roomId) &&
+          isValidId(actionId) &&
+          isValidActionIntent(incoming()) &&
+          incoming().uid == request.auth.uid &&
+          incoming().processed == false &&
+          incoming().createdAt == request.time &&
+          exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+          request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberUids &&
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.status == 'PLAYING' &&
+          incoming().hostUid == get(/databases/$(database)/documents/rooms/$(roomId)).data.hostUid;
+
+        allow update: if isSignedIn() &&
+          request.auth.token.email_verified == true &&
+          isValidRoomId(roomId) &&
+          isValidId(actionId) &&
+          isValidActionIntent(incoming()) &&
+          existing().processed == false &&
+          incoming().processed == true &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['processed']) &&
+          exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.hostUid == request.auth.uid;
+
+        allow delete: if false;
+      }
     }
   }
 }

@@ -196,7 +196,7 @@ export interface AtmosphericSkyDome {
 export function createAtmosphericSkyDome(
   giUniforms: GlobalIlluminationUniforms
 ): AtmosphericSkyDome {
-  const geometry = new THREE.SphereGeometry(68, 32, 20);
+  const geometry = new THREE.SphereGeometry(68, 16, 10);
 
   const skyUniforms = {
     uZenithColor: { value: new THREE.Color(0x081d22) },

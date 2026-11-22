@@ -21,7 +21,9 @@ import {
   Activity,
   Globe,
   LogIn,
-  CheckCircle2
+  CheckCircle2,
+  Film,
+  BarChart3
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -46,7 +48,9 @@ import {
 import { CommonsEvolutionD3Chart } from '../charts/CommonsEvolutionD3Chart';
 import { CooperativeEfficiencyBreakdown } from '../../utils/cooperativeEfficiency';
 import { LeaderboardEntry, LeaderboardSubmissionStatus } from '../../utils/leaderboard';
+import { CareerMatchStats, getCareerSummary } from '../../utils/matchHistoryStats';
 import { type User } from '../../firebase';
+import { useI18n } from '../../i18n';
 
 interface GameOverModalProps {
   result: 'VICTORY' | 'DRAW' | 'DEFEAT';
@@ -67,6 +71,12 @@ interface GameOverModalProps {
   onOpenLeaderboard?: () => void;
   onSignInAndPublish?: () => void;
   onInspectBoard?: () => void;
+  onOpenCinemaMode?: () => void;
+  replayFramesCount?: number;
+  careerStats?: CareerMatchStats;
+  onOpenCareerStats?: () => void;
+  isSandboxSession?: boolean;
+  dailyChallengeDate?: string | null;
   onRestart: () => void;
 }
 
@@ -140,8 +150,15 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onOpenLeaderboard,
   onSignInAndPublish,
   onInspectBoard,
+  onOpenCinemaMode,
+  replayFramesCount = 0,
+  careerStats,
+  onOpenCareerStats,
+  isSandboxSession = false,
+  dailyChallengeDate = null,
   onRestart
 }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<DashboardTab>('evolution');
   const [resourceMetric, setResourceMetric] = useState<ResourceMetric>('totalResources');
 
@@ -284,10 +301,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
   const metricLabel =
     resourceMetric === 'totalResources'
-      ? 'Recursos Totales (Bienestar + Legitimidad)'
+      ? t.gameover.metricTotal
       : resourceMetric === 'wellness'
-      ? 'Bienestar acumulado por ronda'
-      : 'Legitimidad acumulada por ronda';
+      ? t.gameover.metricWellness
+      : t.gameover.metricLegitimacy;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 overflow-y-auto">
@@ -315,12 +332,12 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
             <div>
               <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400">
-                Commonspoly · Informe de Partida
+                Commonspoly · {t.gameover.summaryTitle}
               </div>
               <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight mt-0.5">
-                {result === 'VICTORY' && '¡Victoria de los Bienes Comunes!'}
-                {result === 'DRAW' && 'Empate Social de Transición'}
-                {result === 'DEFEAT' && 'Avance Neoliberal Inconcluso'}
+                {result === 'VICTORY' && t.gameover.victoryTitle}
+                {result === 'DRAW' && t.gameover.drawTitle}
+                {result === 'DEFEAT' && t.gameover.defeatTitle}
               </h2>
               {details && (
                 <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
@@ -334,16 +351,16 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             {cooperativeEfficiency && (
               <>
                 <span className="font-bold text-teal-300">
-                  Eficiencia coop.: {cooperativeEfficiency.efficiencyPct}% ({cooperativeEfficiency.tierLabel})
+                  {t.gameover.efficiencyLabel}: {cooperativeEfficiency.efficiencyPct}% ({cooperativeEfficiency.tierLabel})
                 </span>
                 <span className="text-slate-600">·</span>
               </>
             )}
-            <span>{round} / 20 rondas</span>
+            <span>{round} / 20 {t.hud.roundLabel}</span>
             <span className="text-slate-600">·</span>
-            <span>{players.length} participantes</span>
+            <span>{players.length} {t.gameover.participantCol}</span>
             <span className="text-slate-600">·</span>
-            <span>{logs.length} eventos registrados</span>
+            <span>{logs.length}</span>
           </div>
         </div>
 
@@ -351,7 +368,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-5 text-left">
           <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl">
             <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wide">
-              Rondas Jugadas
+              {t.hud.roundLabel}
             </div>
             <div className="text-2xl font-black text-white tabular-nums mt-0.5">
               {round} <span className="text-sm font-semibold text-slate-500">/ 20</span>
@@ -360,7 +377,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
           <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl">
             <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wide">
-              Bienes Comunes
+              {t.hud.commonPlural}
             </div>
             <div className="text-2xl font-black text-emerald-400 tabular-nums mt-0.5">
               {commonCount}
@@ -369,7 +386,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
           <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl">
             <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wide">
-              Bienes Públicos
+              {t.hud.publicPlural}
             </div>
             <div className="text-2xl font-black text-sky-400 tabular-nums mt-0.5">
               {publicCount}
@@ -378,7 +395,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
           <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl">
             <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wide">
-              Bienes Privados
+              {t.hud.privatePlural}
             </div>
             <div className="text-2xl font-black text-rose-400 tabular-nums mt-0.5">
               {privateCount}
@@ -392,10 +409,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-800/80 mb-4">
             <div>
               <h3 className="text-sm font-bold text-white">
-                Panel de Rendimiento y Contribución Colectiva
+                {t.gameover.summaryTitle}
               </h3>
               <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-                {totalCoopActions} acciones cooperativas · {totalWellnessInvested} pts de bienestar invertidos en el común
+                {totalCoopActions} {t.gameover.coopCol} · {totalWellnessInvested} {t.common.wellness}
               </p>
             </div>
 
@@ -410,7 +427,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 }`}
               >
                 <Activity className="w-3.5 h-3.5" />
-                <span>Comunes vs Privatizados</span>
+                <span>{t.gameover.tabEvolution}</span>
               </button>
               <button
                 type="button"
@@ -422,7 +439,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 }`}
               >
                 <TrendingUp className="w-3.5 h-3.5" />
-                <span>Recursos</span>
+                <span>{t.gameover.tabResources}</span>
               </button>
               <button
                 type="button"
@@ -434,7 +451,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 }`}
               >
                 <Layers className="w-3.5 h-3.5" />
-                <span>Contribuciones</span>
+                <span>{t.gameover.tabCommons}</span>
               </button>
               <button
                 type="button"
@@ -446,7 +463,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
-                <span>Participantes</span>
+                <span>{t.gameover.tabBreakdown}</span>
               </button>
             </div>
           </div>
@@ -456,7 +473,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             <CommonsEvolutionD3Chart
               data={normalizedTurnHistory}
               height={280}
-              title="Evolución turno a turno: Bienes Comunes recuperados vs Privatizados (D3)"
+              title={t.gameover.tabEvolution}
             />
           )}
 
@@ -477,7 +494,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    Total Recursos
+                    {t.gameover.metricTotal}
                   </button>
                   <button
                     type="button"
@@ -488,7 +505,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    Bienestar
+                    {t.common.wellness}
                   </button>
                   <button
                     type="button"
@@ -499,7 +516,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    Legitimidad
+                    {t.common.legitimacy}
                   </button>
                 </div>
               </div>
@@ -544,7 +561,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           {activeTab === 'commons' && (
             <div>
               <div className="text-xs font-semibold text-slate-300 mb-2">
-                Contribución individual al común, lo público y acciones solidarias
+                {t.gameover.tabCommons}
               </div>
               <div className="h-[265px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -567,19 +584,19 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                     <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }} />
                     <Bar
                       dataKey="commonsUnlocked"
-                      name="Bienes Comunes"
+                      name={t.gameover.commonsCol}
                       fill="#10b981"
                       radius={[4, 4, 0, 0]}
                     />
                     <Bar
                       dataKey="publicsUnlocked"
-                      name="Bienes Públicos"
+                      name={t.gameover.publicsCol}
                       fill="#38bdf8"
                       radius={[4, 4, 0, 0]}
                     />
                     <Bar
                       dataKey="cooperativeActions"
-                      name="Acciones Coop."
+                      name={t.gameover.coopCol}
                       fill="#f59e0b"
                       radius={[4, 4, 0, 0]}
                     />
@@ -595,14 +612,14 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
-                    <th className="py-2.5 pr-3 font-semibold">Participante</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Bienestar</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Legitimidad</th>
+                    <th className="py-2.5 pr-3 font-semibold">{t.gameover.participantCol}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.common.wellness}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.common.legitimacy}</th>
                     <th className="py-2.5 px-2 font-semibold text-right">Total</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Comunes</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Públicos</th>
-                    <th className="py-2.5 px-2 font-semibold text-right">Acciones Coop.</th>
-                    <th className="py-2.5 pl-2 font-semibold text-right">Invertido</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.gameover.commonsCol}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.gameover.publicsCol}</th>
+                    <th className="py-2.5 px-2 font-semibold text-right">{t.gameover.coopCol}</th>
+                    <th className="py-2.5 pl-2 font-semibold text-right">{t.common.wellness}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/70">
@@ -617,7 +634,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                           <div>
                             <div className="font-bold text-slate-100">{row.fullName}</div>
                             <div className="text-[10px] text-slate-400">
-                              {row.controller === 'HUMAN' ? 'Jugador Humano' : 'Bot Cooperativo'}
+                              {row.controller === 'HUMAN' ? t.common.human : t.common.bot}
                             </div>
                           </div>
                         </div>
@@ -664,34 +681,47 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               </div>
               <div className="min-w-0 space-y-0.5 tabular-nums">
                 <div className="text-xs font-bold text-white flex items-center gap-2 flex-wrap">
-                  <span>Clasificación Global · Eficiencia Cooperativa: {cooperativeEfficiency.efficiencyPct}%</span>
-                  {globalUserRank && (
-                    <span className="text-teal-300">· Tu puesto actual: #{globalUserRank}</span>
+                  <span>
+                    {isSandboxSession
+                      ? `${t.hud.sandboxBadge} · ${t.gameover.efficiencyLabel}: ${cooperativeEfficiency.efficiencyPct}%`
+                      : `${t.leaderboard.title} · ${t.gameover.efficiencyLabel}: ${cooperativeEfficiency.efficiencyPct}%`}
+                  </span>
+                  {dailyChallengeDate && !isSandboxSession && (
+                    <span className="text-emerald-300">· {t.hud.dailyBadge} {dailyChallengeDate}</span>
+                  )}
+                  {!isSandboxSession && globalUserRank && (
+                    <span className="text-teal-300">· #{globalUserRank}</span>
                   )}
                 </div>
                 <p className="text-[11px] text-slate-300 leading-snug">
-                  {leaderboardStatus?.state === 'CREATED' &&
-                    `¡Primer récord personal publicado en el Leaderboard Global (${leaderboardStatus.entry.efficiencyPct}%)!`}
-                  {leaderboardStatus?.state === 'UPDATED_RECORD' &&
-                    `¡Nuevo récord personal! Superaste tu marca anterior (${leaderboardStatus.prevEfficiencyPct}% → ${leaderboardStatus.entry.efficiencyPct}%).`}
-                  {leaderboardStatus?.state === 'NOT_HIGHER' &&
-                    `Tu récord global vigente sigue siendo ${leaderboardStatus.existingBestPct}% (se conserva tu puntuación más alta).`}
-                  {leaderboardStatus?.state === 'SAVED_LOCAL_PENDING' &&
-                    'Puntuación guardada localmente. Conecta tu cuenta de Google para publicarla y compararte en el Leaderboard Global.'}
-                  {leaderboardStatus?.state === 'SUBMITTING' &&
-                    'Sincronizando récord con el Leaderboard Global...'}
-                  {leaderboardStatus?.state === 'ERROR' &&
-                    `Guardado local conservado (error de red al sincronizar: ${leaderboardStatus.message}).`}
-                  {(!leaderboardStatus || leaderboardStatus.state === 'IDLE') &&
-                    (globalTopEntry
-                      ? `Líder mundial actual: ${globalTopEntry.displayAlias} con ${globalTopEntry.efficiencyPct}% (Ronda ${globalTopEntry.round}/20).`
-                      : 'Consulta y compara tu resultado con el resto de participantes en el Leaderboard Global.')}
+                  {isSandboxSession ? (
+                    t.gameover.sandboxNotice
+                  ) : (
+                    <>
+                      {leaderboardStatus?.state === 'CREATED' &&
+                        `#${leaderboardStatus.entry.efficiencyPct}%`}
+                      {leaderboardStatus?.state === 'UPDATED_RECORD' &&
+                        `${leaderboardStatus.prevEfficiencyPct}% → ${leaderboardStatus.entry.efficiencyPct}%`}
+                      {leaderboardStatus?.state === 'NOT_HIGHER' &&
+                        `${t.title.yourRecord}: ${leaderboardStatus.existingBestPct}%`}
+                      {leaderboardStatus?.state === 'SAVED_LOCAL_PENDING' &&
+                        t.leaderboard.signInPrompt}
+                      {leaderboardStatus?.state === 'SUBMITTING' &&
+                        t.common.loading}
+                      {leaderboardStatus?.state === 'ERROR' &&
+                        `${t.common.error}: ${leaderboardStatus.message}`}
+                      {(!leaderboardStatus || leaderboardStatus.state === 'IDLE') &&
+                        (globalTopEntry
+                          ? `${t.leaderboard.topRank} #1: ${globalTopEntry.displayAlias} · ${globalTopEntry.efficiencyPct}% (${t.hud.roundLabel} ${globalTopEntry.round}/20)`
+                          : t.leaderboard.subtitle)}
+                    </>
+                  )}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap shrink-0">
-              {!authUser && onSignInAndPublish && (
+              {!isSandboxSession && !authUser && onSignInAndPublish && (
                 <button
                   type="button"
                   onClick={onSignInAndPublish}
@@ -699,7 +729,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
                 >
                   <LogIn className="w-3.5 h-3.5" />
-                  <span>{isAuthBusy ? 'Conectando...' : 'Publicar con Google'}</span>
+                  <span>{isAuthBusy ? t.multiplayer.connecting : t.gameover.signInPublish}</span>
                 </button>
               )}
               {onOpenLeaderboard && (
@@ -709,37 +739,84 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-teal-300 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
                 >
                   <Globe className="w-3.5 h-3.5" />
-                  <span>Ver Leaderboard Global</span>
+                  <span>{t.gameover.viewLeaderboard}</span>
                 </button>
               )}
             </div>
           </div>
         )}
 
+        {/* Resumen acumulado de trayectoria de partidas */}
+        {careerStats && careerStats.totalMatches > 0 && (() => {
+          const summary = getCareerSummary(careerStats);
+          return (
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 sm:p-4 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 space-y-0.5 tabular-nums">
+                  <div className="text-xs font-bold text-white">
+                    {t.modals.careerTitle} · {careerStats.totalMatches} {t.modals.totalMatches}
+                  </div>
+                  <div className="text-[11px] text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span>{t.modals.winRate}: <strong className="text-emerald-300">{summary.winRatePct}%</strong></span>
+                    <span className="text-slate-600" aria-hidden="true">·</span>
+                    <span>{careerStats.winStreak} ({t.title.careerMax} {careerStats.bestWinStreak})</span>
+                    <span className="text-slate-600" aria-hidden="true">·</span>
+                    <span>{t.modals.avgEfficiency}: <strong className="text-teal-300">{summary.avgEfficiencyPct}%</strong> ({careerStats.bestEfficiencyPct}%)</span>
+                  </div>
+                </div>
+              </div>
+
+              {onOpenCareerStats && (
+                <button
+                  type="button"
+                  onClick={onOpenCareerStats}
+                  className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  <span>{t.gameover.viewCareer}</span>
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Nota y acciones */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-1">
           <p className="text-xs text-slate-400 italic text-center md:text-left max-w-xl">
-            &quot;Commonspoly nació en 2015 en el Hackcamp Reclaim the Commons (ZEMOS98) para subvertir el Monopoly y celebrar la felicidad radical cuando nos reconocemos interdependientes.&quot;
+            {t.title.narrative}
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 shrink-0">
+            {onOpenCinemaMode && replayFramesCount > 0 && (
+              <button
+                type="button"
+                onClick={onOpenCinemaMode}
+                className="min-h-[44px] px-4 py-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition-all active:scale-95"
+              >
+                <Film className="w-4 h-4 text-amber-400" />
+                <span>{t.gameover.cinemaReplay}</span>
+              </button>
+            )}
             {onInspectBoard && (
               <button
                 type="button"
                 onClick={onInspectBoard}
-                className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition-all active:scale-95"
+                className="min-h-[44px] px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition-all active:scale-95"
               >
                 <Eye className="w-4 h-4 text-teal-400" />
-                <span>Ver Vuelo 3D</span>
+                <span>{t.gameover.inspectBoard}</span>
               </button>
             )}
             <button
               type="button"
               onClick={onRestart}
-              className="px-6 py-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-xl active:scale-95 transition-all"
+              className="min-h-[44px] px-6 py-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 shadow-xl active:scale-95 transition-all"
             >
               <RefreshCw className="w-4 h-4" />
-              <span>Jugar Nueva Partida de Commonspoly</span>
+              <span>{t.gameover.playAgain}</span>
             </button>
           </div>
         </div>

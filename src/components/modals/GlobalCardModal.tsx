@@ -6,6 +6,7 @@
 import React from 'react';
 import { Globe, Sparkles, ArrowRight } from 'lucide-react';
 import { GlobalCard } from '../../types/game';
+import { useI18n } from '../../i18n';
 
 interface GlobalCardModalProps {
   card: GlobalCard | null;
@@ -14,20 +15,21 @@ interface GlobalCardModalProps {
 }
 
 export const GlobalCardModal: React.FC<GlobalCardModalProps> = ({ card, round, onConfirm }) => {
+  const { t } = useI18n();
   if (!card) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88">
       <div className="w-full max-w-xl bg-slate-900 border-2 border-amber-500/80 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Card Badge */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-widest">
             <Globe className="w-4 h-4" />
-            <span>Carta Global · Inicio de la Ronda {round} de 20</span>
+            <span>{t.modals.globalCardTitle} · {t.hud.roundLabel} {round} / 20</span>
           </div>
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-950 text-amber-300 border border-amber-800">
-            Afecta a Toda la Sociedad
+            20 {t.hud.roundLabel}
           </span>
         </div>
 
@@ -55,7 +57,7 @@ export const GlobalCardModal: React.FC<GlobalCardModalProps> = ({ card, round, o
             className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Aplicar Efecto y Comenzar Ronda</span>
+            <span>{t.modals.acknowledgeCard}</span>
             <ArrowRight className="w-4 h-4 ml-1" />
           </button>
         </div>

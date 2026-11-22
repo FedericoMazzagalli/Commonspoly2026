@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react';
 import { audioManager, playSound } from './audio';
+import { getCurrentLanguage, getCurrentLanguageMeta } from '../i18n';
 
 export type NarrativeProfileId =
   | 'carolina'
@@ -290,6 +291,9 @@ class CommonspolyVoiceNarrator {
           this.initVoices();
         };
       }
+      window.addEventListener('commonspoly:language-changed', () => {
+        this.syncLanguage();
+      });
     }
   }
 
@@ -304,8 +308,15 @@ class CommonspolyVoiceNarrator {
 
   private applyProfileVoice(profileId: NarrativeProfileId): void {
     const profile = NARRATIVE_PROFILES.find(p => p.id === profileId) || NARRATIVE_PROFILES[0];
+    const activeLangCode = getCurrentLanguage();
+    const langVoices = this.voices.filter(v => v.lang.toLowerCase().startsWith(activeLangCode));
     const spanishVoices = this.voices.filter(v => v.lang.toLowerCase().startsWith('es'));
-    const candidateVoices = spanishVoices.length > 0 ? spanishVoices : this.voices;
+    const candidateVoices =
+      langVoices.length > 0
+        ? langVoices
+        : spanishVoices.length > 0
+          ? spanishVoices
+          : this.voices;
 
     let preferredVoice: SpeechSynthesisVoice | null = null;
 
@@ -321,8 +332,8 @@ class CommonspolyVoiceNarrator {
     }
 
     if (!preferredVoice && candidateVoices.length > 0) {
-      const femaleKeywords = ['monica', 'paulina', 'helena', 'laura', 'dalia', 'ana', 'elvira', 'female', 'mujer', 'sabina', 'lucia', 'sofia'];
-      const maleKeywords = ['jorge', 'diego', 'pablo', 'juan', 'carlos', 'male', 'hombre', 'alvaro', 'enrique', 'miguel', 'tomas'];
+      const femaleKeywords = ['monica', 'paulina', 'helena', 'laura', 'dalia', 'ana', 'elvira', 'female', 'mujer', 'sabina', 'lucia', 'sofia', 'samantha', 'victoria', 'amelie', 'kyoko', 'yunxi'];
+      const maleKeywords = ['jorge', 'diego', 'pablo', 'juan', 'carlos', 'male', 'hombre', 'alvaro', 'enrique', 'miguel', 'tomas', 'daniel', 'thomas', 'otoya'];
 
       if (profile.voiceGenderPreference === 'FEMALE') {
         preferredVoice = candidateVoices.find(v =>
@@ -352,6 +363,10 @@ class CommonspolyVoiceNarrator {
 
     this.selectedVoice = preferredVoice;
     this.notify();
+  }
+
+  public syncLanguage(): void {
+    this.applyProfileVoice(this.currentProfileId);
   }
 
   private notify(): void {
@@ -438,11 +453,21 @@ class CommonspolyVoiceNarrator {
       const utterance = new SpeechSynthesisUtterance(cleaned);
       this.currentUtterance = utterance;
 
-      if (this.selectedVoice) {
-        utterance.voice = this.selectedVoice;
-        utterance.lang = this.selectedVoice.lang || 'es-ES';
+      const activeMeta = getCurrentLanguageMeta();
+      const activeLangVoices = this.voices.filter(v =>
+        v.lang.toLowerCase().startsWith(activeMeta.code)
+      );
+      const voiceForLang =
+        this.selectedVoice &&
+        this.selectedVoice.lang.toLowerCase().startsWith(activeMeta.code)
+          ? this.selectedVoice
+          : activeLangVoices[0] || this.selectedVoice;
+
+      if (voiceForLang) {
+        utterance.voice = voiceForLang;
+        utterance.lang = voiceForLang.lang || activeMeta.bcp47;
       } else {
-        utterance.lang = 'es-ES';
+        utterance.lang = activeMeta.bcp47;
       }
 
       utterance.rate = this.rate;

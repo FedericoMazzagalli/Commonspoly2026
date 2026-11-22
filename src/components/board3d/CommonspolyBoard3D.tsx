@@ -18,8 +18,19 @@ import {
   SituationCard,
   NeighborhoodDecision,
   GameEngineState,
-  DynamicWeatherEvent
+  DynamicWeatherEvent,
+  WeatherAdvancedConfig,
+  TutorialBoardFocus,
+  BoardDangerZoneEntry,
+  SpeculatorTrajectory
 } from '../../types/game';
+import {
+  AccessibilitySettings,
+  ColorVisionMode,
+  DEFAULT_ACCESSIBILITY_SETTINGS,
+  getAccessibilityPalette
+} from '../../utils/accessibility';
+import { DEFAULT_WEATHER_ADVANCED_CONFIG } from '../../utils/weatherSettings';
 import { resolveWeather } from '../../utils/weather';
 import {
   createAtmosphereTargets,
@@ -46,6 +57,14 @@ import {
 } from './boardCleansing';
 import { computeCooperativeEfficiency } from '../../utils/cooperativeEfficiency';
 import { createCharacterPawnMesh } from './characterAvatarBuilder';
+import {
+  applyGroupFrustumAndDetailLOD,
+  isWorldSphereInFrustum,
+  markAsSecondaryDetail,
+  setExplicitBoundingSphere,
+  updateCameraFrustum
+} from './frustumCulling';
+import type { BoardPerformanceTelemetry } from '../../utils/performanceTelemetry';
 
 interface Board3DProps {
   tiles: Tile[];
@@ -60,6 +79,7 @@ interface Board3DProps {
   cooperativeEfficiency?: number;
   weatherMode?: WeatherMode;
   weatherIntensity?: number;
+  weatherAdvancedConfig?: WeatherAdvancedConfig;
   activeWeatherEvent?: DynamicWeatherEvent | null;
   timeOfDayMode?: TimeOfDayMode;
   currentGlobalCard?: GlobalCard | null;
@@ -68,6 +88,11 @@ interface Board3DProps {
   neighborhoodDecision?: NeighborhoodDecision | null;
   postProcessingEnabled?: boolean;
   onTileClick?: (tile: Tile) => void;
+  telemetryRef?: React.MutableRefObject<BoardPerformanceTelemetry>;
+  tutorialFocus?: TutorialBoardFocus;
+  speculatorHeatmap?: Record<number, BoardDangerZoneEntry> | null;
+  speculatorTrajectories?: SpeculatorTrajectory[] | null;
+  accessibilitySettings?: AccessibilitySettings;
 }
 
 // Pre-allocated math helpers (zero per-frame GC allocations)
@@ -80,6 +105,8 @@ const _tempColor = new THREE.Color();
 const _atmosphereTargets = createAtmosphereTargets();
 const _raycasterPointer = new THREE.Vector2();
 const _raycaster = new THREE.Raycaster();
+const _coneUp = new THREE.Vector3(0, 1, 0);
+const _coneDir = new THREE.Vector3();
 
 export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
   tiles,
@@ -94,6 +121,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
   cooperativeEfficiency,
   weatherMode = 'AUTO',
   weatherIntensity = 0.85,
+  weatherAdvancedConfig = DEFAULT_WEATHER_ADVANCED_CONFIG,
   activeWeatherEvent = null,
   timeOfDayMode = 'AUTO',
   currentGlobalCard = null,
@@ -101,7 +129,12 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
   activeModal = null,
   neighborhoodDecision = null,
   postProcessingEnabled = true,
-  onTileClick
+  onTileClick,
+  telemetryRef,
+  tutorialFocus = 'NONE',
+  speculatorHeatmap = null,
+  speculatorTrajectories = null,
+  accessibilitySettings = DEFAULT_ACCESSIBILITY_SETTINGS
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [webglLost, setWebglLost] = useState(false);
@@ -137,6 +170,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     cooperativeEfficiency,
     weatherMode,
     weatherIntensity,
+    weatherAdvancedConfig,
     activeWeatherEvent,
     timeOfDayMode,
     currentGlobalCard,
@@ -144,7 +178,12 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     activeModal,
     neighborhoodDecision,
     postProcessingEnabled,
-    onTileClick
+    onTileClick,
+    telemetryRef,
+    tutorialFocus,
+    speculatorHeatmap,
+    speculatorTrajectories,
+    accessibilitySettings
   });
   propsRef.current = {
     tiles,
@@ -159,6 +198,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     cooperativeEfficiency,
     weatherMode,
     weatherIntensity,
+    weatherAdvancedConfig,
     activeWeatherEvent,
     timeOfDayMode,
     currentGlobalCard,
@@ -166,7 +206,12 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     activeModal,
     neighborhoodDecision,
     postProcessingEnabled,
-    onTileClick
+    onTileClick,
+    telemetryRef,
+    tutorialFocus,
+    speculatorHeatmap,
+    speculatorTrajectories,
+    accessibilitySettings
   };
 
   // Helper: map board tile ID to (x, y, z)
@@ -207,18 +252,23 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
 
+    const isCompactViewport = Math.min(container.clientWidth, container.clientHeight) < 640;
+
     const renderer = new THREE.WebGLRenderer({
       antialias: !isSoftwareGl,
       powerPreference: 'high-performance'
     });
     rendererRef.current = renderer;
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(
+      isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, isCompactViewport ? 1.5 : 2)
+    );
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.info.autoReset = false;
 
     const handleContextLost = (event: Event) => {
       event.preventDefault();
@@ -234,7 +284,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
 
     // PMREM Environment
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+    const envTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = envTexture;
     pmremGenerator.dispose();
 
     // Post-procesado cinematográfico (Bloom + Corrección de Color + OutputPass) en GPUs hardware
@@ -254,12 +305,13 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     scene.add(skyDome.mesh);
 
     // --- 2. LIGHTING RIG ---
-    // Warm key light
+    // Warm key light (resolución adaptativa de sombras en pantallas compactas)
+    const shadowMapSize = isCompactViewport ? 1024 : 2048;
     const keyLight = new THREE.DirectionalLight(0xfff5e6, 2.2);
     keyLight.position.set(14, 22, 12);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.width = 2048;
-    keyLight.shadow.mapSize.height = 2048;
+    keyLight.shadow.mapSize.width = shadowMapSize;
+    keyLight.shadow.mapSize.height = shadowMapSize;
     keyLight.shadow.camera.near = 5;
     keyLight.shadow.camera.far = 45;
     const d = 16;
@@ -335,10 +387,169 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     };
 
     const tileMaterialList: THREE.MeshStandardMaterial[] = [];
+    const tileMatKeyEntries: Array<{ mat: THREE.MeshStandardMaterial; matKey: string }> = [];
+    let lastAppliedColorVisionMode: ColorVisionMode =
+      propsRef.current.accessibilitySettings?.colorVisionMode ?? 'STANDARD';
     const tileSaturationEntries = new Map<number, TileSaturationEntry>();
 
     const tileGeo = new THREE.BoxGeometry(1.7, 0.25, 1.7);
     const cornerGeo = new THREE.BoxGeometry(2.3, 0.28, 2.3);
+    const chipGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.15, 10);
+
+    // Pre-allocated 3D Speculator Danger-Zone Heatmap overlays (zero per-frame allocations)
+    const heatmapTileGeo = new THREE.PlaneGeometry(1.6, 1.6);
+    const heatmapCornerGeo = new THREE.PlaneGeometry(2.16, 2.16);
+    const heatmapRingGeo = new THREE.RingGeometry(0.66, 0.84, 24);
+    const heatmapPadMeshes = new Map<number, THREE.Mesh>();
+    const heatmapPadMaterials: THREE.MeshBasicMaterial[] = [];
+    const MAX_INTENDED_TARGET_RINGS = 6;
+    const intendedTargetRingPool: THREE.Mesh[] = [];
+    const intendedTargetRingMaterials: THREE.MeshBasicMaterial[] = [];
+
+    for (let r = 0; r < MAX_INTENDED_TARGET_RINGS; r++) {
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xef4444,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+        polygonOffsetUnits: -3,
+        side: THREE.DoubleSide
+      });
+      const ringMesh = new THREE.Mesh(heatmapRingGeo, ringMat);
+      ringMesh.rotation.x = -Math.PI / 2;
+      ringMesh.position.set(0, 0.34, 0);
+      ringMesh.renderOrder = 3;
+      ringMesh.visible = false;
+      scene.add(ringMesh);
+      intendedTargetRingPool.push(ringMesh);
+      intendedTargetRingMaterials.push(ringMat);
+    }
+
+    // Pre-allocated 3D Speculator Trajectory Indicators (zero per-frame allocations)
+    const MAX_SPECULATOR_TRAJECTORIES = 6;
+    const TRAJECTORY_ARC_STEPS = 28;
+    const TRAJECTORY_MAX_PATH_STEPS = 48;
+
+    const trajectorySharedConeGeo = new THREE.ConeGeometry(0.24, 0.6, 10);
+    const trajectorySharedSphereGeo = new THREE.SphereGeometry(0.16, 10, 8);
+    const trajectorySharedRingGeo = new THREE.RingGeometry(0.38, 0.52, 18);
+
+    interface TrajectorySlotResources {
+      group: THREE.Group;
+      perimeterGeo: THREE.BufferGeometry;
+      perimeterMat: THREE.LineBasicMaterial;
+      perimeterLine: THREE.Line;
+      arcGeo: THREE.BufferGeometry;
+      arcMat: THREE.LineBasicMaterial;
+      arcLine: THREE.Line;
+      arrowCone: THREE.Mesh;
+      arrowMat: THREE.MeshStandardMaterial;
+      pulseOrb: THREE.Mesh;
+      pulseMat: THREE.MeshStandardMaterial;
+      startRing: THREE.Mesh;
+      startRingMat: THREE.MeshBasicMaterial;
+    }
+
+    const trajectorySlots: TrajectorySlotResources[] = [];
+
+    for (let sIdx = 0; sIdx < MAX_SPECULATOR_TRAJECTORIES; sIdx++) {
+      const trajGroup = new THREE.Group();
+      trajGroup.visible = false;
+
+      // 1. Perimeter Ground Route Line
+      const perimeterGeo = new THREE.BufferGeometry();
+      const perimPositions = new Float32Array(TRAJECTORY_MAX_PATH_STEPS * 3);
+      perimeterGeo.setAttribute('position', new THREE.BufferAttribute(perimPositions, 3));
+      perimeterGeo.setDrawRange(0, 0);
+
+      const perimeterMat = new THREE.LineBasicMaterial({
+        color: 0xf43f5e,
+        transparent: true,
+        opacity: 0.88,
+        depthWrite: false
+      });
+      const perimeterLine = new THREE.Line(perimeterGeo, perimeterMat);
+      perimeterLine.renderOrder = 4;
+      perimeterLine.frustumCulled = false;
+      trajGroup.add(perimeterLine);
+
+      // 2. 3D Parabolic Trajectory Arc
+      const arcGeo = new THREE.BufferGeometry();
+      const arcPositions = new Float32Array(TRAJECTORY_ARC_STEPS * 3);
+      arcGeo.setAttribute('position', new THREE.BufferAttribute(arcPositions, 3));
+      arcGeo.setDrawRange(0, 0);
+
+      const arcMat = new THREE.LineBasicMaterial({
+        color: 0xf43f5e,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false
+      });
+      const arcLine = new THREE.Line(arcGeo, arcMat);
+      arcLine.renderOrder = 5;
+      arcLine.frustumCulled = false;
+      trajGroup.add(arcLine);
+
+      // 3. Arrow Cone at destination
+      const arrowMat = new THREE.MeshStandardMaterial({
+        color: 0xf43f5e,
+        emissive: 0xf43f5e,
+        emissiveIntensity: 0.6,
+        roughness: 0.35,
+        metalness: 0.3
+      });
+      const arrowCone = new THREE.Mesh(trajectorySharedConeGeo, arrowMat);
+      arrowCone.renderOrder = 5;
+      arrowCone.frustumCulled = false;
+      trajGroup.add(arrowCone);
+
+      // 4. Traveling Pulse Orb
+      const pulseMat = new THREE.MeshStandardMaterial({
+        color: 0xf43f5e,
+        emissive: 0xf43f5e,
+        emissiveIntensity: 0.95,
+        roughness: 0.2,
+        metalness: 0.2
+      });
+      const pulseOrb = new THREE.Mesh(trajectorySharedSphereGeo, pulseMat);
+      pulseOrb.renderOrder = 6;
+      pulseOrb.frustumCulled = false;
+      trajGroup.add(pulseOrb);
+
+      // 5. Start Origin Ring
+      const startRingMat = new THREE.MeshBasicMaterial({
+        color: 0xf43f5e,
+        transparent: true,
+        opacity: 0.75,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const startRing = new THREE.Mesh(trajectorySharedRingGeo, startRingMat);
+      startRing.rotation.x = -Math.PI / 2;
+      startRing.position.y = 0.345;
+      startRing.renderOrder = 3;
+      startRing.frustumCulled = false;
+      trajGroup.add(startRing);
+
+      scene.add(trajGroup);
+      trajectorySlots.push({
+        group: trajGroup,
+        perimeterGeo,
+        perimeterMat,
+        perimeterLine,
+        arcGeo,
+        arcMat,
+        arcLine,
+        arrowCone,
+        arrowMat,
+        pulseOrb,
+        pulseMat,
+        startRing,
+        startRingMat
+      });
+    }
 
     // Render individual tiles con material individualizado (misma caché GLSL) para desaturación/limpieza
     propsRef.current.tiles.forEach(tile => {
@@ -363,6 +574,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         saturationUniform: satUniform
       });
       tileMaterialList.push(mat);
+      tileMatKeyEntries.push({ mat, matKey });
       tileSaturationEntries.set(tile.id, { uniform: satUniform, baseY: 0.2 });
 
       const isCorner = tile.category === 'CORNER';
@@ -375,9 +587,30 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       scene.add(mesh);
       tileMeshesRef.current.set(tile.id, mesh);
 
+      // Heatmap overlay pad flush above tile top surface (hidden by default)
+      if (tile.category !== 'AGORA_CENTER') {
+        const padMat = new THREE.MeshBasicMaterial({
+          color: 0xf59e0b,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+          side: THREE.DoubleSide
+        });
+        const padMesh = new THREE.Mesh(isCorner ? heatmapCornerGeo : heatmapTileGeo, padMat);
+        padMesh.rotation.x = -Math.PI / 2;
+        padMesh.position.set(tile.x, isCorner ? 0.346 : 0.332, tile.z);
+        padMesh.renderOrder = 2;
+        padMesh.visible = false;
+        scene.add(padMesh);
+        heatmapPadMeshes.set(tile.id, padMesh);
+        heatmapPadMaterials.push(padMat);
+      }
+
       // Status chip (Cylinder) on resource tiles showing PRIVATE (white), PUBLIC (grey), COMMON (black)
       if (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY') {
-        const chipGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.15, 16);
         const chipMat = new THREE.MeshStandardMaterial({
           color: tile.state === 'COMMON' ? 0x111111 : tile.state === 'PUBLIC' ? 0x888888 : 0xffffff,
           roughness: 0.3,
@@ -385,7 +618,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         });
         const chipMesh = new THREE.Mesh(chipGeo, chipMat);
         chipMesh.position.set(tile.x, 0.42, tile.z);
-        chipMesh.castShadow = true;
+        chipMesh.castShadow = false;
         scene.add(chipMesh);
         chipMeshesRef.current.set(tile.id, chipMesh);
       }
@@ -406,8 +639,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     daisMesh.castShadow = true;
     agoraGroup.add(daisMesh);
 
-    // Inner diaphragm ring
-    const ringGeo = new THREE.TorusGeometry(2.1, 0.15, 16, 6);
+    // Inner diaphragm ring (poligonaje reducido)
+    const ringGeo = new THREE.TorusGeometry(2.1, 0.15, 6, 6);
     const ringMat = new THREE.MeshStandardMaterial({
       color: 0xfacc15,
       emissive: 0xfacc15,
@@ -420,8 +653,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     ringMesh.position.y = 0.48;
     agoraGroup.add(ringMesh);
 
-    // Inner core
-    const coreGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.1, 32);
+    // Inner core (poligonaje reducido)
+    const coreGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.1, 12);
     const coreMat = new THREE.MeshStandardMaterial({
       color: 0xec4899,
       emissive: 0xec4899,
@@ -447,19 +680,21 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     diceMesh.castShadow = true;
     diceGroup.add(diceMesh);
 
-    // Add pips (small black dots) on faces
-    const pipGeo = new THREE.SphereGeometry(0.06, 8, 8);
+    // Add pips (geometría octaedro low-poly etiquetada como detalle secundario)
+    const pipGeo = new THREE.OctahedronGeometry(0.055, 0);
     const pipMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
 
     // Face 1 (Y+)
     const p1 = new THREE.Mesh(pipGeo, pipMat);
     p1.position.set(0, 0.43, 0);
+    markAsSecondaryDetail(p1);
     diceGroup.add(p1);
 
     // Face 6 (Y-)
     [[-0.2, -0.2], [-0.2, 0], [-0.2, 0.2], [0.2, -0.2], [0.2, 0], [0.2, 0.2]].forEach(([px, pz]) => {
       const p = new THREE.Mesh(pipGeo, pipMat);
       p.position.set(px, -0.43, pz);
+      markAsSecondaryDetail(p);
       diceGroup.add(p);
     });
 
@@ -467,18 +702,22 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     scene.add(diceGroup);
     diceGroupRef.current = diceGroup;
 
-    // --- 7. PROCEDURAL CHARACTER PAWNS (Shared 6-9 Part Character Models) ---
+    // --- 7. PROCEDURAL CHARACTER PAWNS (Shared Board-Optimized Character Models) ---
     propsRef.current.players.forEach((player) => {
-      const pawnGroup = createCharacterPawnMesh(player.id, player.color, player.accentColor, false);
+      const pawnGroup = createCharacterPawnMesh(player.id, player.color, player.accentColor, false, {
+        detail: 'board'
+      });
       const coords = getTileCoords(player.position);
       pawnGroup.position.set(coords.x, 0.35, coords.z);
       scene.add(pawnGroup);
       playerMeshesRef.current.set(player.id, pawnGroup);
     });
 
-    // --- 8. PROCEDURAL SPECULATOR PAWNS (Composite Top-Hat Models) ---
+    // --- 8. PROCEDURAL SPECULATOR PAWNS (Composite Top-Hat Models, Board-Optimized) ---
     propsRef.current.speculators.forEach((speculator) => {
-      const specGroup = createCharacterPawnMesh('speculator', speculator.color, '#0f172a', true);
+      const specGroup = createCharacterPawnMesh('speculator', speculator.color, '#0f172a', true, {
+        detail: 'board'
+      });
       const coords = getTileCoords(speculator.position);
       specGroup.position.set(coords.x + 0.3, 0.35, coords.z + 0.3);
       scene.add(specGroup);
@@ -536,9 +775,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       blending: THREE.AdditiveBlending
     });
 
+    setExplicitBoundingSphere(particleGeo, 0, 4.5, 0, 17.5);
     const particlePoints = new THREE.Points(particleGeo, particleMat);
     particlePoints.visible = false;
-    particlePoints.frustumCulled = false;
+    particlePoints.frustumCulled = true;
     scene.add(particlePoints);
 
     // --- 9B. PROCEDURAL GRADUAL CROSS-FADING WEATHER SYSTEMS (Rain, Snow, Sunny) ---
@@ -587,9 +827,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
+    setExplicitBoundingSphere(rainGeo, 0, 7.5, 0, 21.5);
     const rainLines = new THREE.LineSegments(rainGeo, rainMat);
     rainLines.visible = false;
-    rainLines.frustumCulled = false;
+    rainLines.frustumCulled = true;
     scene.add(rainLines);
 
     // Salpicaduras sutiles de lluvia sobre el tablero
@@ -604,6 +845,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     }
     const splashGeo = new THREE.BufferGeometry();
     splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPositions, 3));
+    setExplicitBoundingSphere(splashGeo, 0, 0.4, 0, 17.5);
     const splashMat = new THREE.PointsMaterial({
       color: 0x7dd3fc,
       size: 0.28,
@@ -615,7 +857,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     });
     const rainSplashPoints = new THREE.Points(splashGeo, splashMat);
     rainSplashPoints.visible = false;
-    rainSplashPoints.frustumCulled = false;
+    rainSplashPoints.frustumCulled = true;
     scene.add(rainSplashPoints);
 
     // 2) Sistema de Nieve: textura procedural cristalina hexagonal (cero 404s)
@@ -678,9 +920,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
+    setExplicitBoundingSphere(snowGeo, 0, 7.5, 0, 21.5);
     const snowPoints = new THREE.Points(snowGeo, snowMat);
     snowPoints.visible = false;
-    snowPoints.frustumCulled = false;
+    snowPoints.frustumCulled = true;
     scene.add(snowPoints);
 
     // 3) Sistema Soleado: motas doradas cálidas y polen flotante
@@ -732,9 +975,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
+    setExplicitBoundingSphere(sunGeo, 0, 6.5, 0, 20.5);
     const sunPoints = new THREE.Points(sunGeo, sunMat);
     sunPoints.visible = false;
-    sunPoints.frustumCulled = false;
+    sunPoints.frustumCulled = true;
     scene.add(sunPoints);
 
     // Pesos continuos para cross-fade gradual entre condiciones climáticas
@@ -829,13 +1073,14 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       blending: THREE.AdditiveBlending
     });
 
+    setExplicitBoundingSphere(commonsGeo, 0, 3.0, 0, 8.0);
     const commonsPoints = new THREE.Points(commonsGeo, commonsMat);
     commonsPoints.visible = false;
-    commonsPoints.frustumCulled = false;
+    commonsPoints.frustumCulled = true;
     scene.add(commonsPoints);
 
-    // Onda expansiva / aura luminosa en la superficie de la casilla
-    const auraGeo = new THREE.RingGeometry(0.2, 0.44, 32);
+    // Onda expansiva / aura luminosa en la superficie de la casilla (poligonaje reducido)
+    const auraGeo = new THREE.RingGeometry(0.2, 0.44, 14);
     const auraMat = new THREE.MeshBasicMaterial({
       color: 0x34d399,
       transparent: true,
@@ -850,8 +1095,26 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     auraMesh.visible = false;
     scene.add(auraMesh);
 
+    // Aro baliza reutilizable para resaltar elementos del tablero 3D durante el tutorial interactivo
+    const tutorialRingGeo = new THREE.RingGeometry(1.12, 1.44, 24);
+    const tutorialRingMat = new THREE.MeshBasicMaterial({
+      color: 0x2dd4bf,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const tutorialRingMesh = new THREE.Mesh(tutorialRingGeo, tutorialRingMat);
+    tutorialRingMesh.rotation.x = -Math.PI / 2;
+    tutorialRingMesh.position.set(0, 0.38, 0);
+    tutorialRingMesh.visible = false;
+    scene.add(tutorialRingMesh);
+
     let auraLife = 0;
     const auraDuration = 0.85;
+    let commonsBurstCenterX = 0;
+    let commonsBurstCenterZ = 0;
 
     // Disparador del estallido celebratorio de Bienes Comunes
     const triggerCommonsBurst = (targetX: number, targetZ: number, goodType?: string) => {
@@ -867,7 +1130,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           ? [0x10b981, 0x34d399, 0xa7f3d0, 0x6ee7b7, 0xfacc15]
           : [0xec4899, 0xf472b6, 0x34d399, 0xfacc15, 0x38bdf8];
 
-      // Configurar onda expansiva luminosa
+      // Configurar onda expansiva luminosa y actualizar bounding sphere local del estallido
+      commonsBurstCenterX = targetX;
+      commonsBurstCenterZ = targetZ;
+      setExplicitBoundingSphere(commonsGeo, targetX, 3.0, targetZ, 8.0);
       auraMesh.position.set(targetX, 0.34, targetZ);
       auraMesh.scale.set(1, 1, 1);
       auraMat.color.setHex(palette[0] || 0x10b981);
@@ -919,6 +1185,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     const cinematicCamera = new CinematicCameraController();
     const pawnWaypointQueues = new Map<string, number[]>();
     let prevCameraMode = propsRef.current.cameraMode;
+    let perfWindowStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let perfPrevFrameTime = perfWindowStart;
+    let perfFramesInWindow = 0;
+    let perfMaxFrameMs = 0;
 
     const afterDraw = (cb: () => void) => {
       const gl = renderer.getContext() as WebGL2RenderingContext;
@@ -937,6 +1207,14 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     };
 
     const render = () => {
+      const frameNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const frameDeltaMs = Math.max(0.1, frameNow - perfPrevFrameTime);
+      perfPrevFrameTime = frameNow;
+      perfFramesInWindow += 1;
+      if (frameDeltaMs < 500 && frameDeltaMs > perfMaxFrameMs) {
+        perfMaxFrameMs = frameDeltaMs;
+      }
+
       const delta = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.getElapsedTime();
 
@@ -1170,10 +1448,17 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         camera.lookAt(_currentLookAt);
       }
 
+      // Sincronizar matriz de cámara y frustum de recorte (cero asignaciones)
+      updateCameraFrustum(camera);
+      const isBoardVolumeInFrustum = isWorldSphereInFrustum(0, 7.0, 0, 21.5);
+
       // Sincronizar oyente del sistema de audio espacial 3D con la cámara
       audioManager.updateListener(camera.position, _currentLookAt, camera.up);
 
-      // Update Player Pawn Positions with smooth node-by-node stepping and lerp
+      let totalCullableObjects = 0;
+      let culledObjects = 0;
+
+      // Update Player Pawn Positions with smooth node-by-node stepping, frustum culling & distance LOD
       currPlayers.forEach((player, idx) => {
         const mesh = playerMeshesRef.current.get(player.id);
         if (mesh) {
@@ -1210,18 +1495,30 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           mesh.position.z = THREE.MathUtils.damp(mesh.position.z, targetZ, pawnDamp, delta);
           mesh.position.y = THREE.MathUtils.damp(mesh.position.y, targetY, pawnDamp, delta);
 
-          if (currPhase === 'GAME_OVER') {
-            mesh.rotation.y += delta * (currResult === 'VICTORY' ? 1.5 : 0.35);
-            mesh.scale.setScalar(1.0 + Math.sin(elapsed * 3 + idx) * 0.06);
-          } else if (idx === currIdx) {
-            mesh.scale.setScalar(1.0 + Math.sin(elapsed * 4) * 0.05);
-          } else {
-            mesh.scale.setScalar(1.0);
+          const isPawnVisible = applyGroupFrustumAndDetailLOD(
+            mesh,
+            camera.position,
+            2.2,
+            0.65,
+            760
+          );
+          totalCullableObjects += 1;
+          if (!isPawnVisible) culledObjects += 1;
+
+          if (isPawnVisible) {
+            if (currPhase === 'GAME_OVER') {
+              mesh.rotation.y += delta * (currResult === 'VICTORY' ? 1.5 : 0.35);
+              mesh.scale.setScalar(1.0 + Math.sin(elapsed * 3 + idx) * 0.06);
+            } else if (idx === currIdx) {
+              mesh.scale.setScalar(1.0 + Math.sin(elapsed * 4) * 0.05);
+            } else {
+              mesh.scale.setScalar(1.0);
+            }
           }
         }
       });
 
-      // Update Speculators Positions with subtle patrol hop
+      // Update Speculators Positions with subtle patrol hop, frustum culling & distance LOD
       propsRef.current.speculators.forEach((spec, sIdx) => {
         const mesh = speculatorMeshesRef.current.get(spec.id);
         if (mesh) {
@@ -1237,77 +1534,383 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           mesh.position.x = THREE.MathUtils.damp(mesh.position.x, targetX, 8, delta);
           mesh.position.z = THREE.MathUtils.damp(mesh.position.z, targetZ, 8, delta);
           mesh.position.y = THREE.MathUtils.damp(mesh.position.y, 0.35 + specHopY, 10, delta);
+
+          const isSpecVisible = applyGroupFrustumAndDetailLOD(mesh, camera.position, 2.2, 0.65, 760);
+          totalCullableObjects += 1;
+          if (!isSpecVisible) culledObjects += 1;
         }
       });
 
-      // Update Resource Chip Colors & Final-State Dynamic Highlighting synced with Cleansing Wave
+      // Frustum culling de casillas y fichas + actualización selectiva de emisivos + Mapa de Calor 3D + Accesibilidad
+      const a11ySettings = propsRef.current.accessibilitySettings ?? DEFAULT_ACCESSIBILITY_SETTINGS;
+      const a11yPalette = getAccessibilityPalette(a11ySettings.colorVisionMode);
+      if (lastAppliedColorVisionMode !== a11ySettings.colorVisionMode) {
+        lastAppliedColorVisionMode = a11ySettings.colorVisionMode;
+        for (let i = 0; i < tileMatKeyEntries.length; i++) {
+          const entry = tileMatKeyEntries[i];
+          const nextHex =
+            a11yPalette.tileGoodHex[entry.matKey as keyof typeof a11yPalette.tileGoodHex] ??
+            tilePaletteConfig[entry.matKey]?.color ??
+            0x334155;
+          entry.mat.color.setHex(nextHex);
+        }
+      }
+
+      const isReducedMotion = Boolean(
+        reducedMotionQuery?.matches || a11ySettings.reducedMotionOverride
+      );
+      const activeDecision = propsRef.current.neighborhoodDecision;
+      const currTutorialFocus: TutorialBoardFocus =
+        currPhase !== 'GAME_OVER' ? (propsRef.current.tutorialFocus ?? 'NONE') : 'NONE';
+      const currHeatmap = currPhase !== 'GAME_OVER' ? propsRef.current.speculatorHeatmap : null;
+      const tutPulse = isReducedMotion ? 0.65 : 0.5 + 0.5 * Math.sin(elapsed * 4.2);
+      const heatPulse = isReducedMotion ? 0.55 : 0.5 + 0.5 * Math.sin(elapsed * 4.6);
+      let activeIntendedRings = 0;
+
       propsRef.current.tiles.forEach((tile, idx) => {
+        const tileMesh = tileMeshesRef.current.get(tile.id);
         const chip = chipMeshesRef.current.get(tile.id);
-        if (chip && (chip.material as THREE.MeshStandardMaterial)) {
-          const mat = chip.material as THREE.MeshStandardMaterial;
-          const targetColor = tile.state === 'COMMON' ? 0x111111 : tile.state === 'PUBLIC' ? 0x888888 : 0xffffff;
-          mat.color.setHex(targetColor);
+        const padMesh = heatmapPadMeshes.get(tile.id);
+        const cullRadius = tile.category === 'CORNER' ? 2.1 : 1.65;
+        const isInView = isWorldSphereInFrustum(tile.x, 0.25, tile.z, cullRadius);
+        const dangerEntry = currHeatmap ? currHeatmap[tile.id] : undefined;
 
-          if (currPhase === 'GAME_OVER') {
-            const wave = 0.5 + 0.5 * Math.sin(elapsed * 4 - idx * 0.25);
-            const localCleanse = cleanseState.tileCleanseProgress.get(tile.id) ?? 0;
-            const tileMeshY = tileMeshesRef.current.get(tile.id)?.position.y ?? 0.2;
-            const tileLiftOffset = tileMeshY - 0.2;
+        if (padMesh) {
+          const showPad = isInView && Boolean(dangerEntry && dangerEntry.tier !== 'NONE');
+          if (padMesh.visible !== showPad) {
+            padMesh.visible = showPad;
+          }
+          if (showPad && dangerEntry && dangerEntry.tier !== 'NONE') {
+            const padMat = padMesh.material as THREE.MeshBasicMaterial;
+            const tierVis = a11yPalette.heatmapTiers[dangerEntry.tier];
+            padMat.color.setHex(tierVis.hex);
+            padMat.opacity = Math.min(
+              0.86,
+              0.24 + dangerEntry.intensity * 0.5 + (dangerEntry.isIntendedTarget ? heatPulse * 0.14 : 0)
+            );
+          }
+        }
 
-            if (tile.state === 'COMMON') {
-              mat.emissive.setHex(0x10b981);
-              mat.emissiveIntensity = 0.45 + wave * 0.65 + localCleanse * 0.25;
-              chip.position.y = 0.48 + wave * 0.24 + tileLiftOffset;
-              chip.scale.setScalar(1.08 + wave * 0.14);
-            } else if (tile.state === 'PUBLIC') {
-              _tempColor.setHex(0x38bdf8).lerp(giUniforms.uCleanseWaveColor.value, localCleanse * effectiveEfficiency * 0.65);
-              mat.emissive.copy(_tempColor);
-              mat.emissiveIntensity = 0.25 + wave * 0.35 + localCleanse * effectiveEfficiency * 0.25;
-              chip.position.y = 0.44 + wave * 0.1 + tileLiftOffset;
-              chip.scale.setScalar(1.04 + localCleanse * effectiveEfficiency * 0.06);
-            } else {
-              _tempColor.setHex(0xf43f5e).lerp(giUniforms.uCleanseWaveColor.value, localCleanse * effectiveEfficiency * 0.85);
-              mat.emissive.copy(_tempColor);
-              mat.emissiveIntensity = 0.2 + wave * 0.3;
-              chip.position.y = 0.42 + tileLiftOffset;
-              chip.scale.setScalar(1.0 + localCleanse * effectiveEfficiency * 0.06);
+        if (
+          isInView &&
+          dangerEntry?.isIntendedTarget &&
+          dangerEntry.tier !== 'NONE' &&
+          activeIntendedRings < MAX_INTENDED_TARGET_RINGS
+        ) {
+          const ringMesh = intendedTargetRingPool[activeIntendedRings];
+          const ringMat = intendedTargetRingMaterials[activeIntendedRings];
+          const tierVis = a11yPalette.heatmapTiers[dangerEntry.tier];
+          ringMesh.position.set(tile.x, tile.category === 'CORNER' ? 0.354 : 0.338, tile.z);
+          ringMat.color.setHex(tierVis.ringHex);
+          ringMat.opacity = 0.72 + heatPulse * 0.24;
+          ringMesh.scale.setScalar(
+            (tile.category === 'CORNER' ? 1.18 : 1.0) * (0.96 + heatPulse * 0.08)
+          );
+          ringMesh.visible = true;
+          activeIntendedRings += 1;
+        }
+
+        if (tileMesh) {
+          totalCullableObjects += 1;
+          if (!isInView) culledObjects += 1;
+          if (tileMesh.visible !== isInView) {
+            tileMesh.visible = isInView;
+          }
+          if (isInView) {
+            const tileMat = tileMesh.material as THREE.MeshStandardMaterial;
+            if (tileMat) {
+              if (activeDecision && activeDecision.targetTileIds.includes(tile.id)) {
+                const pulse = isReducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(elapsed * 6);
+                tileMat.emissive.setHex(0x14b8a6);
+                tileMat.emissiveIntensity = 0.4 + pulse * 0.6;
+              } else if (currTutorialFocus === 'GOODS_STATES' && (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY')) {
+                if (tile.state === 'COMMON') {
+                  tileMat.emissive.setHex(a11yPalette.tileStateAccentHex.COMMON);
+                  tileMat.emissiveIntensity = 0.26 + tutPulse * 0.44;
+                } else if (tile.state === 'PUBLIC') {
+                  tileMat.emissive.setHex(a11yPalette.tileStateAccentHex.PUBLIC);
+                  tileMat.emissiveIntensity = 0.22 + tutPulse * 0.38;
+                } else {
+                  tileMat.emissive.setHex(a11yPalette.tileStateAccentHex.PRIVATE);
+                  tileMat.emissiveIntensity = 0.22 + tutPulse * 0.38;
+                }
+              } else if (
+                (currTutorialFocus === 'ACTIVE_PLAYER_PAWN' || currTutorialFocus === 'TURN_DICE_AND_TILE') &&
+                activePlayer &&
+                tile.id === activePlayer.position
+              ) {
+                tileMat.emissive.setHex(0x2dd4bf);
+                tileMat.emissiveIntensity = 0.35 + tutPulse * 0.55;
+              } else if (
+                currTutorialFocus === 'SPECULATORS_THREAT' &&
+                (propsRef.current.speculators.some(s => s.position === tile.id) || tile.id === 20)
+              ) {
+                tileMat.emissive.setHex(a11yPalette.heatmapTiers.HIGH.hex);
+                tileMat.emissiveIntensity = 0.35 + tutPulse * 0.55;
+              } else if (
+                (currTutorialFocus === 'AGORA_CENTRAL' || currTutorialFocus === 'LEGITIMACY_AND_GOAL') &&
+                (tile.category === 'AGORA_ENTRY' || (currTutorialFocus === 'LEGITIMACY_AND_GOAL' && tile.state === 'COMMON'))
+              ) {
+                tileMat.emissive.setHex(0xec4899);
+                tileMat.emissiveIntensity = 0.28 + tutPulse * 0.48;
+              } else if (dangerEntry && dangerEntry.tier !== 'NONE') {
+                const tierVis = a11yPalette.heatmapTiers[dangerEntry.tier];
+                tileMat.emissive.setHex(tierVis.hex);
+                if (dangerEntry.tier === 'CRITICAL') {
+                  tileMat.emissiveIntensity =
+                    0.22 + dangerEntry.intensity * 0.36 + (dangerEntry.isIntendedTarget ? heatPulse * 0.18 : 0);
+                } else if (dangerEntry.tier === 'HIGH') {
+                  tileMat.emissiveIntensity =
+                    0.16 + dangerEntry.intensity * 0.28 + (dangerEntry.isIntendedTarget ? heatPulse * 0.12 : 0);
+                } else if (dangerEntry.tier === 'PROTECTED') {
+                  tileMat.emissiveIntensity = 0.16 + dangerEntry.intensity * 0.22;
+                } else {
+                  tileMat.emissiveIntensity = 0.1 + dangerEntry.intensity * 0.22;
+                }
+              } else if (tileMat.emissiveIntensity !== 0) {
+                tileMat.emissive.setHex(0x000000);
+                tileMat.emissiveIntensity = 0;
+              }
             }
-          } else {
-            mat.emissive.setHex(0x000000);
-            mat.emissiveIntensity = 0;
-            chip.position.y = 0.42;
-            chip.scale.setScalar(1.0);
+          }
+        }
+
+        if (chip) {
+          totalCullableObjects += 1;
+          if (!isInView) culledObjects += 1;
+          if (chip.visible !== isInView) {
+            chip.visible = isInView;
+          }
+          if (isInView && (chip.material as THREE.MeshStandardMaterial)) {
+            const mat = chip.material as THREE.MeshStandardMaterial;
+            const targetColor = tile.state === 'COMMON' ? 0x111111 : tile.state === 'PUBLIC' ? 0x888888 : 0xffffff;
+            mat.color.setHex(targetColor);
+
+            if (currPhase === 'GAME_OVER') {
+              const wave = isReducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(elapsed * 4 - idx * 0.25);
+              const localCleanse = cleanseState.tileCleanseProgress.get(tile.id) ?? 0;
+              const tileMeshY = tileMesh?.position.y ?? 0.2;
+              const tileLiftOffset = tileMeshY - 0.2;
+
+              if (tile.state === 'COMMON') {
+                mat.emissive.setHex(a11yPalette.tileStateAccentHex.COMMON);
+                mat.emissiveIntensity = 0.45 + wave * 0.65 + localCleanse * 0.25;
+                chip.position.y = 0.48 + wave * 0.24 + tileLiftOffset;
+                chip.scale.setScalar(1.08 + wave * 0.14);
+              } else if (tile.state === 'PUBLIC') {
+                _tempColor
+                  .setHex(a11yPalette.tileStateAccentHex.PUBLIC)
+                  .lerp(giUniforms.uCleanseWaveColor.value, localCleanse * effectiveEfficiency * 0.65);
+                mat.emissive.copy(_tempColor);
+                mat.emissiveIntensity = 0.25 + wave * 0.35 + localCleanse * effectiveEfficiency * 0.25;
+                chip.position.y = 0.44 + wave * 0.1 + tileLiftOffset;
+                chip.scale.setScalar(1.04 + localCleanse * effectiveEfficiency * 0.06);
+              } else {
+                _tempColor
+                  .setHex(a11yPalette.tileStateAccentHex.PRIVATE)
+                  .lerp(giUniforms.uCleanseWaveColor.value, localCleanse * effectiveEfficiency * 0.85);
+                mat.emissive.copy(_tempColor);
+                mat.emissiveIntensity = 0.2 + wave * 0.3;
+                chip.position.y = 0.42 + tileLiftOffset;
+                chip.scale.setScalar(1.0 + localCleanse * effectiveEfficiency * 0.06);
+              }
+            } else {
+              mat.emissive.setHex(0x000000);
+              mat.emissiveIntensity = 0;
+              chip.position.y = 0.42;
+              chip.scale.setScalar(1.0);
+            }
           }
         }
       });
 
-      // Pulso brillante en casillas de urna si hay una Decisión Barrial activa
-      const activeDecision = propsRef.current.neighborhoodDecision;
-      tileMeshesRef.current.forEach((mesh, tileId) => {
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        if (!mat) return;
-        if (activeDecision && activeDecision.targetTileIds.includes(tileId)) {
-          const pulse = 0.5 + 0.5 * Math.sin(elapsed * 6);
-          mat.emissive.setHex(0x14b8a6);
-          mat.emissiveIntensity = 0.4 + pulse * 0.6;
-        } else if (mat.emissiveIntensity !== 0) {
-          mat.emissive.setHex(0x000000);
-          mat.emissiveIntensity = 0;
+      for (let r = activeIntendedRings; r < MAX_INTENDED_TARGET_RINGS; r++) {
+        if (intendedTargetRingPool[r].visible) {
+          intendedTargetRingPool[r].visible = false;
         }
-      });
+      }
 
-      // Dice roll tumble animation
-      if (diceGroupRef.current) {
-        if (isRollingRef.current) {
-          diceGroupRef.current.rotation.x += 18 * delta;
-          diceGroupRef.current.rotation.y += 24 * delta;
-          diceGroupRef.current.rotation.z += 15 * delta;
-          diceGroupRef.current.position.y = 1.6 + Math.sin(elapsed * 12) * 0.4;
+      // Actualización de indicadores 3D de trayectorias de especuladores (Devs Trajectory Visualizer)
+      const currTrajectories =
+        currPhase !== 'GAME_OVER' ? propsRef.current.speculatorTrajectories : null;
+      const hasTrajectories = Boolean(currTrajectories && currTrajectories.length > 0);
+
+      for (let sIdx = 0; sIdx < MAX_SPECULATOR_TRAJECTORIES; sIdx++) {
+        const slot = trajectorySlots[sIdx];
+        if (!hasTrajectories || !currTrajectories || sIdx >= currTrajectories.length) {
+          if (slot.group.visible) {
+            slot.group.visible = false;
+          }
+          continue;
+        }
+
+        const traj = currTrajectories[sIdx];
+        slot.group.visible = true;
+
+        const trajPal =
+          a11yPalette.trajectoryColors[
+            Math.max(0, traj.orderIndex - 1) % a11yPalette.trajectoryColors.length
+          ];
+        const trajHex = trajPal ? trajPal.hex : traj.colorHex;
+
+        // Color según bot, amenaza y paleta de accesibilidad activa
+        slot.perimeterMat.color.setHex(trajHex);
+        slot.arcMat.color.setHex(trajHex);
+        slot.arrowMat.color.setHex(trajHex);
+        slot.arrowMat.emissive.setHex(trajHex);
+        slot.pulseMat.color.setHex(trajHex);
+        slot.pulseMat.emissive.setHex(trajHex);
+        slot.startRingMat.color.setHex(trajHex);
+
+        const startCoords = getTileCoords(traj.fromTileId);
+        const targetCoords = getTileCoords(traj.toTileId);
+
+        // Anillo de inicio en la casilla del especulador
+        slot.startRing.position.set(startCoords.x, 0.345, startCoords.z);
+
+        // 1. Trazado del recorrido terrestre sobre las casillas
+        const pathIds = traj.pathTileIds;
+        const pathCount = Math.min(TRAJECTORY_MAX_PATH_STEPS, pathIds.length);
+        const perimPos = slot.perimeterGeo.attributes.position.array as Float32Array;
+        for (let p = 0; p < pathCount; p++) {
+          const c = getTileCoords(pathIds[p]);
+          perimPos[p * 3] = c.x;
+          perimPos[p * 3 + 1] = 0.418;
+          perimPos[p * 3 + 2] = c.z;
+        }
+        slot.perimeterGeo.setDrawRange(0, pathCount);
+        slot.perimeterGeo.attributes.position.needsUpdate = true;
+
+        // 2. Arco parabólico 3D elevado en el espacio
+        const arcPos = slot.arcGeo.attributes.position.array as Float32Array;
+        const arcDist = Math.hypot(targetCoords.x - startCoords.x, targetCoords.z - startCoords.z);
+        const peakHeight = Math.max(0.85, Math.min(2.8, 0.65 + arcDist * 0.14));
+        const startY = 0.55;
+        const targetY = 0.43;
+
+        for (let a = 0; a < TRAJECTORY_ARC_STEPS; a++) {
+          const t = a / (TRAJECTORY_ARC_STEPS - 1);
+          const x = THREE.MathUtils.lerp(startCoords.x, targetCoords.x, t);
+          const z = THREE.MathUtils.lerp(startCoords.z, targetCoords.z, t);
+          const y = THREE.MathUtils.lerp(startY, targetY, t) + Math.sin(t * Math.PI) * peakHeight;
+          arcPos[a * 3] = x;
+          arcPos[a * 3 + 1] = y;
+          arcPos[a * 3 + 2] = z;
+        }
+        slot.arcGeo.setDrawRange(0, TRAJECTORY_ARC_STEPS);
+        slot.arcGeo.attributes.position.needsUpdate = true;
+
+        // 3. Cono / flecha orientada en la casilla destino
+        slot.arrowCone.position.set(targetCoords.x, 0.46, targetCoords.z);
+        let dirX = targetCoords.x - startCoords.x;
+        let dirZ = targetCoords.z - startCoords.z;
+        if (pathIds.length >= 2) {
+          const prevC = getTileCoords(pathIds[pathIds.length - 2]);
+          dirX = targetCoords.x - prevC.x;
+          dirZ = targetCoords.z - prevC.z;
+        }
+        const dirLen = Math.hypot(dirX, dirZ);
+        if (dirLen > 0.001) {
+          _coneDir.set(dirX / dirLen, 0, dirZ / dirLen);
+          slot.arrowCone.quaternion.setFromUnitVectors(_coneUp, _coneDir);
+        }
+
+        // 4. Orbe de energía / pulso viajando a lo largo del arco
+        const pulseT = isReducedMotion
+          ? 0.75
+          : ((elapsed * 0.8 + sIdx * 0.35) % 1.0);
+        const orbX = THREE.MathUtils.lerp(startCoords.x, targetCoords.x, pulseT);
+        const orbZ = THREE.MathUtils.lerp(startCoords.z, targetCoords.z, pulseT);
+        const orbY = THREE.MathUtils.lerp(startY, targetY, pulseT) + Math.sin(pulseT * Math.PI) * peakHeight;
+        slot.pulseOrb.position.set(orbX, orbY, orbZ);
+        slot.pulseOrb.scale.setScalar(0.85 + 0.3 * Math.sin(pulseT * Math.PI));
+      }
+
+      if (agoraGroupRef.current) {
+        const isAgoraVisible = applyGroupFrustumAndDetailLOD(
+          agoraGroupRef.current,
+          camera.position,
+          4.0,
+          0.35,
+          1600
+        );
+        totalCullableObjects += 1;
+        if (!isAgoraVisible) culledObjects += 1;
+      }
+
+      // Baliza 3D del Tutorial Interactivo sobre Ágora, peón activo, dado o especuladores
+      if (currTutorialFocus === 'AGORA_CENTRAL' || currTutorialFocus === 'LEGITIMACY_AND_GOAL') {
+        tutorialRingMesh.visible = true;
+        tutorialRingMesh.position.set(0, 0.52, 0);
+        tutorialRingMesh.scale.setScalar(2.45 + tutPulse * 0.22);
+        tutorialRingMat.color.setHex(currTutorialFocus === 'AGORA_CENTRAL' ? 0xec4899 : 0xfacc15);
+        tutorialRingMat.opacity = 0.48 + tutPulse * 0.36;
+        ringMat.emissiveIntensity = 0.55 + tutPulse * 0.5;
+        coreMat.emissiveIntensity = 0.45 + tutPulse * 0.55;
+      } else {
+        ringMat.emissiveIntensity = THREE.MathUtils.damp(ringMat.emissiveIntensity, 0.28, 6, delta);
+        coreMat.emissiveIntensity = THREE.MathUtils.damp(coreMat.emissiveIntensity, 0.2, 6, delta);
+
+        if (currTutorialFocus === 'ACTIVE_PLAYER_PAWN' && activePlayer) {
+          const pawn = playerMeshesRef.current.get(activePlayer.id);
+          if (pawn) {
+            tutorialRingMesh.visible = true;
+            tutorialRingMesh.position.set(pawn.position.x, 0.38, pawn.position.z);
+            tutorialRingMesh.scale.setScalar(0.92 + tutPulse * 0.16);
+            tutorialRingMat.color.setHex(0x2dd4bf);
+            tutorialRingMat.opacity = 0.55 + tutPulse * 0.35;
+          } else {
+            tutorialRingMesh.visible = false;
+          }
+        } else if (currTutorialFocus === 'TURN_DICE_AND_TILE' && diceGroupRef.current) {
+          tutorialRingMesh.visible = true;
+          tutorialRingMesh.position.set(
+            diceGroupRef.current.position.x,
+            0.38,
+            diceGroupRef.current.position.z
+          );
+          tutorialRingMesh.scale.setScalar(0.95 + tutPulse * 0.18);
+          tutorialRingMat.color.setHex(0xfacc15);
+          tutorialRingMat.opacity = 0.55 + tutPulse * 0.35;
+        } else if (currTutorialFocus === 'SPECULATORS_THREAT' && propsRef.current.speculators[0]) {
+          const specMesh = speculatorMeshesRef.current.get(propsRef.current.speculators[0].id);
+          if (specMesh) {
+            tutorialRingMesh.visible = true;
+            tutorialRingMesh.position.set(specMesh.position.x, 0.38, specMesh.position.z);
+            tutorialRingMesh.scale.setScalar(1.0 + tutPulse * 0.18);
+            tutorialRingMat.color.setHex(0xf97316);
+            tutorialRingMat.opacity = 0.58 + tutPulse * 0.35;
+          } else {
+            tutorialRingMesh.visible = false;
+          }
         } else {
-          diceGroupRef.current.rotation.x = THREE.MathUtils.damp(diceGroupRef.current.rotation.x, diceTargetRotationRef.current.x, 8, delta);
-          diceGroupRef.current.rotation.y = THREE.MathUtils.damp(diceGroupRef.current.rotation.y, diceTargetRotationRef.current.y, 8, delta);
-          diceGroupRef.current.rotation.z = THREE.MathUtils.damp(diceGroupRef.current.rotation.z, diceTargetRotationRef.current.z, 8, delta);
-          diceGroupRef.current.position.y = THREE.MathUtils.damp(diceGroupRef.current.position.y, 0.75, 8, delta);
+          tutorialRingMesh.visible = false;
+        }
+      }
+
+      // Dice roll tumble animation + frustum/distance LOD culling
+      if (diceGroupRef.current) {
+        const diceVisible = applyGroupFrustumAndDetailLOD(
+          diceGroupRef.current,
+          camera.position,
+          1.15,
+          0,
+          620
+        );
+        totalCullableObjects += 1;
+        if (!diceVisible) culledObjects += 1;
+        if (diceVisible || isRollingRef.current) {
+          if (isRollingRef.current) {
+            diceGroupRef.current.rotation.x += 18 * delta;
+            diceGroupRef.current.rotation.y += 24 * delta;
+            diceGroupRef.current.rotation.z += 15 * delta;
+            diceGroupRef.current.position.y = 1.6 + Math.sin(elapsed * 12) * 0.4;
+          } else {
+            diceGroupRef.current.rotation.x = THREE.MathUtils.damp(diceGroupRef.current.rotation.x, diceTargetRotationRef.current.x, 8, delta);
+            diceGroupRef.current.rotation.y = THREE.MathUtils.damp(diceGroupRef.current.rotation.y, diceTargetRotationRef.current.y, 8, delta);
+            diceGroupRef.current.rotation.z = THREE.MathUtils.damp(diceGroupRef.current.rotation.z, diceTargetRotationRef.current.z, 8, delta);
+            diceGroupRef.current.position.y = THREE.MathUtils.damp(diceGroupRef.current.position.y, 0.75, 8, delta);
+          }
         }
       }
 
@@ -1339,19 +1942,35 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       snowWeight = THREE.MathUtils.damp(snowWeight, targetSnowWeight, 1.15, delta);
       sunWeight = THREE.MathUtils.damp(sunWeight, targetSunWeight, 1.3, delta);
 
-      const effectiveRain = rainWeight * smoothWeatherIntensity;
-      const effectiveSnow = snowWeight * smoothWeatherIntensity;
-      const effectiveSun = sunWeight * smoothWeatherIntensity;
+      const advWeatherCfg =
+        propsRef.current.weatherAdvancedConfig ?? DEFAULT_WEATHER_ADVANCED_CONFIG;
+      const particleScale = THREE.MathUtils.clamp(
+        advWeatherCfg.particleDensityScale ?? 1,
+        0,
+        1.5
+      );
+      const atmosphereScale = THREE.MathUtils.clamp(
+        advWeatherCfg.atmosphereImpactScale ?? 1,
+        0,
+        1.5
+      );
+      const particleDensityFraction = THREE.MathUtils.clamp(particleScale, 0, 1);
 
-      // 1) Actualizar estelas de lluvia + salpicaduras si tienen peso visible
-      if (effectiveRain > 0.01) {
+      const effectiveRain = rainWeight * smoothWeatherIntensity * particleScale;
+      const effectiveSnow = snowWeight * smoothWeatherIntensity * particleScale;
+      const effectiveSun = sunWeight * smoothWeatherIntensity * particleScale;
+
+      // 1) Actualizar estelas de lluvia + salpicaduras si tienen peso visible y están en frustum
+      if (effectiveRain > 0.01 && particleScale > 0.01 && isBoardVolumeInFrustum) {
         rainLines.visible = true;
         rainSplashPoints.visible = true;
-        rainMat.opacity = Math.min(0.88, effectiveRain * 0.9);
-        splashMat.opacity = Math.min(0.68, effectiveRain * 0.72);
+        rainGeo.setDrawRange(0, Math.max(2, Math.round(RAIN_COUNT * particleDensityFraction)) * 2);
+        splashGeo.setDrawRange(0, Math.max(1, Math.round(SPLASH_COUNT * particleDensityFraction)));
+        rainMat.opacity = Math.min(0.92, effectiveRain * 0.9);
+        splashMat.opacity = Math.min(0.76, effectiveRain * 0.72);
 
         const rPosAttr = rainGeo.getAttribute('position') as THREE.BufferAttribute;
-        const speedScale = 0.65 + 0.45 * smoothWeatherIntensity;
+        const speedScale = 0.65 + 0.45 * smoothWeatherIntensity * Math.max(0.5, particleScale);
         for (let i = 0; i < RAIN_COUNT; i++) {
           const rIdx = i * 3;
           const vIdx = i * 6;
@@ -1371,7 +1990,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           rainRoots[rIdx + 1] = ry;
           rainRoots[rIdx + 2] = rz;
 
-          const streakLen = (0.42 + (rainSpeeds[i] - 9.5) * 0.045) * (0.65 + 0.35 * effectiveRain);
+          const streakLen = (0.42 + (rainSpeeds[i] - 9.5) * 0.045) * (0.65 + 0.35 * Math.min(1.2, effectiveRain));
           rainPositions[vIdx] = rx;
           rainPositions[vIdx + 1] = ry;
           rainPositions[vIdx + 2] = rz;
@@ -1400,14 +2019,15 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         splashMat.opacity = 0;
       }
 
-      // 2) Actualizar copos cristalinos de nieve
-      if (effectiveSnow > 0.01) {
+      // 2) Actualizar copos cristalinos de nieve si están en frustum
+      if (effectiveSnow > 0.01 && particleScale > 0.01 && isBoardVolumeInFrustum) {
         snowPoints.visible = true;
-        snowMat.opacity = Math.min(0.95, effectiveSnow * 0.96);
-        snowMat.size = 0.42 + smoothWeatherIntensity * 0.22;
+        snowGeo.setDrawRange(0, Math.max(1, Math.round(SNOW_COUNT * particleDensityFraction)));
+        snowMat.opacity = Math.min(0.98, effectiveSnow * 0.96);
+        snowMat.size = (0.42 + smoothWeatherIntensity * 0.22) * (0.75 + 0.25 * particleScale);
 
         const snPosAttr = snowGeo.getAttribute('position') as THREE.BufferAttribute;
-        const fallScale = 0.7 + 0.4 * smoothWeatherIntensity;
+        const fallScale = 0.7 + 0.4 * smoothWeatherIntensity * Math.max(0.5, particleScale);
         for (let i = 0; i < SNOW_COUNT; i++) {
           let sx = snPosAttr.getX(i);
           let sy = snPosAttr.getY(i);
@@ -1432,11 +2052,12 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         snowMat.opacity = 0;
       }
 
-      // 3) Actualizar motas solares doradas
-      if (effectiveSun > 0.01) {
+      // 3) Actualizar motas solares doradas si están en frustum
+      if (effectiveSun > 0.01 && particleScale > 0.01 && isBoardVolumeInFrustum) {
         sunPoints.visible = true;
-        sunMat.opacity = Math.min(0.85, effectiveSun * 0.85);
-        sunMat.size = 0.36 + smoothWeatherIntensity * 0.16;
+        sunGeo.setDrawRange(0, Math.max(1, Math.round(SUN_COUNT * particleDensityFraction)));
+        sunMat.opacity = Math.min(0.92, effectiveSun * 0.85);
+        sunMat.size = (0.36 + smoothWeatherIntensity * 0.16) * (0.75 + 0.25 * particleScale);
 
         const suPosAttr = sunGeo.getAttribute('position') as THREE.BufferAttribute;
         for (let i = 0; i < SUN_COUNT; i++) {
@@ -1478,9 +2099,15 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         currentSituationCard: propsRef.current.currentSituationCard
       });
 
+      const atmosphereWeatherIntensity = THREE.MathUtils.clamp(
+        smoothWeatherIntensity * atmosphereScale,
+        0,
+        1.5
+      );
+
       computeAtmosphereTargets(_atmosphereTargets, {
         weatherType: weatherCond.type,
-        weatherIntensity: smoothWeatherIntensity,
+        weatherIntensity: atmosphereWeatherIntensity,
         timeInfo,
         cardInfo,
         phase: currPhase,
@@ -1560,64 +2187,83 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         delta
       );
 
-      // --- ACTUALIZACIÓN DE PARTÍCULAS DE BIENES COMUNES & AURA ---
+      // --- ACTUALIZACIÓN DE PARTÍCULAS DE BIENES COMUNES & AURA (con frustum culling) ---
       if (commonsPoints.visible) {
+        const isCommonsBurstInFrustum = isWorldSphereInFrustum(
+          commonsBurstCenterX,
+          3.0,
+          commonsBurstCenterZ,
+          8.0
+        );
         let anyActive = false;
-        const cPosAttr = commonsGeo.getAttribute('position') as THREE.BufferAttribute;
-        const cColAttr = commonsGeo.getAttribute('color') as THREE.BufferAttribute;
 
-        for (let i = 0; i < COMMONS_PARTICLE_COUNT; i++) {
-          if (commonsLife[i] > 0) {
-            anyActive = true;
-            commonsLife[i] -= delta;
-            const lifeFrac = Math.max(0, commonsLife[i] / commonsMaxLife[i]);
-            const pIdx = i * 3;
-
-            // Gravedad suave y resistencia aerodinámica
-            commonsVelocities[pIdx + 1] -= 7.8 * delta;
-            const drag = Math.pow(0.86, delta * 30);
-            commonsVelocities[pIdx] *= drag;
-            commonsVelocities[pIdx + 2] *= drag;
-
-            // Giro sutil en espiral alrededor del vórtice
-            const spin = delta * 1.5;
-            const vx = commonsVelocities[pIdx];
-            const vz = commonsVelocities[pIdx + 2];
-            commonsVelocities[pIdx] = vx * Math.cos(spin) - vz * Math.sin(spin);
-            commonsVelocities[pIdx + 2] = vx * Math.sin(spin) + vz * Math.cos(spin);
-
-            let px = cPosAttr.getX(i) + commonsVelocities[pIdx] * delta;
-            let py = cPosAttr.getY(i) + commonsVelocities[pIdx + 1] * delta;
-            let pz = cPosAttr.getZ(i) + commonsVelocities[pIdx + 2] * delta;
-
-            // Rebote elástico en la superficie de la casilla
-            if (py < 0.28) {
-              py = 0.28;
-              commonsVelocities[pIdx + 1] = -commonsVelocities[pIdx + 1] * 0.32;
-              commonsVelocities[pIdx] *= 0.65;
-              commonsVelocities[pIdx + 2] *= 0.65;
+        if (!isCommonsBurstInFrustum) {
+          for (let i = 0; i < COMMONS_PARTICLE_COUNT; i++) {
+            if (commonsLife[i] > 0) {
+              commonsLife[i] -= delta;
+              if (commonsLife[i] > 0) anyActive = true;
             }
-
-            cPosAttr.setXYZ(i, px, py, pz);
-
-            // Modulación de brillo y color
-            const fade = Math.sin(lifeFrac * Math.PI);
-            cColAttr.setXYZ(
-              i,
-              cColAttr.getX(i) * 0.98 + fade * 0.02,
-              cColAttr.getY(i) * 0.98 + fade * 0.02,
-              cColAttr.getZ(i) * 0.98 + fade * 0.02
-            );
-          } else {
-            cPosAttr.setY(i, -20);
           }
-        }
+          if (!anyActive) {
+            commonsPoints.visible = false;
+          }
+        } else {
+          const cPosAttr = commonsGeo.getAttribute('position') as THREE.BufferAttribute;
+          const cColAttr = commonsGeo.getAttribute('color') as THREE.BufferAttribute;
 
-        cPosAttr.needsUpdate = true;
-        cColAttr.needsUpdate = true;
+          for (let i = 0; i < COMMONS_PARTICLE_COUNT; i++) {
+            if (commonsLife[i] > 0) {
+              anyActive = true;
+              commonsLife[i] -= delta;
+              const lifeFrac = Math.max(0, commonsLife[i] / commonsMaxLife[i]);
+              const pIdx = i * 3;
 
-        if (!anyActive) {
-          commonsPoints.visible = false;
+              // Gravedad suave y resistencia aerodinámica
+              commonsVelocities[pIdx + 1] -= 7.8 * delta;
+              const drag = Math.pow(0.86, delta * 30);
+              commonsVelocities[pIdx] *= drag;
+              commonsVelocities[pIdx + 2] *= drag;
+
+              // Giro sutil en espiral alrededor del vórtice
+              const spin = delta * 1.5;
+              const vx = commonsVelocities[pIdx];
+              const vz = commonsVelocities[pIdx + 2];
+              commonsVelocities[pIdx] = vx * Math.cos(spin) - vz * Math.sin(spin);
+              commonsVelocities[pIdx + 2] = vx * Math.sin(spin) + vz * Math.cos(spin);
+
+              let px = cPosAttr.getX(i) + commonsVelocities[pIdx] * delta;
+              let py = cPosAttr.getY(i) + commonsVelocities[pIdx + 1] * delta;
+              let pz = cPosAttr.getZ(i) + commonsVelocities[pIdx + 2] * delta;
+
+              // Rebote elástico en la superficie de la casilla
+              if (py < 0.28) {
+                py = 0.28;
+                commonsVelocities[pIdx + 1] = -commonsVelocities[pIdx + 1] * 0.32;
+                commonsVelocities[pIdx] *= 0.65;
+                commonsVelocities[pIdx + 2] *= 0.65;
+              }
+
+              cPosAttr.setXYZ(i, px, py, pz);
+
+              // Modulación de brillo y color
+              const fade = Math.sin(lifeFrac * Math.PI);
+              cColAttr.setXYZ(
+                i,
+                cColAttr.getX(i) * 0.98 + fade * 0.02,
+                cColAttr.getY(i) * 0.98 + fade * 0.02,
+                cColAttr.getZ(i) * 0.98 + fade * 0.02
+              );
+            } else {
+              cPosAttr.setY(i, -20);
+            }
+          }
+
+          cPosAttr.needsUpdate = true;
+          cColAttr.needsUpdate = true;
+
+          if (!anyActive) {
+            commonsPoints.visible = false;
+          }
         }
       }
 
@@ -1637,16 +2283,18 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         isTragedyOfCommonsActive,
         delta,
         elapsed,
-        reducedMotionQuery?.matches ?? false
+        reducedMotionQuery?.matches ?? false,
+        isBoardVolumeInFrustum
       );
 
       const usePostProcessing = Boolean(
         postProcessing && (propsRef.current.postProcessingEnabled ?? true)
       );
+      renderer.info.reset();
       if (usePostProcessing && postProcessing) {
         postProcessing.updateAtmosphere({
           weatherType: weatherCond.type,
-          weatherIntensity: smoothWeatherIntensity,
+          weatherIntensity: atmosphereWeatherIntensity,
           phase: currPhase,
           gameResult: currResult,
           hasCelebrationBurst: auraLife > 0 || commonsPoints.visible,
@@ -1664,12 +2312,43 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         renderer.render(scene, camera);
       }
 
+      const windowElapsedMs = frameNow - perfWindowStart;
+      if (windowElapsedMs >= 450 && propsRef.current.telemetryRef) {
+        const avgFrameMs = windowElapsedMs / Math.max(1, perfFramesInWindow);
+        const computedFps = Math.min(240, Math.round((perfFramesInWindow * 1000) / windowElapsedMs));
+        propsRef.current.telemetryRef.current = {
+          fps: computedFps,
+          frameTimeMs: Math.round(avgFrameMs * 10) / 10,
+          maxFrameTimeMs: Math.round((perfMaxFrameMs > 0 ? perfMaxFrameMs : avgFrameMs) * 10) / 10,
+          drawCalls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+          culledObjects,
+          totalCullableObjects,
+          pixelRatio: renderer.getPixelRatio(),
+          isSoftwareGl,
+          updatedAt: frameNow
+        };
+        perfWindowStart = frameNow;
+        perfFramesInWindow = 0;
+        perfMaxFrameMs = 0;
+      }
+
       if (isSoftwareGl) {
         afterDraw(render);
       } else {
         animationFrameId = requestAnimationFrame(render);
       }
     };
+
+    if (!isSoftwareGl) {
+      try {
+        renderer.compile(scene, camera);
+      } catch {
+        // Ignorar si algún shader diferido no compila aún
+      }
+    }
 
     render();
 
@@ -1719,13 +2398,30 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       if (!container || !renderer || !camera) return;
       const width = container.clientWidth;
       const height = container.clientHeight;
+      const compact = Math.min(width, height) < 640;
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, compact ? 1.5 : 2));
       renderer.setSize(width, height);
       postProcessing?.setSize(width, height);
     };
 
     window.addEventListener('resize', handleResize);
+
+    const disposeObjectGroup = (group: THREE.Group) => {
+      scene.remove(group);
+      group.traverse(obj => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const m = obj as THREE.Mesh;
+          m.geometry?.dispose();
+          if (Array.isArray(m.material)) {
+            m.material.forEach(mat => mat.dispose());
+          } else {
+            m.material?.dispose();
+          }
+        }
+      });
+    };
 
     return () => {
       cancelAnimationFrame(animationFrameId);
@@ -1753,11 +2449,64 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       commonsTexture.dispose();
       auraGeo.dispose();
       auraMat.dispose();
+      tutorialRingGeo.dispose();
+      tutorialRingMat.dispose();
       skyDome.dispose();
-      tileMaterialList.forEach(m => m.dispose());
-      tileSaturationEntries.clear();
+      envTexture.dispose();
+      scene.environment = null;
+      tableGeo.dispose();
       tableMat.dispose();
+      feltGeo.dispose();
       feltMat.dispose();
+      tileGeo.dispose();
+      cornerGeo.dispose();
+      chipGeo.dispose();
+      heatmapTileGeo.dispose();
+      heatmapCornerGeo.dispose();
+      heatmapRingGeo.dispose();
+      heatmapPadMaterials.forEach(m => m.dispose());
+      intendedTargetRingMaterials.forEach(m => m.dispose());
+      heatmapPadMeshes.clear();
+      trajectorySharedConeGeo.dispose();
+      trajectorySharedSphereGeo.dispose();
+      trajectorySharedRingGeo.dispose();
+      trajectorySlots.forEach(slot => {
+        scene.remove(slot.group);
+        slot.perimeterGeo.dispose();
+        slot.perimeterMat.dispose();
+        slot.arcGeo.dispose();
+        slot.arcMat.dispose();
+        slot.arrowMat.dispose();
+        slot.pulseMat.dispose();
+        slot.startRingMat.dispose();
+      });
+      tileMaterialList.forEach(m => m.dispose());
+      chipMeshesRef.current.forEach(chip => {
+        if (Array.isArray(chip.material)) {
+          chip.material.forEach(m => m.dispose());
+        } else {
+          chip.material?.dispose();
+        }
+      });
+      chipMeshesRef.current.clear();
+      tileMeshesRef.current.clear();
+      tileSaturationEntries.clear();
+      daisGeo.dispose();
+      daisMat.dispose();
+      ringGeo.dispose();
+      ringMat.dispose();
+      coreGeo.dispose();
+      coreMat.dispose();
+      diceGeo.dispose();
+      diceMat.dispose();
+      pipGeo.dispose();
+      pipMat.dispose();
+      playerMeshesRef.current.forEach(disposeObjectGroup);
+      playerMeshesRef.current.clear();
+      speculatorMeshesRef.current.forEach(disposeObjectGroup);
+      speculatorMeshesRef.current.clear();
+      agoraGroupRef.current = null;
+      diceGroupRef.current = null;
       postProcessing?.dispose();
       tragedyParticles.dispose();
       boardCleansing.dispose();
@@ -1803,7 +2552,9 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     });
     players.forEach(player => {
       if (!playerMeshesRef.current.has(player.id)) {
-        const pawnGroup = createCharacterPawnMesh(player.id, player.color, player.accentColor, false);
+        const pawnGroup = createCharacterPawnMesh(player.id, player.color, player.accentColor, false, {
+          detail: 'board'
+        });
         const coords = getTileCoords(player.position);
         pawnGroup.position.set(coords.x, player.inAgora ? 0.65 : 0.35, coords.z);
         scene.add(pawnGroup);
@@ -1821,7 +2572,9 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     });
     speculators.forEach(speculator => {
       if (!speculatorMeshesRef.current.has(speculator.id)) {
-        const specGroup = createCharacterPawnMesh('speculator', speculator.color, '#0f172a', true);
+        const specGroup = createCharacterPawnMesh('speculator', speculator.color, '#0f172a', true, {
+          detail: 'board'
+        });
         const coords = getTileCoords(speculator.position);
         specGroup.position.set(coords.x + 0.3, 0.35, coords.z + 0.3);
         scene.add(specGroup);

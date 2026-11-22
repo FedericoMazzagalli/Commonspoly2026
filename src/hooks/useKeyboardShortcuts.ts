@@ -8,6 +8,7 @@
 import { useEffect } from 'react';
 import { GameEngineState } from '../types/game';
 import { playSound } from '../utils/audio';
+import { getEffectiveUnlockCost } from '../utils/crisisEngine';
 
 export interface KeyboardShortcutItem {
   keys: string[];
@@ -84,6 +85,12 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcutItem[] = [
     category: 'VIEW'
   },
   {
+    keys: ['C'],
+    label: 'Modo Cine (Repetición)',
+    description: 'Reproduce automáticamente los últimos turnos guardados para analizar tus decisiones.',
+    category: 'VIEW'
+  },
+  {
     keys: ['L'],
     label: 'Logros Locales',
     description: 'Abre o cierra la galería de logros cooperativos locales.',
@@ -112,6 +119,18 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcutItem[] = [
     label: 'Mostrar / Ocultar Controles',
     description: 'Colapsa o expande el dock inferior de acciones.',
     category: 'VIEW'
+  },
+  {
+    keys: ['F'],
+    label: 'Monitor de Rendimiento (FPS / RAM)',
+    description: 'Muestra u oculta el panel en vivo de FPS, memoria JS Heap, draw calls y frustum culling.',
+    category: 'VIEW'
+  },
+  {
+    keys: ['E'],
+    label: 'Debug Economía y Especulación',
+    description: 'Abre o cierra el panel de probabilidades especulativas e impacto económico de casillas.',
+    category: 'VIEW'
   }
 ];
 
@@ -121,9 +140,17 @@ interface UseKeyboardShortcutsOptions {
   isRulesOpen: boolean;
   isAchievementsOpen?: boolean;
   isLeaderboardOpen?: boolean;
+  isWeatherSettingsOpen?: boolean;
+  isCareerStatsOpen?: boolean;
+  isAccessibilityOpen?: boolean;
+  isMultiplayerOpen?: boolean;
+  isRemoteMultiplayerTurn?: boolean;
   isTutorialOpen: boolean;
   isGameHistoryOpen: boolean;
   isEvolutionOpen?: boolean;
+  isPerformanceMonitorOpen?: boolean;
+  isEconomyDebugOpen?: boolean;
+  isCinemaMode?: boolean;
   isTileInspectorOpen?: boolean;
   showGameOverSummary: boolean;
   onRollDice: () => void;
@@ -140,16 +167,26 @@ interface UseKeyboardShortcutsOptions {
   onCloseGameHistory: () => void;
   onToggleEvolution?: () => void;
   onCloseEvolution?: () => void;
+  onTogglePerformanceMonitor?: () => void;
+  onClosePerformanceMonitor?: () => void;
+  onToggleEconomyDebug?: () => void;
+  onCloseEconomyDebug?: () => void;
   onCloseTileInspector?: () => void;
   onToggleRules: () => void;
   onCloseRules: () => void;
   onToggleAchievements?: () => void;
   onCloseAchievements?: () => void;
   onCloseLeaderboard?: () => void;
+  onCloseWeatherSettings?: () => void;
+  onCloseCareerStats?: () => void;
+  onCloseAccessibility?: () => void;
+  onCloseMultiplayer?: () => void;
   onToggleShortcuts: () => void;
   onCloseShortcuts: () => void;
   onCloseGameOverSummary: () => void;
   onToggleTutorial?: () => void;
+  onToggleCinemaMode?: () => void;
+  onCloseCinemaMode?: () => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -167,9 +204,17 @@ export function useKeyboardShortcuts({
   isRulesOpen,
   isAchievementsOpen = false,
   isLeaderboardOpen = false,
+  isWeatherSettingsOpen = false,
+  isCareerStatsOpen = false,
+  isAccessibilityOpen = false,
+  isMultiplayerOpen = false,
+  isRemoteMultiplayerTurn = false,
   isTutorialOpen,
   isGameHistoryOpen,
   isEvolutionOpen = false,
+  isPerformanceMonitorOpen = false,
+  isEconomyDebugOpen = false,
+  isCinemaMode = false,
   isTileInspectorOpen = false,
   showGameOverSummary,
   onRollDice,
@@ -186,16 +231,26 @@ export function useKeyboardShortcuts({
   onCloseGameHistory,
   onToggleEvolution,
   onCloseEvolution,
+  onTogglePerformanceMonitor,
+  onClosePerformanceMonitor,
+  onToggleEconomyDebug,
+  onCloseEconomyDebug,
   onCloseTileInspector,
   onToggleRules,
   onCloseRules,
   onToggleAchievements,
   onCloseAchievements,
   onCloseLeaderboard,
+  onCloseWeatherSettings,
+  onCloseCareerStats,
+  onCloseAccessibility,
+  onCloseMultiplayer,
   onToggleShortcuts,
   onCloseShortcuts,
   onCloseGameOverSummary,
-  onToggleTutorial
+  onToggleTutorial,
+  onToggleCinemaMode,
+  onCloseCinemaMode
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -221,6 +276,13 @@ export function useKeyboardShortcuts({
           return;
         }
 
+        if (isCinemaMode && onCloseCinemaMode) {
+          e.preventDefault();
+          playSound.modalClose();
+          onCloseCinemaMode();
+          return;
+        }
+
         if (isRulesOpen) {
           e.preventDefault();
           playSound.modalClose();
@@ -239,6 +301,34 @@ export function useKeyboardShortcuts({
           e.preventDefault();
           playSound.modalClose();
           onCloseLeaderboard();
+          return;
+        }
+
+        if (isWeatherSettingsOpen && onCloseWeatherSettings) {
+          e.preventDefault();
+          playSound.modalClose();
+          onCloseWeatherSettings();
+          return;
+        }
+
+        if (isCareerStatsOpen && onCloseCareerStats) {
+          e.preventDefault();
+          playSound.modalClose();
+          onCloseCareerStats();
+          return;
+        }
+
+        if (isAccessibilityOpen && onCloseAccessibility) {
+          e.preventDefault();
+          playSound.modalClose();
+          onCloseAccessibility();
+          return;
+        }
+
+        if (isMultiplayerOpen && onCloseMultiplayer) {
+          e.preventDefault();
+          playSound.modalClose();
+          onCloseMultiplayer();
           return;
         }
 
@@ -287,6 +377,20 @@ export function useKeyboardShortcuts({
           e.preventDefault();
           playSound.modalClose();
           onCloseEvolution();
+          return;
+        }
+
+        if (isPerformanceMonitorOpen && onClosePerformanceMonitor) {
+          e.preventDefault();
+          playSound.modalClose();
+          onClosePerformanceMonitor();
+          return;
+        }
+
+        if (isEconomyDebugOpen && onCloseEconomyDebug) {
+          e.preventDefault();
+          playSound.modalClose();
+          onCloseEconomyDebug();
           return;
         }
 
@@ -344,8 +448,20 @@ export function useKeyboardShortcuts({
         isRulesOpen ||
         isAchievementsOpen ||
         isLeaderboardOpen ||
+        isWeatherSettingsOpen ||
+        isCareerStatsOpen ||
+        isAccessibilityOpen ||
+        isMultiplayerOpen ||
         isTutorialOpen ||
         Boolean(state.activeModal);
+
+      if (keyLower === 'c' && onToggleCinemaMode && !hasBlockingOverlay) {
+        e.preventDefault();
+        onToggleCinemaMode();
+        return;
+      }
+
+      if (isCinemaMode) return;
 
       if (keyLower === 'b' && !isShortcutsOpen && !isAchievementsOpen && !isTutorialOpen && !state.activeModal) {
         e.preventDefault();
@@ -392,6 +508,20 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      if (keyLower === 'f' && onTogglePerformanceMonitor) {
+        e.preventDefault();
+        playSound.uiToggle(!isPerformanceMonitorOpen);
+        onTogglePerformanceMonitor();
+        return;
+      }
+
+      if (keyLower === 'e' && onToggleEconomyDebug) {
+        e.preventDefault();
+        playSound.uiToggle(!isEconomyDebugOpen);
+        onToggleEconomyDebug();
+        return;
+      }
+
       if (keyLower === 'm') {
         e.preventDefault();
         onToggleSound();
@@ -426,7 +556,7 @@ export function useKeyboardShortcuts({
 
       const activePlayer = state.players[state.activePlayerIndex];
       const isHumanTurn = activePlayer?.controller === 'HUMAN';
-      if (!isHumanTurn) return;
+      if (!isHumanTurn || isRemoteMultiplayerTurn) return;
 
       // 'R' o 'Espacio' para lanzar dado
       if (
@@ -461,14 +591,13 @@ export function useKeyboardShortcuts({
           (currentTile.category === 'RESOURCE' || currentTile.category === 'AGORA_ENTRY') &&
           (currentTile.state === 'PRIVATE' || currentTile.state === 'PUBLIC')
         ) {
-          let skillPoints = 0;
-          if (currentTile.goodType === 'HEALTH') skillPoints = activePlayer.skills.care;
-          if (currentTile.goodType === 'URBAN') skillPoints = activePlayer.skills.occupy;
-          if (currentTile.goodType === 'KNOWLEDGE') skillPoints = activePlayer.skills.share;
-          if (currentTile.goodType === 'ENVIRONMENT') skillPoints = activePlayer.skills.regenerate;
-
-          const neededWellness = Math.max(0, 10 - skillPoints);
-          if (activePlayer.wellness >= neededWellness) {
+          const costInfo = getEffectiveUnlockCost(
+            currentTile,
+            activePlayer,
+            state.activeCrisis,
+            state.activeWeatherEvent
+          );
+          if (activePlayer.wellness >= costInfo.effectiveCost) {
             e.preventDefault();
             onUnlockTile();
           }
@@ -491,9 +620,17 @@ export function useKeyboardShortcuts({
     isRulesOpen,
     isAchievementsOpen,
     isLeaderboardOpen,
+    isWeatherSettingsOpen,
+    isCareerStatsOpen,
+    isAccessibilityOpen,
+    isMultiplayerOpen,
+    isRemoteMultiplayerTurn,
     isTutorialOpen,
     isGameHistoryOpen,
     isEvolutionOpen,
+    isPerformanceMonitorOpen,
+    isEconomyDebugOpen,
+    isCinemaMode,
     isTileInspectorOpen,
     showGameOverSummary,
     onRollDice,
@@ -510,14 +647,25 @@ export function useKeyboardShortcuts({
     onCloseGameHistory,
     onToggleEvolution,
     onCloseEvolution,
+    onTogglePerformanceMonitor,
+    onClosePerformanceMonitor,
+    onToggleEconomyDebug,
+    onCloseEconomyDebug,
     onCloseTileInspector,
     onToggleRules,
     onCloseRules,
     onToggleAchievements,
     onCloseAchievements,
     onCloseLeaderboard,
+    onCloseWeatherSettings,
+    onCloseCareerStats,
+    onCloseAccessibility,
+    onCloseMultiplayer,
     onToggleShortcuts,
     onCloseShortcuts,
-    onCloseGameOverSummary
+    onCloseGameOverSummary,
+    onToggleTutorial,
+    onToggleCinemaMode,
+    onCloseCinemaMode
   ]);
 }

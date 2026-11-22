@@ -11,6 +11,7 @@ import {
   DynamicWeatherEventKind,
   GoodType,
   Tile,
+  WeatherAdvancedConfig,
   WeatherType
 } from '../types/game';
 
@@ -182,7 +183,8 @@ export function evaluateDynamicWeatherTurn(
   turnsSinceLast: number | undefined,
   tiles: Tile[],
   round: number,
-  lastKind?: DynamicWeatherEventKind | null
+  lastKind?: DynamicWeatherEventKind | null,
+  weatherConfig?: WeatherAdvancedConfig
 ): DynamicWeatherTurnEvaluation {
   if (currentEvent) {
     const remaining = currentEvent.turnsRemaining - 1;
@@ -205,8 +207,19 @@ export function evaluateDynamicWeatherTurn(
     };
   }
 
+  const frequencyMultiplier = Math.max(
+    0,
+    Math.min(2.0, weatherConfig?.eventFrequencyMultiplier ?? 1.0)
+  );
+  const minCooldown = Math.max(
+    1,
+    Math.min(6, Math.round(weatherConfig?.minCooldownTurns ?? MIN_TURNS_BETWEEN_WEATHER_EVENTS))
+  );
+
   const nextCooldown = (turnsSinceLast ?? 0) + 1;
-  if (nextCooldown < MIN_TURNS_BETWEEN_WEATHER_EVENTS) {
+
+  // Si la frecuencia está en 0%, no se activan nuevos eventos dinámicos
+  if (frequencyMultiplier <= 0) {
     return {
       nextWeatherEvent: null,
       newlyTriggeredWeatherEvent: null,
@@ -215,11 +228,21 @@ export function evaluateDynamicWeatherTurn(
     };
   }
 
-  // Probabilidad progresiva (28% tras el enfriamiento mínimo, hasta 46%)
-  const triggerProbability = Math.min(
+  if (nextCooldown < minCooldown) {
+    return {
+      nextWeatherEvent: null,
+      newlyTriggeredWeatherEvent: null,
+      expiredWeatherEvent: null,
+      nextTurnsSinceLastWeatherEvent: nextCooldown
+    };
+  }
+
+  // Probabilidad progresiva modulada por el deslizador de frecuencia
+  const baseProbability = Math.min(
     0.46,
-    0.28 + (nextCooldown - MIN_TURNS_BETWEEN_WEATHER_EVENTS) * 0.045
+    0.28 + (nextCooldown - minCooldown) * 0.045
   );
+  const triggerProbability = Math.min(0.92, baseProbability * frequencyMultiplier);
   if (Math.random() >= triggerProbability) {
     return {
       nextWeatherEvent: null,

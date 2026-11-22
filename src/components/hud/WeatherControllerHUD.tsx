@@ -25,7 +25,8 @@ import {
   Sunrise,
   Sunset,
   Moon,
-  Radar
+  Radar,
+  SlidersHorizontal
 } from 'lucide-react';
 import { GameEngineState, TimeOfDayMode, WeatherMode } from '../../types/game';
 import { resolveWeather } from '../../utils/weather';
@@ -40,6 +41,7 @@ interface WeatherControllerHUDProps {
   onSetTimeOfDayMode?: (mode: TimeOfDayMode) => void;
   isMeteorologicalInsightOpen?: boolean;
   onToggleMeteorologicalInsight?: () => void;
+  onOpenAdvancedWeatherSettings?: () => void;
 }
 
 export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
@@ -48,7 +50,8 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
   onSetWeatherIntensity,
   onSetTimeOfDayMode,
   isMeteorologicalInsightOpen = false,
-  onToggleMeteorologicalInsight
+  onToggleMeteorologicalInsight,
+  onOpenAdvancedWeatherSettings
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const condition = resolveWeather(
@@ -428,6 +431,22 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
                   <span className="font-semibold">Evento activo:</span> {cardInfo.label} · {cardInfo.description}
                 </div>
               )}
+            </div>
+          )}
+
+          {onOpenAdvancedWeatherSettings && (
+            <div className="pt-2 border-t border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.modalOpen();
+                  onOpenAdvancedWeatherSettings();
+                }}
+                className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                <span>Configuración Avanzada de Clima</span>
+              </button>
             </div>
           )}
         </div>

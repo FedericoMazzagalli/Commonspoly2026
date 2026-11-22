@@ -108,6 +108,309 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "DailyChallengeEntry": {
+      "title": "DailyChallengeEntry",
+      "description": "Public personal-best score for a verified player on a UTC seeded Daily Challenge date.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the record owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "challengeDate": {
+          "type": "string",
+          "description": "UTC challenge date key (YYYY-MM-DD).",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "seedNumber": {
+          "type": "integer",
+          "description": "Deterministic 32-bit unsigned PRNG seed for the challenge."
+        },
+        "displayAlias": {
+          "type": "string",
+          "description": "Public display name shown on the daily leaderboard.",
+          "minLength": 1,
+          "maxLength": 48
+        },
+        "leadCharacterId": {
+          "type": "string",
+          "description": "ID of the lead Commonspoly character avatar.",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "efficiencyPct": {
+          "type": "integer",
+          "description": "Highest cooperative efficiency percentage achieved (0-100)."
+        },
+        "boardRecoveryPct": {
+          "type": "integer",
+          "description": "Board recovery percentage achieved (0-100)."
+        },
+        "teamSynergyPct": {
+          "type": "integer",
+          "description": "Team synergy percentage achieved (0-100)."
+        },
+        "tierLabel": {
+          "type": "string",
+          "description": "Qualitative efficiency tier label.",
+          "minLength": 1,
+          "maxLength": 48
+        },
+        "result": {
+          "type": "string",
+          "description": "Outcome of the completed daily challenge match.",
+          "enum": ["VICTORY", "DRAW", "DEFEAT"]
+        },
+        "round": {
+          "type": "integer",
+          "description": "Round number in which the match concluded (1-20)."
+        },
+        "commonCount": {
+          "type": "integer",
+          "description": "Total Common resource tiles recovered (0-40)."
+        },
+        "totalResourceTiles": {
+          "type": "integer",
+          "description": "Total resource tiles on the board (1-40)."
+        },
+        "totalCooperativeActions": {
+          "type": "integer",
+          "description": "Total cooperative actions performed during the match."
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Indicates the record is published to the daily challenge leaderboard."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when first submitted."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest daily best."
+        }
+      },
+      "required": [
+        "uid",
+        "challengeDate",
+        "seedNumber",
+        "displayAlias",
+        "leadCharacterId",
+        "efficiencyPct",
+        "boardRecoveryPct",
+        "teamSynergyPct",
+        "tierLabel",
+        "result",
+        "round",
+        "commonCount",
+        "totalResourceTiles",
+        "totalCooperativeActions",
+        "isPublic",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MultiplayerRoom": {
+      "title": "MultiplayerRoom",
+      "description": "Host-authoritative cooperative online multiplayer room using native Firestore maps and lists.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "Uppercase alphanumeric invite code (4-8 characters).",
+          "minLength": 4,
+          "maxLength": 8,
+          "pattern": "^[A-Z0-9]+$"
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the authoritative room host.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current room lifecycle state.",
+          "enum": ["WAITING", "PLAYING", "FINISHED"]
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Whether the room is listed in the public waiting room browser."
+        },
+        "difficulty": {
+          "type": "string",
+          "description": "Board difficulty preset.",
+          "enum": ["COMUNLANDIA", "EN_TRANSICION", "MAD_MAX"]
+        },
+        "maxPlayers": {
+          "type": "integer",
+          "description": "Maximum human participants in the room (2-4)."
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "List of participant UIDs (max 4)."
+        },
+        "members": {
+          "type": "array",
+          "description": "Participant metadata maps (uid, displayAlias, characterId, ready, isHost)."
+        },
+        "stateVersion": {
+          "type": "integer",
+          "description": "Monotonic authoritative state counter."
+        },
+        "phase": {
+          "type": "string",
+          "description": "Current GamePhase name.",
+          "minLength": 3,
+          "maxLength": 48
+        },
+        "round": {
+          "type": "integer",
+          "description": "Current round number (1-20)."
+        },
+        "activePlayerIndex": {
+          "type": "integer",
+          "description": "Index of active player (0-7)."
+        },
+        "currentDiceRoll": {
+          "type": "integer",
+          "description": "Latest dice roll (0-6)."
+        },
+        "playersSummary": {
+          "type": "array",
+          "description": "Compact synchronized player state maps (max 8)."
+        },
+        "speculatorsSummary": {
+          "type": "array",
+          "description": "Compact synchronized speculator bot maps (max 3)."
+        },
+        "tileStates": {
+          "type": "array",
+          "description": "Fixed 40-element list of tile ownership states."
+        },
+        "gameResult": {
+          "type": "string",
+          "description": "Terminal match result.",
+          "enum": ["NONE", "VICTORY", "DRAW", "DEFEAT"]
+        },
+        "gameResultDetails": {
+          "type": "string",
+          "description": "Summary message for match completion.",
+          "maxLength": 240
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of room creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest state sync."
+        }
+      },
+      "required": [
+        "roomCode",
+        "hostUid",
+        "status",
+        "isPublic",
+        "difficulty",
+        "maxPlayers",
+        "memberUids",
+        "members",
+        "stateVersion",
+        "phase",
+        "round",
+        "activePlayerIndex",
+        "currentDiceRoll",
+        "playersSummary",
+        "speculatorsSummary",
+        "tileStates",
+        "gameResult",
+        "gameResultDetails",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MultiplayerActionIntent": {
+      "title": "MultiplayerActionIntent",
+      "description": "Player turn action intent or chat message queued in a multiplayer room for host reconciliation.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the acting member.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "Authoritative host UID matching the parent room.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayAlias": {
+          "type": "string",
+          "description": "Alias of the member submitting the action.",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "actionType": {
+          "type": "string",
+          "description": "Turn or chat action type.",
+          "enum": [
+            "ROLL_DICE",
+            "UNLOCK_TILE",
+            "PASS_TILE",
+            "TRY_AGORA",
+            "STAY_AGORA",
+            "RESOLVE_CARD",
+            "CLOSE_MODAL",
+            "RESCUE_PLAYER",
+            "CHAT"
+          ]
+        },
+        "payloadText": {
+          "type": "string",
+          "description": "Short action payload or chat message.",
+          "maxLength": 180
+        },
+        "targetRound": {
+          "type": "integer",
+          "description": "Round number when action was emitted (1-20)."
+        },
+        "processed": {
+          "type": "boolean",
+          "description": "Whether the room host has processed this action intent."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of intent creation."
+        }
+      },
+      "required": [
+        "uid",
+        "hostUid",
+        "displayAlias",
+        "actionType",
+        "payloadText",
+        "targetRound",
+        "processed",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -116,6 +419,24 @@
         "$ref": "#/entities/LeaderboardEntry"
       },
       "description": "Global personal-best Cooperative Efficiency leaderboard keyed by authenticated userId."
+    },
+    "/dailyChallenges/{challengeDate}/entries/{userId}": {
+      "schema": {
+        "$ref": "#/entities/DailyChallengeEntry"
+      },
+      "description": "Deterministic Daily Challenge personal-best leaderboard entries partitioned by UTC YYYY-MM-DD."
+    },
+    "/rooms/{roomId}": {
+      "schema": {
+        "$ref": "#/entities/MultiplayerRoom"
+      },
+      "description": "Online cooperative multiplayer room state synchronized by the room host."
+    },
+    "/rooms/{roomId}/actions/{actionId}": {
+      "schema": {
+        "$ref": "#/entities/MultiplayerActionIntent"
+      },
+      "description": "Turn action and chat queue for a multiplayer room."
     }
   }
 }

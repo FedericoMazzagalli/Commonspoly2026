@@ -10,6 +10,7 @@ import {
   Character, 
   Speculator, 
   SetupInitialRolls, 
+  DifficultyLevel,
   GoodType, 
   GoodState,
   GlobalCard, 
@@ -24,7 +25,9 @@ import {
   RoundPerformanceSnapshot,
   TurnCommonsSnapshot,
   CooperativeAchievement,
-  DynamicWeatherEventKind
+  DynamicWeatherEventKind,
+  WeatherAdvancedConfig,
+  ProbabilitySandboxConfig
 } from '../types/game';
 import { OFFICIAL_CHARACTERS, createInitialCharacter } from '../data/characters';
 import { INITIAL_TILES, applyInitialDifficultyToTiles } from '../data/tiles';
@@ -49,11 +52,20 @@ import {
   clearSavedGameFromStorage
 } from '../utils/gameStorage';
 import {
+  UNEXPECTED_CRISIS_TEMPLATES,
   evaluateUnexpectedCrisisTurn,
   getEffectiveResourceReward,
   getEffectiveUnlockCost
 } from '../utils/crisisEngine';
-import { evaluateDynamicWeatherTurn } from '../utils/weatherEvents';
+import {
+  DYNAMIC_WEATHER_TEMPLATES,
+  evaluateDynamicWeatherTurn
+} from '../utils/weatherEvents';
+import {
+  DEFAULT_WEATHER_ADVANCED_CONFIG,
+  loadWeatherAdvancedConfig,
+  saveWeatherAdvancedConfig
+} from '../utils/weatherSettings';
 import {
   applyReputationDelta,
   DEFAULT_REFERENDUM_REQUIRED_TRUST,
@@ -62,6 +74,38 @@ import {
   getEffectiveBureaucracyCost,
   getReputationProfile
 } from '../utils/reputation';
+import {
+  appendTurnReplayFrame,
+  buildTurnReplayFrame
+} from '../utils/replay';
+import { createMulberry32 } from '../utils/prng';
+import {
+  DEFAULT_PROBABILITY_SANDBOX_CONFIG,
+  clampDiceFace,
+  samplePlayerDiceFromSandbox,
+  sampleSpeculatorStepFromSandbox
+} from '../utils/probabilitySandbox';
+
+export interface SetupMatchOptions {
+  seedNumber?: number | null;
+  dailyChallengeDate?: string | null;
+  multiplayerRoomId?: string | null;
+  multiplayerRoomCode?: string | null;
+}
+
+export type SandboxMutation =
+  | { type: 'SET_ROUND'; round: number }
+  | { type: 'ADJUST_ACTIVE_PLAYER'; wellnessDelta?: number; legitimacyDelta?: number }
+  | { type: 'SET_SPECULATORS_COUNT'; count: number }
+  | { type: 'TRIGGER_CRISIS'; templateId?: string }
+  | { type: 'CLEAR_CRISIS' }
+  | { type: 'TRIGGER_WEATHER'; kind?: DynamicWeatherEventKind }
+  | { type: 'CLEAR_WEATHER' }
+  | { type: 'CYCLE_TILE_STATE'; tileId: number }
+  | { type: 'SET_DIFFICULTY'; difficulty: DifficultyLevel }
+  | { type: 'TOGGLE_PROBABILITY_SANDBOX'; enabled: boolean }
+  | { type: 'UPDATE_PROBABILITY_SANDBOX'; patch: Partial<ProbabilitySandboxConfig> }
+  | { type: 'MOVE_SPECULATOR'; speculatorId: number; deltaSteps: number };
 
 function createInitialPlayerStats(players: Character[]): Record<string, PlayerContributionStats> {
   const stats: Record<string, PlayerContributionStats> = {};
@@ -238,6 +282,7 @@ function buildDefaultTitleState(): GameEngineState {
     ambientMode: 'AUTO',
     weatherMode: 'AUTO',
     weatherIntensity: 0.85,
+    weatherAdvancedConfig: loadWeatherAdvancedConfig(),
     timeOfDayMode: 'AUTO',
     activeCrisis: null,
     turnsSinceLastCrisis: 0,
@@ -257,7 +302,8 @@ function buildDefaultTitleState(): GameEngineState {
         undefined,
         'Distribución inicial del tablero'
       )
-    ]
+    ],
+    replayFrames: []
   };
 }
 
@@ -292,6 +338,23 @@ export function useCommonspolyGame() {
   const needsRecoveryRef = useRef<boolean>(Boolean(restoredOnBootRef.current));
   const lastTurnHapticKeyRef = useRef<string>('');
   const pendingAutosaveRef = useRef<{ reason: AutosaveReason; endedTurnBy?: string } | null>(null);
+  const seededRngRef = useRef<(() => number) | null>(
+    restoredOnBootRef.current?.state.seedNumber != null
+      ? createMulberry32(
+          (restoredOnBootRef.current.state.seedNumber +
+            restoredOnBootRef.current.state.round * 313 +
+            restoredOnBootRef.current.state.logs.length * 17) >>>
+            0
+        )
+      : null
+  );
+  const preSandboxSnapshotRef = useRef<GameEngineState | null>(null);
+  const [canRestoreSandbox, setCanRestoreSandbox] = useState(false);
+
+  const nextRand = useCallback(() => {
+    if (seededRngRef.current) return seededRngRef.current();
+    return Math.random();
+  }, []);
 
   // Auto-guardado automático en LocalStorage al finalizar cada turno, ronda o hito de partida
   useEffect(() => {
@@ -530,10 +593,11 @@ export function useCommonspolyGame() {
     }));
   }, []);
 
-  // Configuración completa desde el Asistente
+  // Configuración completa desde el Asistente (soporta Semilla Diaria y Multijugador Online)
   const finalizeSetup = useCallback((
     selectedCharacters: { baseCharId: string; controller: 'HUMAN' | 'BOT' }[],
-    rolls: SetupInitialRolls
+    rolls: SetupInitialRolls,
+    options?: SetupMatchOptions
   ) => {
     const players: Character[] = selectedCharacters.map(sc => {
       const base = OFFICIAL_CHARACTERS.find(c => c.id === sc.baseCharId) || OFFICIAL_CHARACTERS[0];
@@ -559,6 +623,41 @@ export function useCommonspolyGame() {
 
     const freshStats = createInitialPlayerStats(players);
     const initialSnapshot = buildRoundSnapshot(1, players, tiles, freshStats);
+
+    const activeSeed = options?.seedNumber ?? null;
+    seededRngRef.current = activeSeed !== null ? createMulberry32(activeSeed) : null;
+    preSandboxSnapshotRef.current = null;
+    setCanRestoreSandbox(false);
+
+    const modeSuffix = options?.dailyChallengeDate
+      ? ` · Reto Diario ${options.dailyChallengeDate}`
+      : options?.multiplayerRoomCode
+      ? ` · Sala Online ${options.multiplayerRoomCode}`
+      : '';
+
+    const initLog: GameLogEntry = {
+      id: `log_init_${Date.now()}`,
+      round: 1,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      actor: 'Máster de Juego',
+      message: `Partida iniciada en dificultad ${rolls.difficulty} (${rolls.speculatorsCount} Especuladores en juego${modeSuffix}). ¡Ronda 1!`,
+      type: 'INFO'
+    };
+
+    const initialReplayFrame = buildTurnReplayFrame({
+      prevFrames: [],
+      logs: [initLog],
+      round: 1,
+      actorId: 'setup',
+      actorName: 'Tablero Inicial',
+      actorColor: '#14b8a6',
+      activePlayerIndex: 0,
+      diceRoll: null,
+      players,
+      speculators,
+      tiles,
+      fallbackSummary: `Inicio en dificultad ${rolls.difficulty}`
+    });
 
     lastCrisisIdRef.current = null;
     lastWeatherKindRef.current = null;
@@ -595,18 +694,16 @@ export function useCommonspolyGame() {
           `Inicio en dificultad ${rolls.difficulty}`
         )
       ],
+      replayFrames: [initialReplayFrame],
       gameResult: undefined,
       gameResultDetails: undefined,
-      logs: [
-        {
-          id: `log_init_${Date.now()}`,
-          round: 1,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          actor: 'Máster de Juego',
-          message: `Partida iniciada en dificultad ${rolls.difficulty} (${rolls.speculatorsCount} Especuladores en juego). ¡Ronda 1!`,
-          type: 'INFO'
-        }
-      ],
+      isSandboxSession: false,
+      probabilitySandbox: undefined,
+      dailyChallengeDate: options?.dailyChallengeDate ?? null,
+      seedNumber: activeSeed,
+      multiplayerRoomId: options?.multiplayerRoomId ?? null,
+      multiplayerRoomCode: options?.multiplayerRoomCode ?? null,
+      logs: [initLog],
       chatMessages: [
         {
           id: `chat_init_${Date.now()}`,
@@ -697,13 +794,30 @@ export function useCommonspolyGame() {
                 tiles,
                 'Todos los bienes comunes recuperados'
               );
+        const finalReplayFrame = buildTurnReplayFrame({
+          prevFrames: prev.replayFrames,
+          logs: prev.logs,
+          round: Math.min(prev.round, 20),
+          actorId: prev.players[prev.activePlayerIndex]?.id ?? 'victory',
+          actorName: 'Victoria Comunitaria',
+          actorColor: '#10b981',
+          activePlayerIndex: prev.activePlayerIndex,
+          diceRoll: prev.currentDiceRoll,
+          players: prev.players,
+          speculators: prev.speculators,
+          tiles,
+          fallbackSummary: '¡Todos los bienes comunes recuperados!',
+          activeWeatherTitle: prev.activeWeatherEvent?.title,
+          activeCrisisTitle: prev.activeCrisis?.title
+        });
         return {
           ...prev,
           phase: 'GAME_OVER',
           gameResult: 'VICTORY',
           gameResultDetails: '¡Victoria Comunitaria Total! Habéis desprivatizado y comunalizado todos los bienes de la sociedad. ¡La felicidad radical es una realidad!',
           performanceHistory: upsertRoundSnapshot(prev.performanceHistory, finalSnap),
-          turnHistory: nextTurnHistory
+          turnHistory: nextTurnHistory,
+          replayFrames: appendTurnReplayFrame(prev.replayFrames, finalReplayFrame)
         };
       });
       return true;
@@ -726,13 +840,30 @@ export function useCommonspolyGame() {
             tiles,
             'Empate social al completar la ronda 20'
           );
+          const finalReplayFrame = buildTurnReplayFrame({
+            prevFrames: prev.replayFrames,
+            logs: prev.logs,
+            round: 20,
+            actorId: 'draw',
+            actorName: 'Cierre de Partida',
+            actorColor: '#38bdf8',
+            activePlayerIndex: prev.activePlayerIndex,
+            diceRoll: prev.currentDiceRoll,
+            players: prev.players,
+            speculators: prev.speculators,
+            tiles,
+            fallbackSummary: 'Empate social al completar la ronda 20',
+            activeWeatherTitle: prev.activeWeatherEvent?.title,
+            activeCrisisTitle: prev.activeCrisis?.title
+          });
           return {
             ...prev,
             phase: 'GAME_OVER',
             gameResult: 'DRAW',
             gameResultDetails: '¡Empate social! La sociedad no tiene ningún bien privado, aunque aún conviven bienes públicos y comunes. ¡Un gran avance hacia el bien común!',
             performanceHistory: upsertRoundSnapshot(prev.performanceHistory, finalSnap),
-            turnHistory: nextTurnHistory
+            turnHistory: nextTurnHistory,
+            replayFrames: appendTurnReplayFrame(prev.replayFrames, finalReplayFrame)
           };
         });
       } else {
@@ -749,13 +880,30 @@ export function useCommonspolyGame() {
             tiles,
             `Fin de las 20 rondas (${privateCount} privatizados)`
           );
+          const finalReplayFrame = buildTurnReplayFrame({
+            prevFrames: prev.replayFrames,
+            logs: prev.logs,
+            round: 20,
+            actorId: 'defeat',
+            actorName: 'Cierre de Partida',
+            actorColor: '#f43f5e',
+            activePlayerIndex: prev.activePlayerIndex,
+            diceRoll: prev.currentDiceRoll,
+            players: prev.players,
+            speculators: prev.speculators,
+            tiles,
+            fallbackSummary: `Fin de las 20 rondas (${privateCount} privatizados)`,
+            activeWeatherTitle: prev.activeWeatherEvent?.title,
+            activeCrisisTitle: prev.activeCrisis?.title
+          });
           return {
             ...prev,
             phase: 'GAME_OVER',
             gameResult: 'DEFEAT',
             gameResultDetails: `Fin del tiempo (20 rondas). Quedan ${privateCount} bienes en manos privadas. Los Especuladores han frenado la transformación radical.`,
             performanceHistory: upsertRoundSnapshot(prev.performanceHistory, finalSnap),
-            turnHistory: nextTurnHistory
+            turnHistory: nextTurnHistory,
+            replayFrames: appendTurnReplayFrame(prev.replayFrames, finalReplayFrame)
           };
         });
       }
@@ -806,12 +954,54 @@ export function useCommonspolyGame() {
   }, []);
 
   // Tirar dado para el jugador activo (audio espacial ubicado en el dado 3D)
-  const rollDiceForCurrentPlayer = useCallback(() => {
+  const rollDiceForCurrentPlayer = useCallback((forcedRollOverride?: unknown) => {
     const currentState = stateRef.current;
     if (currentState.phase !== 'PLAYER_TURN_READY') return;
 
-    const activePlayer = currentState.players[currentState.activePlayerIndex];
-    if (!activePlayer) return;
+    const currentPlayer = currentState.players[currentState.activePlayerIndex];
+    if (!currentPlayer) return;
+
+    // Gestión de retención antes de lanzar el dado (evita tirada fantasma si sigue detenido)
+    let activePlayer = currentPlayer;
+    if (activePlayer.isDetained) {
+      if (activePlayer.detentionRoundsLeft > 1) {
+        const nextRoundsLeft = activePlayer.detentionRoundsLeft - 1;
+        const detainedPlayer: Character = {
+          ...activePlayer,
+          detentionRoundsLeft: nextRoundsLeft
+        };
+        addLog(
+          detainedPlayer.name,
+          `Continúa en el Centro de Detención (quedan ${nextRoundsLeft} ${nextRoundsLeft === 1 ? 'ronda' : 'rondas'}).`,
+          'HAZARD'
+        );
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map((p, idx) =>
+            idx === prev.activePlayerIndex ? detainedPlayer : p
+          )
+        }));
+        advanceToNextTurn();
+        return;
+      } else {
+        activePlayer = {
+          ...activePlayer,
+          isDetained: false,
+          detentionRoundsLeft: 0
+        };
+        addLog(
+          activePlayer.name,
+          '¡Cumplió su condena y sale del Centro de Detención!',
+          'ACTION'
+        );
+        setState(prev => ({
+          ...prev,
+          players: prev.players.map((p, idx) =>
+            idx === prev.activePlayerIndex ? activePlayer : p
+          )
+        }));
+      }
+    }
 
     // Inteligencia cooperativa automática para Bots antes de lanzar el dado
     if (activePlayer.controller === 'BOT') {
@@ -854,7 +1044,15 @@ export function useCommonspolyGame() {
     if (activePlayer.controller === 'HUMAN') {
       triggerHaptic.diceRoll();
     }
-    const roll = Math.floor(Math.random() * 6) + 1;
+    const hasForcedRoll =
+      typeof forcedRollOverride === 'number' &&
+      Number.isFinite(forcedRollOverride) &&
+      Boolean(currentState.isSandboxSession || currentState.probabilitySandbox?.enabled);
+    const roll = hasForcedRoll
+      ? clampDiceFace(forcedRollOverride as number)
+      : currentState.probabilitySandbox?.enabled
+      ? samplePlayerDiceFromSandbox(nextRand, currentState.probabilitySandbox)
+      : Math.floor(nextRand() * 6) + 1;
 
     setState(prev => ({
       ...prev,
@@ -977,7 +1175,7 @@ export function useCommonspolyGame() {
 
     // A. Casilla de Situación 'S'
     if (tile.category === 'SITUATION') {
-      const randomCard = SITUATION_CARDS[Math.floor(Math.random() * SITUATION_CARDS.length)];
+      const randomCard = SITUATION_CARDS[Math.floor(nextRand() * SITUATION_CARDS.length)];
       playSound.cardFlip();
 
       if (player.controller === 'BOT') {
@@ -1158,15 +1356,37 @@ export function useCommonspolyGame() {
         return;
       }
       if (tile.specialType === 'TRAGEDY_OF_COMMONS') {
-        // Se debe abrir modal de votación para privatizar 3 comunes
+        const commonTiles = stateRef.current.tiles.filter(
+          t => t.state === 'COMMON' && t.category !== 'INALIENABLE_COMMON'
+        );
         playSound.speculatorAlert(getTileCoords3D(tile.id));
         triggerHaptic.tragedy();
+
+        if (commonTiles.length === 0) {
+          addLog(
+            player.name,
+            'Tragedia de los Comunes: no había bienes comunes que sacrificar.',
+            'INFO'
+          );
+          advanceToNextTurn();
+          return;
+        }
+
         addLog(
           player.name,
           '¡Ha caído en la Tragedia de los Comunes! Comienza la asamblea de emergencia para consensuar privatizaciones forzadas.',
           'HAZARD',
           { category: 'HAZARD', highlight: true }
         );
+
+        if (player.controller === 'BOT') {
+          const autoSelectedIds = commonTiles.slice(0, 3).map(t => t.id);
+          setTimeout(() => {
+            resolveTragedyOfCommons(autoSelectedIds);
+          }, 650);
+          return;
+        }
+
         setState(prev => ({ ...prev, activeModal: 'TRAGEDY_VOTE' }));
         return;
       }
@@ -1269,6 +1489,9 @@ export function useCommonspolyGame() {
             `¡Quórum de confianza alcanzado (${nextTrustAccumulated.toFixed(2)}/${requiredTrust.toFixed(1)})! El referéndum barrial triunfó y consolidó un nuevo Bien Común en el territorio.`,
             'SUCCESS'
           );
+          if (checkEndGameConditions(updatedTiles, stateRef.current.round)) {
+            return;
+          }
         }
       }
 
@@ -1326,7 +1549,7 @@ export function useCommonspolyGame() {
 
       if (bot.wellness > neededWellness && (tile.state === 'PRIVATE' || tile.state === 'PUBLIC')) {
       // El bot desbloquea el bien solidariamente
-      bot.wellness -= neededWellness;
+      bot.wellness = Math.max(0, bot.wellness - neededWellness);
       const nextState: GoodState = tile.state === 'PRIVATE' ? 'PUBLIC' : 'COMMON';
 
       // Bonificadores únicos al comunizar (Matsuko, Whina, Yayo)
@@ -1464,7 +1687,7 @@ export function useCommonspolyGame() {
     const skill = costInfo.skillPoints;
     if (player.wellness < neededWellness) return;
 
-    player.wellness -= neededWellness;
+    player.wellness = Math.max(0, player.wellness - neededWellness);
     const nextState: GoodState = tile.state === 'PRIVATE' ? 'PUBLIC' : 'COMMON';
 
     // Bonificadores únicos al comunizar (Matsuko, Whina, Yayo)
@@ -1756,6 +1979,22 @@ export function useCommonspolyGame() {
           highlight: true
         }
       );
+      if (currentState.players.every(p => p.controller === 'BOT')) {
+        const categories: GoodType[] = ['HEALTH', 'URBAN', 'KNOWLEDGE', 'ENVIRONMENT'];
+        const bestCategory = categories.reduce<GoodType>((best, cat) => {
+          const catCount = currentState.tiles.filter(
+            t => t.goodType === cat && t.state !== 'COMMON'
+          ).length;
+          const bestCount = currentState.tiles.filter(
+            t => t.goodType === best && t.state !== 'COMMON'
+          ).length;
+          return catCount > bestCount ? cat : best;
+        }, 'HEALTH');
+        setTimeout(() => {
+          executeInsurrectionForCategory(bestCategory);
+        }, 600);
+        return;
+      }
       setState(prev => ({
         ...prev,
         activeModal: 'AGORA_INSURRECTION'
@@ -1868,9 +2107,12 @@ export function useCommonspolyGame() {
     advanceToNextTurn();
   }, []);
 
-  // Turno de los Especuladores al final de la ronda
-  const runSpeculatorsTurn = useCallback(() => {
+  // Turno de los Especuladores al final de la ronda (o ejecutado manualmente en Probability Sandbox)
+  const runSpeculatorsTurn = useCallback((sandboxTestMode = false) => {
     const currentState = stateRef.current;
+    const activeSandbox = currentState.probabilitySandbox?.enabled
+      ? currentState.probabilitySandbox
+      : null;
     const firstSpecPos = currentState.speculators[0]?.position ?? 0;
     playSound.speculatorAlert(getTileCoords3D(firstSpecPos));
 
@@ -1878,10 +2120,21 @@ export function useCommonspolyGame() {
     let detentionModalOpened = false;
     const nextPlayers = currentState.players.map(p => ({ ...p }));
     const nextSpeculators = currentState.speculators.map((speculator, sIdx) => {
-      // Lanzar dado para el especulador
+      // Lanzar dado para el especulador (o aplicar lógica de movimiento Probability Sandbox)
       const prevPos = speculator.position;
-      const roll = Math.floor(Math.random() * 6) + 1;
+      const roll = activeSandbox
+        ? sampleSpeculatorStepFromSandbox(prevPos, nextPlayers, nextRand, activeSandbox)
+        : Math.floor(nextRand() * 6) + 1;
       const targetPos = (prevPos + roll) % 40;
+
+      if (roll === 0) {
+        addLog(
+          speculator.name,
+          `[Sandbox] Congelado en la casilla ${targetPos} (0 pasos).`,
+          'INFO'
+        );
+        return { ...speculator, position: targetPos };
+      }
 
       const specSteps: { x: number; y: number; z: number }[] = [];
       for (let s = 1; s <= roll; s++) {
@@ -1889,10 +2142,14 @@ export function useCommonspolyGame() {
       }
       playSound.speculatorMoveSequence(specSteps, sIdx * 180);
 
-      addLog(speculator.name, `Se desplazó ${roll} casillas hasta la casilla ${targetPos}.`, 'HAZARD');
+      addLog(
+        speculator.name,
+        `${sandboxTestMode ? '[Sandbox] ' : ''}Se desplazó ${roll} ${roll === 1 ? 'casilla' : 'casillas'} hasta la casilla ${targetPos}.`,
+        'HAZARD'
+      );
 
       // Comprobar si aterriza en una casilla con un personaje
-      const victims = nextPlayers.filter(p => p.position === targetPos);
+      const victims = nextPlayers.filter(p => p.position === targetPos && !p.inAgora);
 
       // Si hay 2 o más personajes juntos, se protegen mutuamente del especulador
       if (victims.length >= 2) {
@@ -1915,30 +2172,45 @@ export function useCommonspolyGame() {
         const victim = victims[0];
         attackTriggered = true;
 
-        // Decidir acción del especulador: Quitar puntos o Detención
-        const actionDice = Math.floor(Math.random() * 6) + 1;
-        const willDetain = Math.random() < 0.45;
+        // Decidir acción del especulador equilibrada según dificultad o anulación Sandbox
+        const actionDice = Math.floor(nextRand() * 6) + 1;
+        const difficulty = currentState.setupConfig?.difficulty ?? 'EN_TRANSICION';
+        const detentionChance =
+          activeSandbox && activeSandbox.detentionChanceOverridePct !== null
+            ? Math.max(0, Math.min(1, activeSandbox.detentionChanceOverridePct / 100))
+            : difficulty === 'MAD_MAX'
+            ? 0.25
+            : difficulty === 'COMUNLANDIA'
+            ? 0.38
+            : 0.32;
+        const willDetain = nextRand() < detentionChance;
 
         if (willDetain) {
+          const cappedRounds = Math.min(3, Math.ceil(actionDice / 2));
           victim.isDetained = true;
-          victim.detentionRoundsLeft = actionDice;
+          victim.detentionRoundsLeft = cappedRounds;
           victim.position = 18; // Centro de Detención
           playSound.detentionClang(getTileCoords3D(18));
           triggerHaptic.detention();
-          addLog(speculator.name, `¡Atrapó a ${victim.name} y lo encerró en el Centro de Detención por ${actionDice} rondas!`, 'HAZARD');
+          addLog(
+            speculator.name,
+            `¡Atrapó a ${victim.name} y lo encerró en el Centro de Detención por ${cappedRounds} ${cappedRounds === 1 ? 'ronda' : 'rondas'}!`,
+            'HAZARD'
+          );
           detentionModalOpened = true;
-          pendingRoundAdvanceRef.current = true;
+          pendingRoundAdvanceRef.current = !sandboxTestMode;
         } else {
-          // Quitar puntos de Bienestar o Legitimidad
+          // Quitar puntos de Bienestar o Legitimidad (tope equilibrado de 1 a 4 puntos)
           playSound.speculatorAlert(getTileCoords3D(targetPos));
           triggerHaptic.speculatorHit();
-          const stealType = Math.random() > 0.5 ? 'WELLNESS' : 'LEGITIMACY';
+          const maxSteal = Math.min(4, Math.max(1, Math.ceil(actionDice * 0.7)));
+          const stealType = nextRand() > 0.5 ? 'WELLNESS' : 'LEGITIMACY';
           if (stealType === 'WELLNESS') {
-            const stolen = Math.min(victim.wellness - 1, actionDice);
+            const stolen = Math.min(victim.wellness - 1, maxSteal);
             victim.wellness = Math.max(1, victim.wellness - stolen);
             addLog(speculator.name, `Explotó a ${victim.name} quitándole ${stolen} Puntos de Bienestar.`, 'HAZARD');
           } else {
-            const stolen = Math.min(victim.legitimacy, actionDice);
+            const stolen = Math.min(victim.legitimacy, maxSteal);
             victim.legitimacy = Math.max(0, victim.legitimacy - stolen);
             addLog(speculator.name, `Desprestigiaron a ${victim.name} quitándole ${stolen} Puntos de Legitimidad.`, 'HAZARD');
           }
@@ -1949,18 +2221,49 @@ export function useCommonspolyGame() {
     });
 
     pendingAutosaveRef.current = { reason: 'TURN_END', endedTurnBy: 'Especuladores' };
-    setState(prev => ({
-      ...prev,
-      phase: 'SPECULATOR_TURN',
-      speculators: nextSpeculators,
-      players: nextPlayers,
-      activeModal: detentionModalOpened ? 'DETENTION_RESCUE' : prev.activeModal
-    }));
+    setState(prev => {
+      const specFrame = buildTurnReplayFrame({
+        prevFrames: prev.replayFrames,
+        logs: prev.logs,
+        round: prev.round,
+        actorId: 'speculators',
+        actorName: 'Especuladores',
+        actorColor: '#f43f5e',
+        activePlayerIndex: prev.activePlayerIndex,
+        diceRoll: null,
+        players: nextPlayers,
+        speculators: nextSpeculators,
+        tiles: prev.tiles,
+        fallbackSummary: sandboxTestMode
+          ? 'Simulación Sandbox de Especuladores en vivo'
+          : 'Desplazamiento de los Especuladores al cierre de ronda',
+        activeWeatherTitle: prev.activeWeatherEvent?.title,
+        activeCrisisTitle: prev.activeCrisis?.title
+      });
+      return {
+        ...prev,
+        phase: 'SPECULATOR_TURN',
+        speculators: nextSpeculators,
+        players: nextPlayers,
+        activeModal: detentionModalOpened ? 'DETENTION_RESCUE' : prev.activeModal,
+        replayFrames: appendTurnReplayFrame(prev.replayFrames, specFrame)
+      };
+    });
 
     if (!detentionModalOpened) {
-      setTimeout(() => {
-        startNextRound();
-      }, 1200);
+      if (sandboxTestMode) {
+        setTimeout(() => {
+          setState(prev =>
+            prev.phase === 'SPECULATOR_TURN'
+              ? { ...prev, phase: 'PLAYER_TURN_READY' }
+              : prev
+          );
+        }, 1200);
+      } else {
+        setTimeout(() => {
+          startNextRound();
+        }, 1200);
+      }
     }
   }, []);
 
@@ -2069,7 +2372,8 @@ export function useCommonspolyGame() {
       currentState.turnsSinceLastWeatherEvent,
       currentState.tiles,
       currentState.round,
-      lastWeatherKindRef.current
+      lastWeatherKindRef.current,
+      currentState.weatherAdvancedConfig
     );
 
     if (weatherEval.newlyTriggeredWeatherEvent) {
@@ -2101,7 +2405,7 @@ export function useCommonspolyGame() {
     const endingPlayerName = currentState.players[currentState.activePlayerIndex]?.name ?? 'Turno';
     pendingAutosaveRef.current = { reason: 'TURN_END', endedTurnBy: endingPlayerName };
 
-    // Registrar snapshot turno a turno de la evolución Comunes vs Privatizados
+    // Registrar snapshot turno a turno de la evolución Comunes vs Privatizados + fotograma de Repetición
     setState(prev => {
       if (prev.phase === 'GAME_OVER') return prev;
       const endingPlayer = prev.players[prev.activePlayerIndex];
@@ -2113,6 +2417,23 @@ export function useCommonspolyGame() {
         prev.tiles
       );
 
+      const turnReplayFrame = buildTurnReplayFrame({
+        prevFrames: prev.replayFrames,
+        logs: prev.logs,
+        round: prev.round,
+        actorId: endingPlayer?.id ?? 'turn',
+        actorName: endingPlayer?.name ?? 'Turno',
+        actorColor: endingPlayer?.color ?? '#14b8a6',
+        activePlayerIndex: prev.activePlayerIndex,
+        diceRoll: prev.currentDiceRoll,
+        players: prev.players,
+        speculators: prev.speculators,
+        tiles: prev.tiles,
+        activeWeatherTitle: weatherEval.nextWeatherEvent?.title ?? prev.activeWeatherEvent?.title,
+        activeCrisisTitle: crisisEval.nextCrisis?.title ?? prev.activeCrisis?.title
+      });
+      const nextReplayFrames = appendTurnReplayFrame(prev.replayFrames, turnReplayFrame);
+
       if (nextIndex >= prev.players.length) {
         return {
           ...prev,
@@ -2120,7 +2441,8 @@ export function useCommonspolyGame() {
           turnsSinceLastCrisis: crisisEval.nextTurnsSinceLastCrisis,
           activeWeatherEvent: weatherEval.nextWeatherEvent,
           turnsSinceLastWeatherEvent: weatherEval.nextTurnsSinceLastWeatherEvent,
-          turnHistory: nextTurnHistory
+          turnHistory: nextTurnHistory,
+          replayFrames: nextReplayFrames
         };
       }
 
@@ -2133,7 +2455,8 @@ export function useCommonspolyGame() {
         turnsSinceLastCrisis: crisisEval.nextTurnsSinceLastCrisis,
         activeWeatherEvent: weatherEval.nextWeatherEvent,
         turnsSinceLastWeatherEvent: weatherEval.nextTurnsSinceLastWeatherEvent,
-        turnHistory: nextTurnHistory
+        turnHistory: nextTurnHistory,
+        replayFrames: nextReplayFrames
       };
     });
 
@@ -2199,7 +2522,15 @@ export function useCommonspolyGame() {
           highlight: true
         }
       );
-      setState(prev => ({ ...prev, players: updatedPlayers, activeModal: null }));
+      setState(prev => ({
+        ...prev,
+        players: updatedPlayers,
+        activeModal: null,
+        phase:
+          !pendingRoundAdvanceRef.current && prev.phase === 'SPECULATOR_TURN'
+            ? 'PLAYER_TURN_READY'
+            : prev.phase
+      }));
 
       if (pendingRoundAdvanceRef.current) {
         pendingRoundAdvanceRef.current = false;
@@ -2273,7 +2604,7 @@ export function useCommonspolyGame() {
       );
 
       const isFavorable = weather.type === 'RAIN' || weather.type === 'SUNNY' || weather.type === 'TEMPERATE';
-      const successRoll = Math.random();
+      const successRoll = nextRand();
       const successThreshold = isFavorable ? 0.08 : 0.32;
 
       let result = card.apply(player, currentState);
@@ -2429,6 +2760,7 @@ export function useCommonspolyGame() {
 
     if (isQuorumReached) {
       addLog('Decisión Barrial', `¡Quórum de confianza alcanzado (${nextTrustAccumulated.toFixed(2)}/${requiredTrust.toFixed(1)})! El referéndum barrial triunfó y consolidó un nuevo Bien Común en el territorio.`, 'SUCCESS');
+      checkEndGameConditions(updatedTiles, currentState.round);
     }
   }, []);
 
@@ -2670,6 +3002,26 @@ export function useCommonspolyGame() {
     setState(prev => ({ ...prev, weatherIntensity: clamped }));
   }, []);
 
+  const setWeatherAdvancedConfig = useCallback(
+    (
+      updater:
+        | Partial<WeatherAdvancedConfig>
+        | ((prev: WeatherAdvancedConfig) => WeatherAdvancedConfig)
+    ) => {
+      setState(prev => {
+        const base = prev.weatherAdvancedConfig ?? DEFAULT_WEATHER_ADVANCED_CONFIG;
+        const nextRaw =
+          typeof updater === 'function' ? updater(base) : { ...base, ...updater };
+        const normalized = saveWeatherAdvancedConfig(nextRaw);
+        return {
+          ...prev,
+          weatherAdvancedConfig: normalized
+        };
+      });
+    },
+    []
+  );
+
   const setTimeOfDayMode = useCallback((mode: TimeOfDayMode) => {
     playSound.uiClick();
     setState(prev => ({ ...prev, timeOfDayMode: mode }));
@@ -2744,7 +3096,16 @@ export function useCommonspolyGame() {
       return;
     }
 
-    setState(prev => ({ ...prev, activeModal: null }));
+    setState(prev => ({
+      ...prev,
+      activeModal: null,
+      phase:
+        activeModal === 'DETENTION_RESCUE' &&
+        !pendingRoundAdvanceRef.current &&
+        prev.phase === 'SPECULATOR_TURN'
+          ? 'PLAYER_TURN_READY'
+          : prev.phase
+    }));
 
     if (activeModal === 'DETENTION_RESCUE' && pendingRoundAdvanceRef.current) {
       pendingRoundAdvanceRef.current = false;
@@ -2871,12 +3232,358 @@ export function useCommonspolyGame() {
     needsRecoveryRef.current = false;
   }, [resumeNonce, rollDiceForCurrentPlayer, advanceToNextTurn, startNextRound]);
 
+  const applySandboxMutation = useCallback((mutation: SandboxMutation) => {
+    setState(prev => {
+      if (prev.phase === 'TITLE' || prev.phase === 'SETUP' || prev.phase === 'GAME_OVER') {
+        return prev;
+      }
+
+      if (!preSandboxSnapshotRef.current) {
+        preSandboxSnapshotRef.current = {
+          ...prev,
+          players: prev.players.map(p => ({ ...p })),
+          speculators: prev.speculators.map(s => ({ ...s })),
+          tiles: prev.tiles.map(t => ({ ...t })),
+          setupConfig: prev.setupConfig ? { ...prev.setupConfig } : undefined,
+          activeCrisis: prev.activeCrisis ? { ...prev.activeCrisis } : null,
+          activeWeatherEvent: prev.activeWeatherEvent ? { ...prev.activeWeatherEvent } : null
+        };
+        setCanRestoreSandbox(true);
+      }
+
+      let nextState: GameEngineState = { ...prev, isSandboxSession: true };
+
+      switch (mutation.type) {
+        case 'SET_ROUND': {
+          const clampedRound = Math.max(1, Math.min(20, Math.round(mutation.round)));
+          nextState = { ...nextState, round: clampedRound };
+          break;
+        }
+        case 'ADJUST_ACTIVE_PLAYER': {
+          const nextPlayers = prev.players.map((p, idx) => {
+            if (idx !== prev.activePlayerIndex) return p;
+            return {
+              ...p,
+              wellness: Math.max(0, Math.min(40, p.wellness + (mutation.wellnessDelta ?? 0))),
+              legitimacy: Math.max(0, Math.min(40, p.legitimacy + (mutation.legitimacyDelta ?? 0)))
+            };
+          });
+          nextState = { ...nextState, players: nextPlayers };
+          break;
+        }
+        case 'SET_SPECULATORS_COUNT': {
+          const targetCount = Math.max(1, Math.min(3, Math.round(mutation.count)));
+          const speculatorNames = [
+            'Fondo Buitre Inmobiliario',
+            'Corporación Farmacéutica',
+            'Monopolio Tecnológico'
+          ];
+          const nextSpecs: Speculator[] = [];
+          for (let i = 0; i < targetCount; i++) {
+            const existing = prev.speculators[i];
+            nextSpecs.push(
+              existing
+                ? { ...existing }
+                : {
+                    id: i + 1,
+                    position: (i * 10) % 40,
+                    name: speculatorNames[i] || `Especulador ${i + 1}`,
+                    color: '#FFFFFF'
+                  }
+            );
+          }
+          nextState = {
+            ...nextState,
+            speculators: nextSpecs,
+            setupConfig: prev.setupConfig
+              ? { ...prev.setupConfig, speculatorsCount: targetCount }
+              : undefined
+          };
+          break;
+        }
+        case 'SET_DIFFICULTY': {
+          nextState = {
+            ...nextState,
+            setupConfig: prev.setupConfig
+              ? { ...prev.setupConfig, difficulty: mutation.difficulty }
+              : {
+                  health: 3,
+                  urban: 3,
+                  knowledge: 4,
+                  environment: 4,
+                  totalSum: 14,
+                  difficulty: mutation.difficulty,
+                  speculatorsCount: prev.speculators.length
+                }
+          };
+          break;
+        }
+        case 'TRIGGER_CRISIS': {
+          const tpl =
+            UNEXPECTED_CRISIS_TEMPLATES.find(c => c.id === mutation.templateId) ||
+            UNEXPECTED_CRISIS_TEMPLATES[0];
+          nextState = {
+            ...nextState,
+            activeCrisis: {
+              ...tpl,
+              turnsRemaining: tpl.totalTurns,
+              triggeredAtRound: prev.round
+            },
+            turnsSinceLastCrisis: 0
+          };
+          break;
+        }
+        case 'CLEAR_CRISIS': {
+          nextState = {
+            ...nextState,
+            activeCrisis: null
+          };
+          break;
+        }
+        case 'TRIGGER_WEATHER': {
+          const tpl =
+            DYNAMIC_WEATHER_TEMPLATES.find(w => w.kind === mutation.kind) ||
+            DYNAMIC_WEATHER_TEMPLATES[0];
+          const candidateTiles = prev.tiles.filter(
+            t =>
+              (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') &&
+              (tpl.preferredGoodTypes.length === 0 ||
+                (t.goodType && tpl.preferredGoodTypes.includes(t.goodType)))
+          );
+          const picked = candidateTiles.slice(0, tpl.tileCountMax);
+          nextState = {
+            ...nextState,
+            activeWeatherEvent: {
+              id: `sandbox_weather_${tpl.kind}_${Date.now()}`,
+              kind: tpl.kind,
+              weatherType: tpl.weatherType,
+              title: tpl.title,
+              description: tpl.description,
+              alertMessage: `[Sandbox] ${tpl.title} activa en ${picked.length} casillas.`,
+              affectedTileIds: picked.map(t => t.id),
+              affectedTileNames: picked.map(t => t.name),
+              affectedGoodTypes: [...tpl.preferredGoodTypes],
+              unlockCostDelta: tpl.unlockCostDelta,
+              resourceYieldDelta: tpl.resourceYieldDelta,
+              turnsRemaining: tpl.totalTurns,
+              totalTurns: tpl.totalTurns,
+              severity: tpl.severity,
+              triggeredAtRound: prev.round
+            },
+            turnsSinceLastWeatherEvent: 0
+          };
+          break;
+        }
+        case 'CLEAR_WEATHER': {
+          nextState = {
+            ...nextState,
+            activeWeatherEvent: null
+          };
+          break;
+        }
+        case 'CYCLE_TILE_STATE': {
+          const nextTiles = prev.tiles.map(t => {
+            if (t.id !== mutation.tileId) return t;
+            if (t.category !== 'RESOURCE' && t.category !== 'AGORA_ENTRY') return t;
+            const nextStateVal: GoodState =
+              t.state === 'PRIVATE' ? 'PUBLIC' : t.state === 'PUBLIC' ? 'COMMON' : 'PRIVATE';
+            return { ...t, state: nextStateVal };
+          });
+          nextState = { ...nextState, tiles: nextTiles };
+          break;
+        }
+        case 'TOGGLE_PROBABILITY_SANDBOX': {
+          const currentCfg = prev.probabilitySandbox ?? DEFAULT_PROBABILITY_SANDBOX_CONFIG;
+          nextState = {
+            ...nextState,
+            probabilitySandbox: {
+              ...currentCfg,
+              enabled: mutation.enabled
+            }
+          };
+          break;
+        }
+        case 'UPDATE_PROBABILITY_SANDBOX': {
+          const currentCfg = prev.probabilitySandbox ?? DEFAULT_PROBABILITY_SANDBOX_CONFIG;
+          nextState = {
+            ...nextState,
+            probabilitySandbox: {
+              ...currentCfg,
+              ...mutation.patch,
+              enabled: true
+            }
+          };
+          break;
+        }
+        case 'MOVE_SPECULATOR': {
+          const nextSpecs = prev.speculators.map(s =>
+            s.id === mutation.speculatorId
+              ? { ...s, position: ((s.position + mutation.deltaSteps) % 40 + 40) % 40 }
+              : s
+          );
+          nextState = { ...nextState, speculators: nextSpecs };
+          break;
+        }
+      }
+
+      return nextState;
+    });
+  }, []);
+
+  const ensureSandboxSessionPrepared = useCallback(() => {
+    const prev = stateRef.current;
+    if (prev.phase === 'TITLE' || prev.phase === 'SETUP' || prev.phase === 'GAME_OVER') {
+      return false;
+    }
+    if (!preSandboxSnapshotRef.current) {
+      preSandboxSnapshotRef.current = {
+        ...prev,
+        players: prev.players.map(p => ({ ...p })),
+        speculators: prev.speculators.map(s => ({ ...s })),
+        tiles: prev.tiles.map(t => ({ ...t })),
+        setupConfig: prev.setupConfig ? { ...prev.setupConfig } : undefined,
+        activeCrisis: prev.activeCrisis ? { ...prev.activeCrisis } : null,
+        activeWeatherEvent: prev.activeWeatherEvent ? { ...prev.activeWeatherEvent } : null
+      };
+      setCanRestoreSandbox(true);
+    }
+    if (!prev.isSandboxSession || !prev.probabilitySandbox?.enabled) {
+      const nextSandboxCfg: ProbabilitySandboxConfig = {
+        ...(prev.probabilitySandbox ?? DEFAULT_PROBABILITY_SANDBOX_CONFIG),
+        enabled: true
+      };
+      stateRef.current = {
+        ...prev,
+        isSandboxSession: true,
+        probabilitySandbox: nextSandboxCfg
+      };
+      setState(curr => ({
+        ...curr,
+        isSandboxSession: true,
+        probabilitySandbox: {
+          ...(curr.probabilitySandbox ?? DEFAULT_PROBABILITY_SANDBOX_CONFIG),
+          enabled: true
+        }
+      }));
+    }
+    return true;
+  }, []);
+
+  const simulateDiceRollInSandbox = useCallback(
+    (forcedRoll?: number) => {
+      if (!ensureSandboxSessionPrepared()) return;
+      const currentState = stateRef.current;
+      if (currentState.phase !== 'PLAYER_TURN_READY') return;
+      const roll =
+        typeof forcedRoll === 'number' && Number.isFinite(forcedRoll)
+          ? clampDiceFace(forcedRoll)
+          : samplePlayerDiceFromSandbox(nextRand, currentState.probabilitySandbox);
+      addLog(
+        'Probability Sandbox',
+        `Simulación de dado en vivo: resultado ${roll} para ${
+          currentState.players[currentState.activePlayerIndex]?.name ?? 'jugador activo'
+        }.`,
+        'INFO'
+      );
+      rollDiceForCurrentPlayer(roll);
+    },
+    [ensureSandboxSessionPrepared, rollDiceForCurrentPlayer]
+  );
+
+  const simulateSpeculatorsWaveInSandbox = useCallback(() => {
+    if (!ensureSandboxSessionPrepared()) return;
+    const currentState = stateRef.current;
+    if (currentState.phase === 'DICE_ROLLING' || currentState.phase === 'GAME_OVER') return;
+    addLog(
+      'Probability Sandbox',
+      'Ejecutando simulación en vivo de movimiento y lógica de especuladores.',
+      'HAZARD'
+    );
+    runSpeculatorsTurn(true);
+  }, [ensureSandboxSessionPrepared, runSpeculatorsTurn]);
+
+  const restorePreSandboxState = useCallback(() => {
+    const saved = preSandboxSnapshotRef.current;
+    if (!saved) return;
+    playSound.uiClick();
+    preSandboxSnapshotRef.current = null;
+    setCanRestoreSandbox(false);
+    setState(prev => ({
+      ...saved,
+      cameraMode: prev.cameraMode,
+      soundEnabled: prev.soundEnabled,
+      hapticsEnabled: prev.hapticsEnabled,
+      postProcessingEnabled: prev.postProcessingEnabled,
+      isSandboxSession: false,
+      probabilitySandbox: undefined
+    }));
+  }, []);
+
+  const hydrateMultiplayerState = useCallback(
+    (remote: {
+      phase: GameEngineState['phase'];
+      round: number;
+      activePlayerIndex: number;
+      currentDiceRoll: number | null;
+      players: Character[];
+      speculators: Speculator[];
+      tileStates: Record<string, GoodState>;
+      gameResult?: GameEngineState['gameResult'];
+      gameResultDetails?: string;
+      multiplayerRoomId: string;
+      multiplayerRoomCode: string;
+      difficulty?: DifficultyLevel;
+      recentLogs?: GameLogEntry[];
+    }) => {
+      setState(prev => {
+        const nextTiles = prev.tiles.map(tile => {
+          const remoteState = remote.tileStates[String(tile.id)];
+          if (remoteState && (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY')) {
+            return { ...tile, state: remoteState };
+          }
+          return tile;
+        });
+
+        const nextStats = prev.playerStats || createInitialPlayerStats(remote.players);
+        const snap = buildRoundSnapshot(remote.round, remote.players, nextTiles, nextStats);
+
+        return {
+          ...prev,
+          phase: remote.phase,
+          round: remote.round,
+          activePlayerIndex: remote.activePlayerIndex,
+          currentDiceRoll: remote.currentDiceRoll,
+          players: remote.players,
+          speculators: remote.speculators,
+          tiles: nextTiles,
+          gameResult: remote.gameResult,
+          gameResultDetails: remote.gameResultDetails,
+          multiplayerRoomId: remote.multiplayerRoomId,
+          multiplayerRoomCode: remote.multiplayerRoomCode,
+          setupConfig: prev.setupConfig
+            ? {
+                ...prev.setupConfig,
+                difficulty: remote.difficulty ?? prev.setupConfig.difficulty,
+                speculatorsCount: remote.speculators.length
+              }
+            : prev.setupConfig,
+          logs: remote.recentLogs && remote.recentLogs.length > 0 ? remote.recentLogs : prev.logs,
+          performanceHistory: upsertRoundSnapshot(prev.performanceHistory, snap)
+        };
+      });
+    },
+    []
+  );
+
   const resetToTitle = useCallback(() => {
     playSound.uiClick();
     achievementQueueRef.current = [];
     pendingRoundAdvanceRef.current = false;
     lastCrisisIdRef.current = null;
     lastWeatherKindRef.current = null;
+    seededRngRef.current = null;
+    preSandboxSnapshotRef.current = null;
+    setCanRestoreSandbox(false);
     clearSavedGameFromStorage();
     setSavedGameMeta(null);
     setState(prev => ({
@@ -2899,6 +3606,12 @@ export function useCommonspolyGame() {
       currentSituationCard: null,
       gameResult: undefined,
       gameResultDetails: undefined,
+      isSandboxSession: false,
+      probabilitySandbox: undefined,
+      dailyChallengeDate: null,
+      seedNumber: null,
+      multiplayerRoomId: null,
+      multiplayerRoomCode: null,
       playerStats: undefined,
       performanceHistory: undefined,
       turnHistory: undefined
@@ -2908,6 +3621,7 @@ export function useCommonspolyGame() {
   return {
     state,
     savedGameMeta,
+    canRestoreSandbox,
     startSetup,
     finalizeSetup,
     rollDiceForCurrentPlayer,
@@ -2932,6 +3646,7 @@ export function useCommonspolyGame() {
     setAmbientMode,
     setWeatherMode,
     setWeatherIntensity,
+    setWeatherAdvancedConfig,
     setTimeOfDayMode,
     dismissRecentAchievement,
     resetAchievements,
@@ -2943,6 +3658,11 @@ export function useCommonspolyGame() {
     resetToTitle,
     addLog,
     triggerNeighborhoodDecision,
-    castNeighborhoodVote
+    castNeighborhoodVote,
+    applySandboxMutation,
+    simulateDiceRollInSandbox,
+    simulateSpeculatorsWaveInSandbox,
+    restorePreSandboxState,
+    hydrateMultiplayerState
   };
 }

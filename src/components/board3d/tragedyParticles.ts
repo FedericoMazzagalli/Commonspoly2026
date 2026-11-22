@@ -6,6 +6,7 @@
  */
 
 import * as THREE from 'three';
+import { setExplicitBoundingSphere } from './frustumCulling';
 
 const LEAF_COUNT = 170;
 const ASH_COUNT = 240;
@@ -20,7 +21,8 @@ export interface TragedyParticleSystem {
     isTragedyActive: boolean,
     delta: number,
     elapsed: number,
-    reducedMotion?: boolean
+    reducedMotion?: boolean,
+    isInFrustum?: boolean
   ) => void;
   isVisible: () => boolean;
   dispose: () => void;
@@ -28,10 +30,10 @@ export interface TragedyParticleSystem {
 
 /**
  * Construye una geometría orgánica de hoja seca con nervadura central y curvatura 3D
- * para que cada instancia capture la iluminación direccional al girar en caída.
+ * con poligonaje optimizado para InstancedMesh en dispositivos móviles.
  */
 function createDryLeafGeometry(): THREE.BufferGeometry {
-  const geo = new THREE.PlaneGeometry(0.46, 0.72, 2, 4);
+  const geo = new THREE.PlaneGeometry(0.46, 0.72, 2, 2);
   const pos = geo.attributes.position as THREE.BufferAttribute;
 
   for (let i = 0; i < pos.count; i++) {
@@ -149,9 +151,10 @@ export function createTragedyParticleSystem(
     opacity: 0
   });
 
+  setExplicitBoundingSphere(leafGeo, 0, 7.5, 0, 21.5);
   const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, LEAF_COUNT);
   leafMesh.visible = false;
-  leafMesh.frustumCulled = false;
+  leafMesh.frustumCulled = true;
   leafMesh.castShadow = false;
   leafMesh.receiveShadow = false;
 
@@ -232,6 +235,7 @@ export function createTragedyParticleSystem(
   const ashGeo = new THREE.BufferGeometry();
   ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
   ashGeo.setAttribute('color', new THREE.BufferAttribute(ashColors, 3));
+  setExplicitBoundingSphere(ashGeo, 0, 7.5, 0, 21.5);
 
   const ashMat = new THREE.PointsMaterial({
     size: 0.36,
@@ -245,7 +249,7 @@ export function createTragedyParticleSystem(
 
   const ashPoints = new THREE.Points(ashGeo, ashMat);
   ashPoints.visible = false;
-  ashPoints.frustumCulled = false;
+  ashPoints.frustumCulled = true;
   scene.add(ashPoints);
 
   let tragedyWeight = 0;
@@ -255,7 +259,8 @@ export function createTragedyParticleSystem(
     isTragedyActive: boolean,
     delta: number,
     elapsed: number,
-    reducedMotion = false
+    reducedMotion = false,
+    isInFrustum = true
   ) => {
     // Al iniciar el evento, dispersamos de inmediato la lluvia de hojas por el volumen aéreo
     if (isTragedyActive && !wasTragedyActive) {
@@ -295,6 +300,10 @@ export function createTragedyParticleSystem(
     ashPoints.visible = true;
     leafMat.opacity = Math.min(0.95, tragedyWeight * 0.96);
     ashMat.opacity = Math.min(0.72, tragedyWeight * 0.74);
+
+    if (!isInFrustum) {
+      return;
+    }
 
     const motionScale = reducedMotion ? 0.25 : 1.0;
 

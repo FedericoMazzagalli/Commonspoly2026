@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { GamePhase, Tile } from '../../types/game';
 import { GlobalIlluminationUniforms } from './globalIllumination';
+import { setExplicitBoundingSphere } from './frustumCulling';
 
 const SPARK_COUNT = 200;
 const SWEEP_START_SEC = 0.22;
@@ -157,12 +158,13 @@ export function createBoardCleansingSystem(scene: THREE.Scene): BoardCleansingSy
     `
   });
 
+  setExplicitBoundingSphere(waveGeo, 0, 0, 0, 20.5);
   const waveMesh = new THREE.Mesh(waveGeo, waveMat);
   waveMesh.rotation.x = -Math.PI / 2;
   waveMesh.position.y = 0.345;
   waveMesh.renderOrder = 2;
   waveMesh.visible = false;
-  waveMesh.frustumCulled = false;
+  waveMesh.frustumCulled = true;
   scene.add(waveMesh);
 
   // 2. Emisor agrupado de destellos de purificación cuando la onda limpia cada casilla
@@ -181,6 +183,7 @@ export function createBoardCleansingSystem(scene: THREE.Scene): BoardCleansingSy
   const sparkGeo = new THREE.BufferGeometry();
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
   sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkColors, 3));
+  setExplicitBoundingSphere(sparkGeo, 0, 2.5, 0, 21.0);
 
   const sparkTexture = createSparkTexture();
   const sparkMat = new THREE.PointsMaterial({
@@ -195,7 +198,7 @@ export function createBoardCleansingSystem(scene: THREE.Scene): BoardCleansingSy
 
   const sparkPoints = new THREE.Points(sparkGeo, sparkMat);
   sparkPoints.visible = false;
-  sparkPoints.frustumCulled = false;
+  sparkPoints.frustumCulled = true;
   scene.add(sparkPoints);
 
   let sparkCursor = 0;

@@ -6,29 +6,32 @@
 import React from 'react';
 import { Keyboard, X } from 'lucide-react';
 import { KEYBOARD_SHORTCUTS, KeyboardShortcutItem } from '../../hooks/useKeyboardShortcuts';
+import { useI18n } from '../../i18n';
 
 interface KeyboardShortcutsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const SECTION_META: { id: KeyboardShortcutItem['category']; title: string }[] = [
-  { id: 'TURN', title: 'Acciones de Turno' },
-  { id: 'MODALS', title: 'Modales y Paneles' },
-  { id: 'VIEW', title: 'Cámara 3D y Controles' }
-];
-
 export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
   isOpen,
   onClose
 }) => {
+  const { t } = useI18n();
+
   if (!isOpen) return null;
+
+  const sectionMeta: { id: KeyboardShortcutItem['category']; title: string }[] = [
+    { id: 'TURN', title: t.common.turn },
+    { id: 'MODALS', title: t.hud.menuBtn },
+    { id: 'VIEW', title: t.hud.cameraBtn }
+  ];
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Atajos de teclado globales"
+      aria-label={t.modals.shortcutsTitle}
       className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/75 overflow-y-auto"
       onClick={onClose}
     >
@@ -44,10 +47,10 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-white tracking-tight">
-                Atajos de Teclado Globales
+                {t.modals.shortcutsTitle}
               </h2>
               <p className="text-xs text-slate-400">
-                Accesibilidad rápida · Desactivados automáticamente al escribir en chat o buscador
+                {t.modals.shortcutsSubtitle}
               </p>
             </div>
           </div>
@@ -56,8 +59,8 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            aria-label="Cerrar guía de atajos"
-            title="Cerrar (Esc)"
+            aria-label={t.common.close}
+            title={t.common.close}
           >
             <X className="w-4 h-4" />
           </button>
@@ -65,7 +68,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
 
         {/* Shortcut Groups */}
         <div className="py-4 space-y-5 max-h-[70vh] overflow-y-auto pr-1">
-          {SECTION_META.map(section => {
+          {sectionMeta.map(section => {
             const items = KEYBOARD_SHORTCUTS.filter(item => item.category === section.id);
             return (
               <div key={section.id}>
@@ -108,14 +111,14 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
         {/* Footer */}
         <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3 text-xs text-slate-400">
           <span>
-            Pulsa <kbd className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[11px] text-slate-200">Esc</kbd> para cerrar
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[11px] text-slate-200">Esc</kbd>
           </span>
           <button
             type="button"
             onClick={onClose}
             className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors"
           >
-            Cerrar
+            {t.common.close}
           </button>
         </div>
       </div>

@@ -3,32 +3,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCommonspolyGame } from './store/gameEngine';
 import { CommonspolyBoard3D } from './components/board3d/CommonspolyBoard3D';
 import { TitleScreen } from './components/TitleScreen';
-import { SetupWizard } from './components/SetupWizard';
-import { GameOverlayHUD } from './components/hud/GameOverlayHUD';
-import { TileInspectorHUD } from './components/hud/TileInspectorHUD';
-import { GameOverCinematicOverlay } from './components/hud/GameOverCinematicOverlay';
-import { GlobalCardModal } from './components/modals/GlobalCardModal';
-import { SituationCardModal } from './components/modals/SituationCardModal';
-import { AgoraInsurrectionModal } from './components/modals/AgoraInsurrectionModal';
-import { DetentionRescueModal } from './components/modals/DetentionRescueModal';
-import { TragedyVoteModal } from './components/modals/TragedyVoteModal';
-import { BureaucracyModal } from './components/modals/BureaucracyModal';
-import { CrowdfundingModal } from './components/modals/CrowdfundingModal';
-import { GameOverModal } from './components/modals/GameOverModal';
-import { RulesModal } from './components/modals/RulesModal';
-import { KeyboardShortcutsModal } from './components/modals/KeyboardShortcutsModal';
-import { AchievementsModal } from './components/modals/AchievementsModal';
-import { NeighborhoodDecisionModal } from './components/modals/NeighborhoodDecisionModal';
-import { LeaderboardModal } from './components/modals/LeaderboardModal';
+import type { CinemaCameraMode } from './components/hud/CinemaReplayHUD';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { SetupInitialRolls, Tile } from './types/game';
+import { SetupInitialRolls, Tile, TutorialBoardFocus } from './types/game';
 import { playSound } from './utils/audio';
 import { resolveWeather } from './utils/weather';
 import { computeCooperativeEfficiency } from './utils/cooperativeEfficiency';
+import { hydrateBoardFromReplayFrame } from './utils/replay';
+import { DEFAULT_WEATHER_ADVANCED_CONFIG } from './utils/weatherSettings';
+import {
+  computeSpeculatorDangerHeatmap,
+  computeSpeculatorTrajectories
+} from './utils/economyDebugMetrics';
+import {
+  CareerMatchStats,
+  loadCareerStats,
+  recordCompletedMatchStats,
+  resetCareerStats
+} from './utils/matchHistoryStats';
+import {
+  BoardPerformanceTelemetry,
+  createInitialBoardTelemetry
+} from './utils/performanceTelemetry';
 import {
   auth,
   googleProvider,
@@ -48,6 +48,121 @@ import {
   submitPersonalBestToLeaderboard,
   subscribeGlobalLeaderboard
 } from './utils/leaderboard';
+import {
+  AccessibilitySettings,
+  applyAccessibilityDocumentAttributes,
+  getAccessibilityPalette,
+  loadAccessibilitySettings,
+  saveAccessibilitySettings
+} from './utils/accessibility';
+import {
+  DailyChallengeEntry,
+  fetchDailyLeaderboardOnce,
+  getDailyChallengeConfig,
+  loadLocalDailyResult,
+  saveLocalDailyResult,
+  submitDailyChallengeScore,
+  subscribeDailyLeaderboard
+} from './utils/dailyChallenge';
+import {
+  buildSetupRollsForDifficulty,
+  createMultiplayerRoom,
+  joinMultiplayerRoomByCode,
+  joinMultiplayerRoomById,
+  launchRoomMatchByHost,
+  leaveMultiplayerRoom,
+  markRoomActionProcessed,
+  MultiplayerRoom,
+  rehydrateCharactersFromRoom,
+  serializePlayersSummary,
+  serializeSpeculatorsSummary,
+  serializeTilesToArray,
+  submitRoomActionIntent,
+  subscribeToPendingRoomActions,
+  subscribeToRoom,
+  syncHostGameStateToRoom,
+  tileArrayToStateMap,
+  updateRoomMemberSelection
+} from './utils/multiplayerRooms';
+import { OFFICIAL_CHARACTERS } from './data/characters';
+import { useOnlineStatus } from './hooks/usePWAInstall';
+
+const SetupWizard = lazy(() =>
+  import('./components/SetupWizard').then(m => ({ default: m.SetupWizard }))
+);
+const GameOverlayHUD = lazy(() =>
+  import('./components/hud/GameOverlayHUD').then(m => ({ default: m.GameOverlayHUD }))
+);
+const TileInspectorHUD = lazy(() =>
+  import('./components/hud/TileInspectorHUD').then(m => ({ default: m.TileInspectorHUD }))
+);
+const GameOverCinematicOverlay = lazy(() =>
+  import('./components/hud/GameOverCinematicOverlay').then(m => ({
+    default: m.GameOverCinematicOverlay
+  }))
+);
+const GlobalCardModal = lazy(() =>
+  import('./components/modals/GlobalCardModal').then(m => ({ default: m.GlobalCardModal }))
+);
+const SituationCardModal = lazy(() =>
+  import('./components/modals/SituationCardModal').then(m => ({ default: m.SituationCardModal }))
+);
+const AgoraInsurrectionModal = lazy(() =>
+  import('./components/modals/AgoraInsurrectionModal').then(m => ({
+    default: m.AgoraInsurrectionModal
+  }))
+);
+const DetentionRescueModal = lazy(() =>
+  import('./components/modals/DetentionRescueModal').then(m => ({ default: m.DetentionRescueModal }))
+);
+const TragedyVoteModal = lazy(() =>
+  import('./components/modals/TragedyVoteModal').then(m => ({ default: m.TragedyVoteModal }))
+);
+const BureaucracyModal = lazy(() =>
+  import('./components/modals/BureaucracyModal').then(m => ({ default: m.BureaucracyModal }))
+);
+const CrowdfundingModal = lazy(() =>
+  import('./components/modals/CrowdfundingModal').then(m => ({ default: m.CrowdfundingModal }))
+);
+const GameOverModal = lazy(() =>
+  import('./components/modals/GameOverModal').then(m => ({ default: m.GameOverModal }))
+);
+const RulesModal = lazy(() =>
+  import('./components/modals/RulesModal').then(m => ({ default: m.RulesModal }))
+);
+const KeyboardShortcutsModal = lazy(() =>
+  import('./components/modals/KeyboardShortcutsModal').then(m => ({
+    default: m.KeyboardShortcutsModal
+  }))
+);
+const AchievementsModal = lazy(() =>
+  import('./components/modals/AchievementsModal').then(m => ({ default: m.AchievementsModal }))
+);
+const NeighborhoodDecisionModal = lazy(() =>
+  import('./components/modals/NeighborhoodDecisionModal').then(m => ({
+    default: m.NeighborhoodDecisionModal
+  }))
+);
+const LeaderboardModal = lazy(() =>
+  import('./components/modals/LeaderboardModal').then(m => ({ default: m.LeaderboardModal }))
+);
+const WeatherSettingsModal = lazy(() =>
+  import('./components/modals/WeatherSettingsModal').then(m => ({ default: m.WeatherSettingsModal }))
+);
+const CareerStatsModal = lazy(() =>
+  import('./components/modals/CareerStatsModal').then(m => ({ default: m.CareerStatsModal }))
+);
+const AccessibilityModal = lazy(() =>
+  import('./components/modals/AccessibilityModal').then(m => ({ default: m.AccessibilityModal }))
+);
+const MultiplayerLobbyModal = lazy(() =>
+  import('./components/modals/MultiplayerLobbyModal').then(m => ({
+    default: m.MultiplayerLobbyModal
+  }))
+);
+const CinemaReplayHUD = lazy(() =>
+  import('./components/hud/CinemaReplayHUD').then(m => ({ default: m.CinemaReplayHUD }))
+);
 
 export default function App() {
   const {
@@ -77,6 +192,7 @@ export default function App() {
     setAmbientMode,
     setWeatherMode,
     setWeatherIntensity,
+    setWeatherAdvancedConfig,
     setTimeOfDayMode,
     dismissRecentAchievement,
     resetAchievements,
@@ -87,19 +203,47 @@ export default function App() {
     clearSavedGame,
     resetToTitle,
     triggerNeighborhoodDecision,
-    castNeighborhoodVote
+    castNeighborhoodVote,
+    applySandboxMutation,
+    simulateDiceRollInSandbox,
+    simulateSpeculatorsWaveInSandbox,
+    restorePreSandboxState,
+    hydrateMultiplayerState,
+    canRestoreSandbox
   } = useCommonspolyGame();
+
+  const isOnline = useOnlineStatus();
+  const [accessibilitySettings, setAccessibilitySettings] = useState<AccessibilitySettings>(() =>
+    loadAccessibilitySettings()
+  );
+  const [showAccessibility, setShowAccessibility] = useState(false);
+  const [showMultiplayerLobby, setShowMultiplayerLobby] = useState(false);
 
   const [showRules, setShowRules] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showWeatherSettings, setShowWeatherSettings] = useState(false);
+  const [showCareerStats, setShowCareerStats] = useState(false);
+  const [careerStats, setCareerStats] = useState<CareerMatchStats>(() => loadCareerStats());
   const [isGameHistoryOpen, setIsGameHistoryOpen] = useState(false);
   const [isEvolutionOpen, setIsEvolutionOpen] = useState(false);
+  const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
+  const [showEconomyDebug, setShowEconomyDebug] = useState(false);
+  const [isSpeculatorHeatmapEnabled, setIsSpeculatorHeatmapEnabled] = useState(true);
+  const [isSpeculatorTrajectoriesEnabled, setIsSpeculatorTrajectoriesEnabled] = useState(true);
+  const boardTelemetryRef = useRef<BoardPerformanceTelemetry>(createInitialBoardTelemetry());
   const [isDockCollapsed, setIsDockCollapsed] = useState(false);
-  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [tutorialOpenOverride, setTutorialOpenOverride] = useState<boolean | undefined>(undefined);
+  const [isTutorialOverlayVisible, setIsTutorialOverlayVisible] = useState(false);
+  const [tutorialBoardFocus, setTutorialBoardFocus] = useState<TutorialBoardFocus>('NONE');
   const [showGameOverSummary, setShowGameOverSummary] = useState(false);
   const [inspectedTileId, setInspectedTileId] = useState<number | null>(null);
+  const [isCinemaMode, setIsCinemaMode] = useState(false);
+  const [cinemaFrameIndex, setCinemaFrameIndex] = useState(0);
+  const [isCinemaPlaying, setIsCinemaPlaying] = useState(false);
+  const [cinemaSpeed, setCinemaSpeed] = useState(1);
+  const [cinemaCameraMode, setCinemaCameraMode] = useState<CinemaCameraMode>('FOLLOW');
 
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -112,6 +256,25 @@ export default function App() {
     state: 'IDLE'
   });
   const hasRecordedGameOverRef = useRef(false);
+
+  const dailyConfig = useMemo(() => getDailyChallengeConfig(), []);
+  const [dailyEntries, setDailyEntries] = useState<DailyChallengeEntry[]>([]);
+  const [isDailyLoading, setIsDailyLoading] = useState(false);
+  const [localDailyBest, setLocalDailyBest] = useState<{ efficiencyPct: number; result: string } | null>(
+    () => loadLocalDailyResult(dailyConfig.challengeDate)
+  );
+
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [activeRoom, setActiveRoom] = useState<MultiplayerRoom | null>(null);
+  const hostStateVersionRef = useRef<number>(1);
+  const lastSyncedFingerprintRef = useRef<string>('');
+  const lastHydratedVersionRef = useRef<number>(0);
+  const processedActionIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    applyAccessibilityDocumentAttributes(accessibilitySettings);
+    saveAccessibilitySettings(accessibilitySettings);
+  }, [accessibilitySettings]);
 
   const inspectedTile: Tile | null =
     inspectedTileId !== null
@@ -134,24 +297,216 @@ export default function App() {
     });
   };
 
-  // Gestor global de atajos de teclado ('R', 'D', 'P', 'A', '1-3', 'M', 'H', 'G', 'V', 'L', 'B', '?', 'Esc')
+  const replayFrames = state.replayFrames ?? [];
+  const activeReplayFrame =
+    isCinemaMode && replayFrames.length > 0
+      ? (replayFrames[Math.min(cinemaFrameIndex, replayFrames.length - 1)] ?? null)
+      : null;
+
+  const cinemaBoardData = useMemo(() => {
+    if (!activeReplayFrame) return null;
+    return hydrateBoardFromReplayFrame(state, activeReplayFrame);
+  }, [activeReplayFrame, state]);
+
+  const speculatorHeatmap = useMemo(() => {
+    if (
+      !showEconomyDebug ||
+      !isSpeculatorHeatmapEnabled ||
+      isCinemaMode ||
+      state.phase === 'TITLE' ||
+      state.phase === 'SETUP' ||
+      state.phase === 'GAME_OVER'
+    ) {
+      return null;
+    }
+    return computeSpeculatorDangerHeatmap(state);
+  }, [
+    showEconomyDebug,
+    isSpeculatorHeatmapEnabled,
+    isCinemaMode,
+    state.phase,
+    state.tiles,
+    state.speculators,
+    state.players,
+    state.probabilitySandbox
+  ]);
+
+  const speculatorTrajectories = useMemo(() => {
+    if (
+      !showEconomyDebug ||
+      !isSpeculatorTrajectoriesEnabled ||
+      isCinemaMode ||
+      state.phase === 'TITLE' ||
+      state.phase === 'SETUP' ||
+      state.phase === 'GAME_OVER'
+    ) {
+      return null;
+    }
+    return computeSpeculatorTrajectories(state);
+  }, [
+    showEconomyDebug,
+    isSpeculatorTrajectoriesEnabled,
+    isCinemaMode,
+    state.phase,
+    state.tiles,
+    state.speculators,
+    state.players,
+    state.probabilitySandbox
+  ]);
+
+  const openCinemaMode = useCallback(() => {
+    if (replayFrames.length === 0) return;
+    const startIdx = replayFrames.length > 8 ? replayFrames.length - 8 : 0;
+    setCinemaFrameIndex(startIdx);
+    setIsCinemaPlaying(replayFrames.length > 1);
+    setCinemaCameraMode('FOLLOW');
+    setInspectedTileId(null);
+    setIsGameHistoryOpen(false);
+    setIsEvolutionOpen(false);
+    setIsCinemaMode(true);
+  }, [replayFrames.length]);
+
+  const closeCinemaMode = useCallback(() => {
+    setIsCinemaPlaying(false);
+    setIsCinemaMode(false);
+  }, []);
+
+  const toggleCinemaMode = useCallback(() => {
+    if (isCinemaMode) {
+      closeCinemaMode();
+    } else {
+      openCinemaMode();
+    }
+  }, [isCinemaMode, closeCinemaMode, openCinemaMode]);
+
+  const isRoomHost = Boolean(activeRoom && authUser && activeRoom.hostUid === authUser.uid);
+  const isInMultiplayerMatch = Boolean(
+    activeRoom && state.multiplayerRoomId && state.multiplayerRoomId === activeRoom.roomId
+  );
+  const activePlayerForTurn = state.players[state.activePlayerIndex];
+  const activePlayerOwnerMember =
+    isInMultiplayerMatch && activeRoom
+      ? activeRoom.members.find(m => m.characterId === activePlayerForTurn?.id)
+      : undefined;
+  const isRemoteMultiplayerTurn = Boolean(
+    isInMultiplayerMatch &&
+      activeRoom &&
+      (activePlayerOwnerMember ? activePlayerOwnerMember.uid !== authUser?.uid : !isRoomHost)
+  );
+  const remoteTurnOwnerName = activePlayerOwnerMember
+    ? activePlayerOwnerMember.displayAlias
+    : isInMultiplayerMatch && !isRoomHost
+    ? 'Bot (Anfitrión)'
+    : null;
+
+  const emitGuestAction = useCallback(
+    (actionType: Parameters<typeof submitRoomActionIntent>[4], payloadText = '') => {
+      if (!activeRoom || !authUser) return;
+      const myMember = activeRoom.members.find(m => m.uid === authUser.uid);
+      const alias = myMember?.displayAlias || authUser.displayName || 'Activista';
+      void submitRoomActionIntent(
+        activeRoom.roomId,
+        activeRoom.hostUid,
+        authUser,
+        alias,
+        actionType,
+        state.round,
+        payloadText
+      );
+    },
+    [activeRoom, authUser, state.round]
+  );
+
+  const handleActionRollDice = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('ROLL_DICE');
+      return;
+    }
+    rollDiceForCurrentPlayer();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, rollDiceForCurrentPlayer]);
+
+  const handleActionUnlockTile = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('UNLOCK_TILE');
+      return;
+    }
+    unlockCurrentTile();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, unlockCurrentTile]);
+
+  const handleActionPassTile = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('PASS_TILE');
+      return;
+    }
+    passCurrentTile();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, passCurrentTile]);
+
+  const handleActionTryEnterAgora = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('TRY_AGORA');
+      return;
+    }
+    tryEnterAgora();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, tryEnterAgora]);
+
+  const handleActionStayInAgora = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('STAY_AGORA');
+      return;
+    }
+    stayInAgora();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, stayInAgora]);
+
+  const handleActionResolveSituationCard = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('RESOLVE_CARD');
+      return;
+    }
+    resolveSituationCard();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, resolveSituationCard]);
+
+  const handleActionSendChat = useCallback(
+    (text: string, votingContext?: string) => {
+      if (isInMultiplayerMatch && !isRoomHost) {
+        emitGuestAction('CHAT', text);
+      }
+      sendCooperativeChat(text, votingContext);
+    },
+    [isInMultiplayerMatch, isRoomHost, emitGuestAction, sendCooperativeChat]
+  );
+
+  // Gestor global de atajos de teclado ('R', 'D', 'P', 'A', '1-3', 'M', 'H', 'G', 'V', 'C', 'L', 'B', '?', 'Esc')
   useKeyboardShortcuts({
     state,
     isShortcutsOpen: showShortcuts,
     isRulesOpen: showRules,
     isAchievementsOpen: showAchievements,
     isLeaderboardOpen: showLeaderboard,
-    isTutorialOpen,
+    isWeatherSettingsOpen: showWeatherSettings,
+    isCareerStatsOpen: showCareerStats,
+    isAccessibilityOpen: showAccessibility,
+    isMultiplayerOpen: showMultiplayerLobby,
+    isRemoteMultiplayerTurn,
+    isTutorialOpen: isTutorialOverlayVisible,
     isGameHistoryOpen,
     isEvolutionOpen,
+    isPerformanceMonitorOpen: showPerformanceMonitor,
+    isEconomyDebugOpen: showEconomyDebug,
+    isCinemaMode,
     isTileInspectorOpen: inspectedTile !== null,
     showGameOverSummary,
-    onRollDice: rollDiceForCurrentPlayer,
-    onUnlockTile: unlockCurrentTile,
-    onPassTile: passCurrentTile,
-    onTryEnterAgora: tryEnterAgora,
+    onRollDice: handleActionRollDice,
+    onUnlockTile: handleActionUnlockTile,
+    onPassTile: handleActionPassTile,
+    onTryEnterAgora: handleActionTryEnterAgora,
     onAcknowledgeGlobalCard: acknowledgeGlobalCard,
-    onResolveSituationCard: resolveSituationCard,
+    onResolveSituationCard: handleActionResolveSituationCard,
     onCloseActiveModal: closeModal,
     onSetCameraMode: setCameraMode,
     onToggleSound: toggleSound,
@@ -160,16 +515,26 @@ export default function App() {
     onCloseGameHistory: () => setIsGameHistoryOpen(false),
     onToggleEvolution: handleToggleEvolution,
     onCloseEvolution: () => setIsEvolutionOpen(false),
+    onTogglePerformanceMonitor: () => setShowPerformanceMonitor(prev => !prev),
+    onClosePerformanceMonitor: () => setShowPerformanceMonitor(false),
+    onToggleEconomyDebug: () => setShowEconomyDebug(prev => !prev),
+    onCloseEconomyDebug: () => setShowEconomyDebug(false),
     onCloseTileInspector: () => setInspectedTileId(null),
     onToggleRules: () => setShowRules(prev => !prev),
     onCloseRules: () => setShowRules(false),
     onToggleAchievements: () => setShowAchievements(prev => !prev),
     onCloseAchievements: () => setShowAchievements(false),
     onCloseLeaderboard: () => setShowLeaderboard(false),
+    onCloseWeatherSettings: () => setShowWeatherSettings(false),
+    onCloseCareerStats: () => setShowCareerStats(false),
+    onCloseAccessibility: () => setShowAccessibility(false),
+    onCloseMultiplayer: () => setShowMultiplayerLobby(false),
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
     onCloseGameOverSummary: () => setShowGameOverSummary(false),
-    onToggleTutorial: () => setIsTutorialOpen(prev => !prev)
+    onToggleTutorial: () => setTutorialOpenOverride(isTutorialOverlayVisible ? false : true),
+    onToggleCinemaMode: toggleCinemaMode,
+    onCloseCinemaMode: closeCinemaMode
   });
 
   const refreshLeaderboard = useCallback(async () => {
@@ -185,15 +550,28 @@ export default function App() {
     }
   }, []);
 
-  // Autenticación Firebase + carga inicial del Leaderboard Global
+  const refreshDailyLeaderboard = useCallback(async () => {
+    setIsDailyLoading(true);
+    try {
+      const rows = await fetchDailyLeaderboardOnce(dailyConfig.challengeDate, 25);
+      setDailyEntries(rows);
+    } catch {
+      // Silenciar si el usuario está offline
+    } finally {
+      setIsDailyLoading(false);
+    }
+  }, [dailyConfig.challengeDate]);
+
+  // Autenticación Firebase + carga inicial del Leaderboard Global y Reto Diario
   useEffect(() => {
     void refreshLeaderboard();
+    void refreshDailyLeaderboard();
     const unsubAuth = onAuthStateChanged(auth, user => {
       setAuthUser(user);
       setAuthReady(true);
     });
     return () => unsubAuth();
-  }, [refreshLeaderboard]);
+  }, [refreshLeaderboard, refreshDailyLeaderboard]);
 
   // Suscripción en tiempo real (onSnapshot) solo cuando Auth está listo y el usuario autenticado
   useEffect(() => {
@@ -212,8 +590,17 @@ export default function App() {
       },
       25
     );
-    return () => unsubSnapshot();
-  }, [authReady, authUser]);
+    const unsubDaily = subscribeDailyLeaderboard(
+      dailyConfig.challengeDate,
+      entries => setDailyEntries(entries),
+      () => {},
+      25
+    );
+    return () => {
+      unsubSnapshot();
+      unsubDaily();
+    };
+  }, [authReady, authUser, dailyConfig.challengeDate]);
 
   const syncPendingLocalRecord = useCallback(
     async (user: User, record: LocalBestRecord | null) => {
@@ -288,11 +675,17 @@ export default function App() {
     }
   }, [refreshLeaderboard]);
 
-  // Limpiar inspector al volver al título o configuración
+  // Limpiar inspector, tutorial y Modo Cine al volver al título o configuración
   useEffect(() => {
     if (state.phase === 'TITLE' || state.phase === 'SETUP') {
       setInspectedTileId(null);
       setIsEvolutionOpen(false);
+      setIsCinemaMode(false);
+      setIsCinemaPlaying(false);
+      setTutorialOpenOverride(undefined);
+      setIsTutorialOverlayVisible(false);
+      setTutorialBoardFocus('NONE');
+      setShowEconomyDebug(false);
     }
   }, [state.phase]);
 
@@ -310,8 +703,201 @@ export default function App() {
     }
   }, [state.phase]);
 
+  // Suscripción a Sala Multijugador activa en tiempo real
+  useEffect(() => {
+    if (!authUser || !activeRoomId) return;
+    const unsub = subscribeToRoom(
+      activeRoomId,
+      room => {
+        setActiveRoom(room);
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, [authUser, activeRoomId]);
+
+  // Auto-lanzamiento y rehidratación para invitados cuando el Anfitrión inicia o actualiza la sala
+  useEffect(() => {
+    if (!activeRoom || !authUser) return;
+    const amHost = activeRoom.hostUid === authUser.uid;
+    if (amHost || activeRoom.status === 'WAITING') return;
+
+    if (state.phase === 'TITLE' || state.phase === 'SETUP') {
+      const roster = activeRoom.playersSummary.map(ps => ({
+        baseCharId: ps.id,
+        controller: ps.controller
+      }));
+      const rolls = buildSetupRollsForDifficulty(activeRoom.difficulty);
+      lastHydratedVersionRef.current = activeRoom.stateVersion;
+      finalizeSetup(roster, rolls, {
+        multiplayerRoomId: activeRoom.roomId,
+        multiplayerRoomCode: activeRoom.roomCode
+      });
+      hydrateMultiplayerState({
+        phase: activeRoom.phase,
+        round: activeRoom.round,
+        activePlayerIndex: activeRoom.activePlayerIndex,
+        currentDiceRoll: activeRoom.currentDiceRoll || null,
+        players: rehydrateCharactersFromRoom(activeRoom.playersSummary),
+        speculators: activeRoom.speculatorsSummary,
+        tileStates: tileArrayToStateMap(activeRoom.tileStates),
+        gameResult: activeRoom.gameResult === 'NONE' ? undefined : activeRoom.gameResult,
+        gameResultDetails: activeRoom.gameResultDetails,
+        multiplayerRoomId: activeRoom.roomId,
+        multiplayerRoomCode: activeRoom.roomCode,
+        difficulty: activeRoom.difficulty
+      });
+      setShowMultiplayerLobby(false);
+      return;
+    }
+
+    if (
+      state.multiplayerRoomId === activeRoom.roomId &&
+      activeRoom.stateVersion > lastHydratedVersionRef.current
+    ) {
+      lastHydratedVersionRef.current = activeRoom.stateVersion;
+      hydrateMultiplayerState({
+        phase: activeRoom.phase,
+        round: activeRoom.round,
+        activePlayerIndex: activeRoom.activePlayerIndex,
+        currentDiceRoll: activeRoom.currentDiceRoll || null,
+        players: rehydrateCharactersFromRoom(activeRoom.playersSummary),
+        speculators: activeRoom.speculatorsSummary,
+        tileStates: tileArrayToStateMap(activeRoom.tileStates),
+        gameResult: activeRoom.gameResult === 'NONE' ? undefined : activeRoom.gameResult,
+        gameResultDetails: activeRoom.gameResultDetails,
+        multiplayerRoomId: activeRoom.roomId,
+        multiplayerRoomCode: activeRoom.roomCode,
+        difficulty: activeRoom.difficulty
+      });
+    }
+  }, [activeRoom, authUser, state.phase, state.multiplayerRoomId, finalizeSetup, hydrateMultiplayerState]);
+
+  // Sincronización host-autoritativa hacia Firestore cuando cambia el estado relevante de partida
+  useEffect(() => {
+    if (
+      !isRoomHost ||
+      !activeRoom ||
+      !state.multiplayerRoomId ||
+      state.multiplayerRoomId !== activeRoom.roomId ||
+      state.phase === 'TITLE' ||
+      state.phase === 'SETUP'
+    ) {
+      return;
+    }
+
+    const fingerprint = JSON.stringify({
+      p: state.phase,
+      r: state.round,
+      a: state.activePlayerIndex,
+      d: state.currentDiceRoll ?? 0,
+      pl: serializePlayersSummary(state.players),
+      sp: serializeSpeculatorsSummary(state.speculators),
+      t: serializeTilesToArray(state.tiles),
+      g: state.gameResult ?? 'NONE'
+    });
+
+    if (fingerprint === lastSyncedFingerprintRef.current) return;
+    lastSyncedFingerprintRef.current = fingerprint;
+
+    const timer = window.setTimeout(() => {
+      hostStateVersionRef.current += 1;
+      void syncHostGameStateToRoom(activeRoom.roomId, state, hostStateVersionRef.current);
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [isRoomHost, activeRoom, state]);
+
+  // Cola de intenciones de jugada/chat que recibe el Anfitrión en tiempo real
+  useEffect(() => {
+    if (
+      !isRoomHost ||
+      !activeRoom ||
+      activeRoom.status !== 'PLAYING' ||
+      !state.multiplayerRoomId ||
+      state.multiplayerRoomId !== activeRoom.roomId
+    ) {
+      return;
+    }
+
+    const unsub = subscribeToPendingRoomActions(
+      activeRoom.roomId,
+      activeRoom.hostUid,
+      actions => {
+        actions.forEach(action => {
+          if (processedActionIdsRef.current.has(action.actionId)) return;
+          processedActionIdsRef.current.add(action.actionId);
+          void markRoomActionProcessed(activeRoom.roomId, action.actionId);
+
+          if (action.actionType === 'CHAT') {
+            if (action.uid !== authUser?.uid && action.payloadText) {
+              sendCooperativeChat(`${action.displayAlias}: ${action.payloadText}`);
+            }
+            return;
+          }
+
+          const currentOwner = activeRoom.members.find(
+            m => m.characterId === state.players[state.activePlayerIndex]?.id
+          );
+          if (currentOwner && currentOwner.uid !== action.uid) {
+            return;
+          }
+
+          switch (action.actionType) {
+            case 'ROLL_DICE':
+              rollDiceForCurrentPlayer();
+              break;
+            case 'UNLOCK_TILE':
+              unlockCurrentTile();
+              break;
+            case 'PASS_TILE':
+              passCurrentTile();
+              break;
+            case 'TRY_AGORA':
+              tryEnterAgora();
+              break;
+            case 'STAY_AGORA':
+              stayInAgora();
+              break;
+            case 'RESOLVE_CARD':
+              resolveSituationCard();
+              break;
+            case 'CLOSE_MODAL':
+              closeModal();
+              break;
+          }
+        });
+      },
+      () => {}
+    );
+
+    return () => unsub();
+  }, [
+    isRoomHost,
+    activeRoom,
+    authUser?.uid,
+    state.multiplayerRoomId,
+    state.players,
+    state.activePlayerIndex,
+    sendCooperativeChat,
+    rollDiceForCurrentPlayer,
+    unlockCurrentTile,
+    passCurrentTile,
+    tryEnterAgora,
+    stayInAgora,
+    resolveSituationCard,
+    closeModal
+  ]);
+
   // Acción de partida rápida
   const handleQuickStart = () => {
+    try {
+      localStorage.removeItem('commonspoly_tutorial_dismissed_v2');
+    } catch {
+      // Ignorar en navegadores con almacenamiento restringido
+    }
+    setTutorialOpenOverride(undefined);
+
     const quickRolls: SetupInitialRolls = {
       health: 3,
       urban: 3,
@@ -333,6 +919,113 @@ export default function App() {
     );
   };
 
+  // Lanzar Reto Diario Determinista por Semilla UTC
+  const handleStartDailyChallenge = useCallback(() => {
+    try {
+      localStorage.removeItem('commonspoly_tutorial_dismissed_v2');
+    } catch {
+      // Ignorar
+    }
+    setTutorialOpenOverride(undefined);
+    setShowLeaderboard(false);
+    finalizeSetup(dailyConfig.roster, dailyConfig.rolls, {
+      seedNumber: dailyConfig.seedNumber,
+      dailyChallengeDate: dailyConfig.challengeDate
+    });
+    setWeatherMode(dailyConfig.weatherMode);
+  }, [dailyConfig, finalizeSetup, setWeatherMode]);
+
+  const handleCreateMultiplayerRoom = useCallback(
+    async (
+      alias: string,
+      characterId: string,
+      difficulty: 'COMUNLANDIA' | 'EN_TRANSICION' | 'MAD_MAX',
+      maxPlayers: number,
+      isPublic: boolean
+    ) => {
+      if (!authUser) throw new Error('Inicia sesión con Google primero.');
+      const room = await createMultiplayerRoom(authUser, alias, characterId, difficulty, maxPlayers, isPublic);
+      processedActionIdsRef.current.clear();
+      hostStateVersionRef.current = 1;
+      lastSyncedFingerprintRef.current = '';
+      lastHydratedVersionRef.current = 1;
+      setActiveRoomId(room.roomId);
+      setActiveRoom(room);
+    },
+    [authUser]
+  );
+
+  const handleJoinRoomByCode = useCallback(
+    async (code: string, alias: string, characterId: string) => {
+      if (!authUser) throw new Error('Inicia sesión con Google primero.');
+      const room = await joinMultiplayerRoomByCode(authUser, code, alias, characterId);
+      processedActionIdsRef.current.clear();
+      lastHydratedVersionRef.current = 0;
+      setActiveRoomId(room.roomId);
+      setActiveRoom(room);
+    },
+    [authUser]
+  );
+
+  const handleJoinRoomById = useCallback(
+    async (roomId: string, alias: string, characterId: string) => {
+      if (!authUser) throw new Error('Inicia sesión con Google primero.');
+      const room = await joinMultiplayerRoomById(authUser, roomId, alias, characterId);
+      processedActionIdsRef.current.clear();
+      lastHydratedVersionRef.current = 0;
+      setActiveRoomId(room.roomId);
+      setActiveRoom(room);
+    },
+    [authUser]
+  );
+
+  const handleUpdateRoomMember = useCallback(
+    async (characterId: string, ready: boolean) => {
+      if (!activeRoom || !authUser) return;
+      await updateRoomMemberSelection(activeRoom, authUser.uid, characterId, ready);
+    },
+    [activeRoom, authUser]
+  );
+
+  const handleLeaveMultiplayerRoom = useCallback(async () => {
+    if (activeRoom && authUser) {
+      await leaveMultiplayerRoom(activeRoom, authUser.uid);
+    }
+    setActiveRoomId(null);
+    setActiveRoom(null);
+  }, [activeRoom, authUser]);
+
+  const handleLaunchMultiplayerMatch = useCallback(async () => {
+    if (!activeRoom) return;
+    const usedIds = new Set(activeRoom.members.map(m => m.characterId));
+    const humanRoster = activeRoom.members.map(m => ({
+      baseCharId: m.characterId,
+      controller: 'HUMAN' as const
+    }));
+    const botChars = OFFICIAL_CHARACTERS.filter(c => !usedIds.has(c.id)).slice(
+      0,
+      Math.max(0, 4 - humanRoster.length)
+    );
+    const fullRoster = [
+      ...humanRoster,
+      ...botChars.map(c => ({ baseCharId: c.id, controller: 'BOT' as const }))
+    ];
+    const rolls = buildSetupRollsForDifficulty(activeRoom.difficulty);
+    hostStateVersionRef.current = activeRoom.stateVersion + 1;
+    await launchRoomMatchByHost(activeRoom, fullRoster, rolls);
+    finalizeSetup(fullRoster, rolls, {
+      multiplayerRoomId: activeRoom.roomId,
+      multiplayerRoomCode: activeRoom.roomCode
+    });
+    setShowMultiplayerLobby(false);
+  }, [activeRoom, finalizeSetup]);
+
+  const handleExitToTitle = useCallback(() => {
+    setActiveRoomId(null);
+    setActiveRoom(null);
+    resetToTitle();
+  }, [resetToTitle]);
+
   const activePlayer = state.players[state.activePlayerIndex];
   const detainedPlayer = state.players.find(p => p.isDetained);
   const cooperativeEfficiency = useMemo(
@@ -346,7 +1039,7 @@ export default function App() {
     [state.tiles, state.playerStats, state.round, state.gameResult]
   );
 
-  // Registrar puntuación más alta de Eficiencia Cooperativa al finalizar partida
+  // Registrar puntuación más alta de Eficiencia Cooperativa al finalizar partida (aislando Sandbox)
   useEffect(() => {
     if (state.phase !== 'GAME_OVER' || !state.gameResult) {
       hasRecordedGameOverRef.current = false;
@@ -357,6 +1050,22 @@ export default function App() {
     if (hasRecordedGameOverRef.current) return;
     hasRecordedGameOverRef.current = true;
 
+    // Aislamiento estricto: las sesiones alteradas con el Simulador Sandbox nunca se publican
+    if (state.isSandboxSession) {
+      setSubmissionStatus({ state: 'IDLE' });
+      return;
+    }
+
+    const updatedCareer = recordCompletedMatchStats({
+      result: state.gameResult,
+      round: state.round,
+      efficiency: cooperativeEfficiency,
+      players: state.players,
+      playerStats: state.playerStats,
+      setupConfig: state.setupConfig
+    });
+    setCareerStats(updatedCareer);
+
     const snapshot = buildLeaderboardSnapshotFromMatch(
       cooperativeEfficiency,
       state.gameResult,
@@ -365,14 +1074,29 @@ export default function App() {
       authUser?.displayName || undefined
     );
 
+    if (state.dailyChallengeDate) {
+      saveLocalDailyResult(state.dailyChallengeDate, snapshot.efficiencyPct, state.gameResult);
+      setLocalDailyBest(loadLocalDailyResult(state.dailyChallengeDate));
+    }
+
     const canSyncNow = Boolean(authUser && authUser.emailVerified);
     const { record } = saveLocalBestRecordIfBetter(snapshot, !canSyncNow);
     setLocalBest(record);
 
     if (authUser && authUser.emailVerified) {
       setSubmissionStatus({ state: 'SUBMITTING' });
-      void submitPersonalBestToLeaderboard(authUser, snapshot)
-        .then(res => {
+      const dailyPromise =
+        state.dailyChallengeDate && state.seedNumber
+          ? submitDailyChallengeScore(
+              authUser,
+              snapshot,
+              state.dailyChallengeDate,
+              state.seedNumber
+            ).then(() => refreshDailyLeaderboard())
+          : Promise.resolve();
+
+      void Promise.all([submitPersonalBestToLeaderboard(authUser, snapshot), dailyPromise])
+        .then(([res]) => {
           setLocalBest(loadLocalBestRecord());
           if (res.status === 'CREATED' && res.entry) {
             setSubmissionStatus({ state: 'CREATED', entry: res.entry });
@@ -403,11 +1127,17 @@ export default function App() {
   }, [
     state.phase,
     state.gameResult,
+    state.isSandboxSession,
+    state.dailyChallengeDate,
+    state.seedNumber,
     state.round,
     state.players,
+    state.playerStats,
+    state.setupConfig,
     cooperativeEfficiency,
     authUser,
-    refreshLeaderboard
+    refreshLeaderboard,
+    refreshDailyLeaderboard
   ]);
 
   const globalTopEntry = leaderboardEntries[0] ?? null;
@@ -422,26 +1152,37 @@ export default function App() {
       
       {/* 1. THREE.JS 3D BOARD VIEWPORT (100% full-bleed) */}
       <CommonspolyBoard3D
-        tiles={state.tiles}
-        players={state.players}
-        speculators={state.speculators}
-        activePlayerIndex={state.activePlayerIndex}
-        currentDiceRoll={state.currentDiceRoll}
-        cameraMode={state.cameraMode}
-        phase={state.phase}
-        round={state.round}
-        gameResult={state.gameResult}
+        tiles={cinemaBoardData ? cinemaBoardData.tiles : state.tiles}
+        players={cinemaBoardData ? cinemaBoardData.players : state.players}
+        speculators={cinemaBoardData ? cinemaBoardData.speculators : state.speculators}
+        activePlayerIndex={
+          cinemaBoardData ? cinemaBoardData.activePlayerIndex : state.activePlayerIndex
+        }
+        currentDiceRoll={
+          cinemaBoardData ? cinemaBoardData.currentDiceRoll : state.currentDiceRoll
+        }
+        cameraMode={isCinemaMode ? cinemaCameraMode : state.cameraMode}
+        phase={isCinemaMode ? 'PLAYER_TURN_READY' : state.phase}
+        round={cinemaBoardData ? cinemaBoardData.round : state.round}
+        gameResult={isCinemaMode ? undefined : state.gameResult}
         cooperativeEfficiency={cooperativeEfficiency.efficiency}
         weatherMode={state.weatherMode}
         weatherIntensity={state.weatherIntensity}
+        weatherAdvancedConfig={state.weatherAdvancedConfig}
         activeWeatherEvent={state.activeWeatherEvent}
         timeOfDayMode={state.timeOfDayMode}
-        currentGlobalCard={state.currentGlobalCard}
-        currentSituationCard={state.currentSituationCard}
-        activeModal={state.activeModal}
-        neighborhoodDecision={state.neighborhoodDecision}
+        currentGlobalCard={isCinemaMode ? null : state.currentGlobalCard}
+        currentSituationCard={isCinemaMode ? null : state.currentSituationCard}
+        activeModal={isCinemaMode ? null : state.activeModal}
+        neighborhoodDecision={isCinemaMode ? null : state.neighborhoodDecision}
         postProcessingEnabled={state.postProcessingEnabled}
+        tutorialFocus={isCinemaMode || state.activeModal ? 'NONE' : tutorialBoardFocus}
+        speculatorHeatmap={speculatorHeatmap}
+        speculatorTrajectories={speculatorTrajectories}
+        accessibilitySettings={accessibilitySettings}
+        telemetryRef={boardTelemetryRef}
         onTileClick={(tile) => {
+          if (isCinemaMode) return;
           playSound.uiClick();
           setInspectedTileId(prev => (prev === tile.id ? null : tile.id));
         }}
@@ -457,7 +1198,12 @@ export default function App() {
           onOpenLeaderboard={() => {
             setShowLeaderboard(true);
             void refreshLeaderboard();
+            void refreshDailyLeaderboard();
           }}
+          onOpenWeatherSettings={() => setShowWeatherSettings(true)}
+          onOpenCareerStats={() => setShowCareerStats(true)}
+          careerMatchesCount={careerStats.totalMatches}
+          careerBestPct={careerStats.totalMatches > 0 ? careerStats.bestEfficiencyPct : null}
           leaderboardTopPct={globalTopEntry?.efficiencyPct ?? null}
           leaderboardCount={leaderboardEntries.length}
           localBestPct={
@@ -467,40 +1213,59 @@ export default function App() {
           }
           achievementsUnlockedCount={(state.achievements ?? []).filter(a => a.isUnlocked).length}
           achievementsTotalCount={(state.achievements ?? []).length}
-          isModalOpen={showRules || showShortcuts || showAchievements || showLeaderboard}
+          isModalOpen={
+            showRules ||
+            showShortcuts ||
+            showAchievements ||
+            showLeaderboard ||
+            showWeatherSettings ||
+            showCareerStats ||
+            showAccessibility ||
+            showMultiplayerLobby
+          }
           soundEnabled={state.soundEnabled}
           onToggleSound={toggleSound}
           savedGameMeta={savedGameMeta}
           onResumeSavedGame={resumeSavedGame}
           onDeleteSavedGame={clearSavedGame}
+          dailyConfig={dailyConfig}
+          localDailyBest={localDailyBest}
+          onStartDailyChallenge={handleStartDailyChallenge}
+          onOpenMultiplayer={() => setShowMultiplayerLobby(true)}
+          isOnline={isOnline}
+          onOpenAccessibility={() => setShowAccessibility(true)}
+          accessibilityModeLabel={getAccessibilityPalette(accessibilitySettings.colorVisionMode).label}
         />
       )}
 
-      {/* 3. SETUP WIZARD VIEW */}
-      {state.phase === 'SETUP' && (
-        <SetupWizard
-          onComplete={finalizeSetup}
-          onCancel={pauseToTitle}
-        />
-      )}
+      <Suspense fallback={null}>
+        {/* 3. SETUP WIZARD VIEW */}
+        {state.phase === 'SETUP' && (
+          <SetupWizard
+            onComplete={finalizeSetup}
+            onCancel={pauseToTitle}
+            onOpenWeatherSettings={() => setShowWeatherSettings(true)}
+          />
+        )}
 
       {/* 4. ACTIVE GAMEPLAY HUD OVERLAY */}
-      {state.phase !== 'TITLE' && state.phase !== 'SETUP' && state.phase !== 'GAME_OVER' && (
+      {state.phase !== 'TITLE' && state.phase !== 'SETUP' && state.phase !== 'GAME_OVER' && !isCinemaMode && (
         <>
           <GameOverlayHUD
             state={state}
             isRulesOpen={showRules}
             isShortcutsOpen={showShortcuts}
             isAchievementsOpen={showAchievements}
+            isWeatherSettingsOpen={showWeatherSettings}
             isGameHistoryOpen={isGameHistoryOpen}
             isEvolutionOpen={isEvolutionOpen}
             isDockCollapsed={isDockCollapsed}
-            onRollDice={rollDiceForCurrentPlayer}
-            onUnlockTile={unlockCurrentTile}
-            onPassTile={passCurrentTile}
+            onRollDice={handleActionRollDice}
+            onUnlockTile={handleActionUnlockTile}
+            onPassTile={handleActionPassTile}
             onTurnTimeout={passTurnOnTimeout}
-            onTryEnterAgora={tryEnterAgora}
-            onStayInAgora={stayInAgora}
+            onTryEnterAgora={handleActionTryEnterAgora}
+            onStayInAgora={handleActionStayInAgora}
             onOpenDetentionRescue={openDetentionRescue}
             onTriggerNeighborhoodDecision={triggerNeighborhoodDecision}
             onOpenRules={() => setShowRules(true)}
@@ -512,9 +1277,13 @@ export default function App() {
             onToggleEvolution={handleToggleEvolution}
             onCloseEvolution={() => setIsEvolutionOpen(false)}
             onToggleDock={() => setIsDockCollapsed(prev => !prev)}
-            isTutorialOpen={isTutorialOpen}
-            onToggleTutorial={() => setIsTutorialOpen(prev => !prev)}
-            onTutorialVisibilityChange={setIsTutorialOpen}
+            isTutorialOpen={tutorialOpenOverride}
+            onToggleTutorial={() =>
+              setTutorialOpenOverride(isTutorialOverlayVisible ? false : true)
+            }
+            onCloseTutorial={() => setTutorialOpenOverride(undefined)}
+            onTutorialVisibilityChange={setIsTutorialOverlayVisible}
+            onTutorialBoardFocusChange={setTutorialBoardFocus}
             onSetCameraMode={setCameraMode}
             onToggleSound={toggleSound}
             onToggleHaptics={toggleHaptics}
@@ -523,10 +1292,39 @@ export default function App() {
             onSetWeatherMode={setWeatherMode}
             onSetWeatherIntensity={setWeatherIntensity}
             onSetTimeOfDayMode={setTimeOfDayMode}
-            onSendCooperativeChat={sendCooperativeChat}
+            onSendCooperativeChat={handleActionSendChat}
             savedGameMeta={savedGameMeta}
             onSaveGame={saveGameNow}
             onPauseToTitle={pauseToTitle}
+            onOpenCinemaMode={openCinemaMode}
+            replayFramesCount={replayFrames.length}
+            onOpenWeatherSettings={() => setShowWeatherSettings(true)}
+            boardTelemetryRef={boardTelemetryRef}
+            isPerformanceMonitorOpen={showPerformanceMonitor}
+            onTogglePerformanceMonitor={() => setShowPerformanceMonitor(prev => !prev)}
+            onClosePerformanceMonitor={() => setShowPerformanceMonitor(false)}
+            isEconomyDebugOpen={showEconomyDebug}
+            onToggleEconomyDebug={() => setShowEconomyDebug(prev => !prev)}
+            onCloseEconomyDebug={() => setShowEconomyDebug(false)}
+            isSpeculatorHeatmapEnabled={isSpeculatorHeatmapEnabled}
+            onToggleSpeculatorHeatmap={() => setIsSpeculatorHeatmapEnabled(prev => !prev)}
+            isSpeculatorTrajectoriesEnabled={isSpeculatorTrajectoriesEnabled}
+            onToggleSpeculatorTrajectories={() =>
+              setIsSpeculatorTrajectoriesEnabled(prev => !prev)
+            }
+            onSelectTileFromDebug={(tileId) => {
+              playSound.uiClick();
+              setInspectedTileId(prev => (prev === tileId ? null : tileId));
+            }}
+            accessibilitySettings={accessibilitySettings}
+            onOpenAccessibility={() => setShowAccessibility(true)}
+            onApplySandboxMutation={applySandboxMutation}
+            onSimulateDiceRoll={simulateDiceRollInSandbox}
+            onSimulateSpeculatorsTurn={simulateSpeculatorsWaveInSandbox}
+            onRestorePreSandbox={restorePreSandboxState}
+            canRestoreSandbox={canRestoreSandbox}
+            isRemoteMultiplayerTurn={isRemoteMultiplayerTurn}
+            remoteTurnOwnerName={remoteTurnOwnerName}
           />
           {!state.activeModal && (
             <TileInspectorHUD
@@ -565,7 +1363,7 @@ export default function App() {
             state.activePlayerIndex,
             state.activeWeatherEvent
           )}
-          onConfirm={resolveSituationCard}
+          onConfirm={handleActionResolveSituationCard}
         />
       )}
 
@@ -628,7 +1426,7 @@ export default function App() {
       )}
 
       {/* Fin de Juego: Superposición cinematográfica de partículas + Modal Resumen */}
-      {state.phase === 'GAME_OVER' && state.gameResult && (
+      {state.phase === 'GAME_OVER' && state.gameResult && !isCinemaMode && (
         <>
           <GameOverCinematicOverlay
             result={state.gameResult}
@@ -664,10 +1462,39 @@ export default function App() {
                 playSound.uiClick();
                 setShowGameOverSummary(false);
               }}
-              onRestart={resetToTitle}
+              onOpenCinemaMode={() => {
+                playSound.modalOpen();
+                openCinemaMode();
+              }}
+              replayFramesCount={replayFrames.length}
+              careerStats={careerStats}
+              onOpenCareerStats={() => {
+                playSound.modalOpen();
+                setShowCareerStats(true);
+              }}
+              isSandboxSession={state.isSandboxSession}
+              dailyChallengeDate={state.dailyChallengeDate}
+              onRestart={handleExitToTitle}
             />
           )}
         </>
+      )}
+
+      {/* 5B. MODO CINE / REPETICIÓN AUTOMÁTICA DE PARTIDA */}
+      {isCinemaMode && replayFrames.length > 0 && (
+        <CinemaReplayHUD
+          frames={replayFrames}
+          currentIndex={cinemaFrameIndex}
+          onSelectFrame={setCinemaFrameIndex}
+          isPlaying={isCinemaPlaying}
+          onSetPlaying={setIsCinemaPlaying}
+          playbackSpeed={cinemaSpeed}
+          onChangeSpeed={setCinemaSpeed}
+          cameraMode={cinemaCameraMode}
+          onChangeCameraMode={setCinemaCameraMode}
+          tiles={state.tiles}
+          onExit={closeCinemaMode}
+        />
       )}
 
       {/* Manual de Reglas */}
@@ -700,7 +1527,7 @@ export default function App() {
         onResetAchievements={resetAchievements}
       />
 
-      {/* Clasificación Global ('Leaderboard') */}
+      {/* Clasificación Global y Reto Diario ('Leaderboard') */}
       <LeaderboardModal
         isOpen={showLeaderboard}
         entries={leaderboardEntries}
@@ -712,6 +1539,12 @@ export default function App() {
         latestMatchEfficiencyPct={
           state.phase === 'GAME_OVER' ? cooperativeEfficiency.efficiencyPct : null
         }
+        dailyConfig={dailyConfig}
+        dailyEntries={dailyEntries}
+        isDailyLoading={isDailyLoading}
+        localDailyBestPct={localDailyBest?.efficiencyPct ?? null}
+        onStartDailyChallenge={handleStartDailyChallenge}
+        onRefreshDaily={() => void refreshDailyLeaderboard()}
         onClose={() => {
           playSound.modalClose();
           setShowLeaderboard(false);
@@ -725,6 +1558,54 @@ export default function App() {
             : undefined
         }
       />
+
+      {/* Panel de Configuración Avanzada de Clima */}
+      <WeatherSettingsModal
+        isOpen={showWeatherSettings}
+        config={state.weatherAdvancedConfig ?? DEFAULT_WEATHER_ADVANCED_CONFIG}
+        weatherMode={state.weatherMode}
+        weatherIntensity={state.weatherIntensity ?? 0.85}
+        timeOfDayMode={state.timeOfDayMode}
+        onUpdateConfig={setWeatherAdvancedConfig}
+        onSetWeatherMode={setWeatherMode}
+        onSetWeatherIntensity={setWeatherIntensity}
+        onSetTimeOfDayMode={setTimeOfDayMode}
+        onClose={() => setShowWeatherSettings(false)}
+      />
+
+      {/* Estadísticas Acumuladas de Partidas Jugadas */}
+      <CareerStatsModal
+        isOpen={showCareerStats}
+        stats={careerStats}
+        onClose={() => setShowCareerStats(false)}
+        onResetStats={() => setCareerStats(resetCareerStats())}
+      />
+
+      {/* Modal de Accesibilidad y Modos Daltónicos */}
+      <AccessibilityModal
+        isOpen={showAccessibility}
+        settings={accessibilitySettings}
+        onUpdateSettings={setAccessibilitySettings}
+        onClose={() => setShowAccessibility(false)}
+      />
+
+      {/* Lobby de Salas Multijugador Cooperativas Online */}
+      <MultiplayerLobbyModal
+        isOpen={showMultiplayerLobby}
+        authUser={authUser}
+        isAuthBusy={isAuthBusy}
+        isOnline={isOnline}
+        activeRoom={activeRoom}
+        onClose={() => setShowMultiplayerLobby(false)}
+        onSignInGoogle={() => void handleSignInGoogle()}
+        onCreateRoom={handleCreateMultiplayerRoom}
+        onJoinByCode={handleJoinRoomByCode}
+        onJoinById={handleJoinRoomById}
+        onUpdateMember={handleUpdateRoomMember}
+        onLeaveRoom={handleLeaveMultiplayerRoom}
+        onLaunchMatch={handleLaunchMultiplayerMatch}
+      />
+      </Suspense>
 
     </div>
   );

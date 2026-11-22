@@ -16,6 +16,11 @@ import { GLOBAL_CARDS, SITUATION_CARDS } from '../data/cards';
 import { INITIAL_TILES } from '../data/tiles';
 import { loadLocalAchievements } from './achievements';
 import { hapticsManager } from './haptics';
+import { buildTurnReplayFrame, MAX_REPLAY_FRAMES } from './replay';
+import {
+  loadWeatherAdvancedConfig,
+  normalizeWeatherAdvancedConfig
+} from './weatherSettings';
 
 const STORAGE_KEY = 'commonspoly_saved_game_v1';
 const SCHEMA_VERSION = 2;
@@ -87,6 +92,7 @@ interface SerializableGameState {
   playerStats?: GameEngineState['playerStats'];
   performanceHistory?: GameEngineState['performanceHistory'];
   turnHistory?: GameEngineState['turnHistory'];
+  replayFrames?: GameEngineState['replayFrames'];
   cameraMode: GameEngineState['cameraMode'];
   soundEnabled: boolean;
   hapticsEnabled?: boolean;
@@ -94,6 +100,7 @@ interface SerializableGameState {
   ambientMode: GameEngineState['ambientMode'];
   weatherMode: GameEngineState['weatherMode'];
   weatherIntensity?: number;
+  weatherAdvancedConfig?: GameEngineState['weatherAdvancedConfig'];
   timeOfDayMode?: GameEngineState['timeOfDayMode'];
   activeCrisis?: GameEngineState['activeCrisis'];
   turnsSinceLastCrisis?: number;
@@ -295,6 +302,7 @@ export function saveGameToStorage(
     playerStats: state.playerStats,
     performanceHistory: state.performanceHistory,
     turnHistory: state.turnHistory,
+    replayFrames: state.replayFrames?.slice(-MAX_REPLAY_FRAMES),
     cameraMode: state.cameraMode,
     soundEnabled: state.soundEnabled,
     hapticsEnabled: state.hapticsEnabled,
@@ -302,6 +310,7 @@ export function saveGameToStorage(
     ambientMode: state.ambientMode,
     weatherMode: state.weatherMode,
     weatherIntensity: state.weatherIntensity,
+    weatherAdvancedConfig: state.weatherAdvancedConfig,
     timeOfDayMode: state.timeOfDayMode,
     activeCrisis: state.activeCrisis ?? null,
     turnsSinceLastCrisis: state.turnsSinceLastCrisis ?? 0,
@@ -332,6 +341,7 @@ export function saveGameToStorage(
     // Reintentar con un historial más compacto si el almacenamiento está cerca del límite
     try {
       payload.state.logs = state.logs.slice(0, 120);
+      payload.state.replayFrames = state.replayFrames?.slice(-12);
       storage.setItem(STORAGE_KEY, JSON.stringify(payload));
       return buildMetadata(payload);
     } catch {
@@ -458,6 +468,25 @@ export function loadSavedGameFromStorage(options?: {
       playerStats: saved.playerStats,
       performanceHistory: saved.performanceHistory,
       turnHistory: saved.turnHistory,
+      replayFrames:
+        Array.isArray(saved.replayFrames) && saved.replayFrames.length > 0
+          ? saved.replayFrames
+          : [
+              buildTurnReplayFrame({
+                prevFrames: [],
+                logs: Array.isArray(saved.logs) ? saved.logs : [],
+                round: Math.max(1, saved.round ?? 1),
+                actorId: saved.players[safePlayerIndex]?.id ?? 'resume',
+                actorName: saved.players[safePlayerIndex]?.name ?? 'Partida Reanudada',
+                actorColor: saved.players[safePlayerIndex]?.color ?? '#14b8a6',
+                activePlayerIndex: safePlayerIndex,
+                diceRoll: normalizedDiceRoll,
+                players: saved.players,
+                speculators: Array.isArray(saved.speculators) ? saved.speculators : [],
+                tiles: saved.tiles,
+                fallbackSummary: 'Estado restaurado desde autoguardado'
+              })
+            ],
       cameraMode: saved.cameraMode || 'ISOMETRIC',
       soundEnabled: saved.soundEnabled ?? true,
       hapticsEnabled: saved.hapticsEnabled ?? hapticsManager.isEnabled(),
@@ -465,6 +494,9 @@ export function loadSavedGameFromStorage(options?: {
       ambientMode: saved.ambientMode || 'AUTO',
       weatherMode: saved.weatherMode || 'AUTO',
       weatherIntensity: saved.weatherIntensity ?? 0.85,
+      weatherAdvancedConfig: saved.weatherAdvancedConfig
+        ? normalizeWeatherAdvancedConfig(saved.weatherAdvancedConfig)
+        : loadWeatherAdvancedConfig(),
       timeOfDayMode: saved.timeOfDayMode || 'AUTO',
       activeCrisis: saved.activeCrisis ?? null,
       turnsSinceLastCrisis: saved.turnsSinceLastCrisis ?? 0,

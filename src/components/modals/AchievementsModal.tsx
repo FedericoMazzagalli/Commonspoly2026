@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { CooperativeAchievement } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { useI18n } from '../../i18n';
 
 interface AchievementsModalProps {
   isOpen: boolean;
@@ -73,6 +74,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   onClose,
   onResetAchievements
 }) => {
+  const { t } = useI18n();
   const [filter, setFilter] = useState<AchievementFilter>('ALL');
   const [confirmingReset, setConfirmingReset] = useState(false);
 
@@ -92,7 +94,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Logros locales de Commonspoly"
+      aria-label={t.modals.achievementsTitle}
       className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 overflow-y-auto"
       onClick={onClose}
     >
@@ -108,14 +110,14 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-white tracking-tight">
-                Logros Locales
+                {t.modals.achievementsTitle}
               </h2>
               <div className="text-xs text-slate-400 flex items-center gap-2 tabular-nums mt-0.5">
-                <span>{unlockedCount} de {totalCount} completados</span>
+                <span>{unlockedCount} {t.common.of} {totalCount}</span>
                 <span aria-hidden="true">·</span>
                 <span className="text-amber-300 font-semibold">{completionPct}%</span>
                 <span aria-hidden="true">·</span>
-                <span>Guardado en este navegador</span>
+                <span>{t.modals.achievementsSubtitle}</span>
               </div>
             </div>
           </div>
@@ -124,8 +126,8 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-            aria-label="Cerrar logros"
-            title="Cerrar (Esc)"
+            aria-label={t.common.close}
+            title={t.common.close}
           >
             <X className="w-4 h-4" />
           </button>
@@ -152,7 +154,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                   filter === 'ALL' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Todos ({totalCount})
+                {t.debug.allFilter} ({totalCount})
               </button>
               <button
                 type="button"
@@ -164,7 +166,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                   filter === 'UNLOCKED' ? 'bg-emerald-700 text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Desbloqueados ({unlockedCount})
+                {t.modals.unlocked} ({unlockedCount})
               </button>
               <button
                 type="button"
@@ -176,7 +178,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                   filter === 'LOCKED' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Pendientes ({totalCount - unlockedCount})
+                {t.modals.locked} ({totalCount - unlockedCount})
               </button>
             </div>
           </div>
@@ -220,7 +222,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                             {tier.label}
                           </span>
                           <span aria-hidden="true">·</span>
-                          <span>{ach.isUnlocked ? 'Desbloqueado' : `${ach.progress.current}/${ach.progress.target}`}</span>
+                          <span>{ach.isUnlocked ? t.modals.unlocked : `${ach.progress.current}/${ach.progress.target}`}</span>
                         </div>
                         {ach.isUnlocked && (
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -248,7 +250,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
 
                       {ach.isUnlocked && (ach.unlockedAtRound !== undefined || ach.unlockedByPlayerName) && (
                         <div className="text-[10px] text-slate-500 pt-0.5 tabular-nums truncate">
-                          {ach.unlockedAtRound !== undefined ? `Ronda ${ach.unlockedAtRound}` : 'Completado'}
+                          {ach.unlockedAtRound !== undefined ? `${t.hud.roundLabel} ${ach.unlockedAtRound}` : t.modals.unlocked}
                           {ach.unlockedByPlayerName ? ` · ${ach.unlockedByPlayerName}` : ''}
                         </div>
                       )}
@@ -274,11 +276,11 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                 className="inline-flex items-center gap-1.5 text-slate-400 hover:text-rose-300 disabled:opacity-40 disabled:pointer-events-none transition-colors whitespace-nowrap shrink-0"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reiniciar progreso</span>
+                <span>{t.modals.resetAchievements}</span>
               </button>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-rose-300 font-medium">¿Borrar logros locales?</span>
+                <span className="text-rose-300 font-medium">{t.modals.confirmReset}</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -287,7 +289,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                   }}
                   className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold transition-colors whitespace-nowrap shrink-0"
                 >
-                  Confirmar
+                  {t.common.confirm}
                 </button>
                 <button
                   type="button"
@@ -297,7 +299,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                   }}
                   className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors whitespace-nowrap shrink-0"
                 >
-                  Cancelar
+                  {t.common.cancel}
                 </button>
               </div>
             )}
@@ -305,14 +307,14 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
 
           <div className="flex items-center gap-3">
             <span className="hidden sm:inline">
-              Pulsa <kbd className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[11px] text-slate-200">Esc</kbd> para cerrar
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[11px] text-slate-200">Esc</kbd>
             </span>
             <button
               type="button"
               onClick={onClose}
               className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors whitespace-nowrap shrink-0"
             >
-              Cerrar
+              {t.common.close}
             </button>
           </div>
         </div>

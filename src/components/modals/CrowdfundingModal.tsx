@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { HeartHandshake, Check, X } from 'lucide-react';
 import { Character } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { useI18n } from '../../i18n';
 
 interface CrowdfundingModalProps {
   donor: Character;
@@ -22,6 +23,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
   onDonate,
   onPass
 }) => {
+  const { t } = useI18n();
   const recipients = players.filter(p => p.id !== donor.id);
   const maxDonation = Math.min(3, Math.max(0, donor.wellness - 1));
 
@@ -36,7 +38,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Caja de Resistencia y Crowdfunding"
+      aria-label={t.modals.crowdfundingTitle}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80"
     >
       <div className="w-full max-w-lg bg-slate-900 border border-teal-500/60 rounded-2xl shadow-2xl p-6 text-slate-100">
@@ -48,10 +50,10 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
             </div>
             <div>
               <div className="text-[11px] font-bold uppercase tracking-wider text-teal-400">
-                Casilla Especial · Crowdfunding Barrial
+                {t.modals.crowdfundingTitle}
               </div>
               <h2 className="text-xl font-extrabold text-white">
-                Apoyo Mutuo y Caja Solidaria
+                {t.modals.crowdfundingTitle}
               </h2>
             </div>
           </div>
@@ -63,7 +65,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
               onPass();
             }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            aria-label="Cerrar y pasar"
+            aria-label={t.common.close}
           >
             <X className="w-4 h-4" />
           </button>
@@ -72,16 +74,15 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
         {/* Body */}
         <div className="py-4 space-y-4">
           <p className="text-sm text-slate-300 leading-relaxed">
-            <strong className="text-white">{donor.name}</strong> (Bienestar:{' '}
-            <span className="font-bold text-rose-300 tabular-nums">{donor.wellness}</span>) puede donar
-            Bienestar a una compañera. Cada punto donado otorga{' '}
-            <strong className="text-amber-300">+2 de Legitimidad</strong>.
+            <strong className="text-white">{donor.name}</strong> ({t.common.wellness}:{' '}
+            <span className="font-bold text-rose-300 tabular-nums">{donor.wellness}</span>) →{' '}
+            <strong className="text-amber-300">+2 {t.common.legitimacy}</strong>
           </p>
 
           {canDonate ? (
             <>
               <div className="space-y-2">
-                <div className="text-xs font-bold text-slate-300">Cantidad a donar</div>
+                <div className="text-xs font-bold text-slate-300">{t.modals.donate}</div>
                 <div className="flex items-center gap-2">
                   {[1, 2, 3].map(val => {
                     const disabled = val > maxDonation;
@@ -100,7 +101,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
                             : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none'
                         }`}
                       >
-                        {val} Bienestar → +{val * 2} Legitimidad
+                        {val} {t.common.wellness} → +{val * 2} {t.common.legitimacy}
                       </button>
                     );
                   })}
@@ -108,7 +109,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
               </div>
 
               <div className="space-y-2">
-                <div className="text-xs font-bold text-slate-300">Destinataria del apoyo</div>
+                <div className="text-xs font-bold text-slate-300">{t.gameover.participantCol}</div>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                   {sortedRecipients.map(player => {
                     const isSelected = player.id === targetId;
@@ -133,7 +134,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
                           />
                           <span className="font-bold truncate">{player.name}</span>
                           <span className="text-slate-400 tabular-nums">
-                            ({player.wellness} Bienestar · {player.legitimacy} Leg.)
+                            ({player.wellness} {t.common.wellness} · {player.legitimacy} {t.common.legitimacy})
                           </span>
                         </div>
                         {isSelected && <Check className="w-4 h-4 text-teal-400 shrink-0" />}
@@ -145,7 +146,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
             </>
           ) : (
             <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400">
-              Tu Bienestar es de {donor.wellness}; necesitas al menos 2 puntos para donar sin quedarte sin energía.
+              {t.common.wellness}: {donor.wellness} (&lt; 2)
             </div>
           )}
         </div>
@@ -160,7 +161,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
             }}
             className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
           >
-            Continuar sin donar
+            {t.hud.passTurn}
           </button>
 
           {canDonate && targetId && (
@@ -170,7 +171,7 @@ export const CrowdfundingModal: React.FC<CrowdfundingModalProps> = ({
               className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 tabular-nums"
             >
               <HeartHandshake className="w-4 h-4" />
-              <span>Donar {amount} Bienestar (+{amount * 2} Leg.)</span>
+              <span>{t.modals.donate} {amount} (+{amount * 2})</span>
             </button>
           )}
         </div>
