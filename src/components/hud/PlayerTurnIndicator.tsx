@@ -147,10 +147,10 @@ const CharacterAvatar: React.FC<{
       {renderPortraitSvg()}
       {isActive && (
         <span
-          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-950 flex items-center justify-center"
+          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-950 flex items-center justify-center shadow-sm"
           style={{ backgroundColor: character.color }}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+          <span className="w-1.5 h-1.5 rounded-full bg-white" />
         </span>
       )}
     </div>

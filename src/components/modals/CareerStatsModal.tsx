@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   BarChart3,
   Trophy,
@@ -23,6 +24,7 @@ import { CareerMatchStats, getCareerSummary } from '../../utils/matchHistoryStat
 import { playSound } from '../../utils/audio';
 import { DifficultyLevel } from '../../types/game';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface CareerStatsModalProps {
   isOpen: boolean;
@@ -39,8 +41,6 @@ export const CareerStatsModal: React.FC<CareerStatsModalProps> = ({
 }) => {
   const { t, formatDate } = useI18n();
   const [confirmReset, setConfirmReset] = useState(false);
-
-  if (!isOpen) return null;
 
   const difficultyLabels: Record<DifficultyLevel, string> = {
     MAD_MAX: t.setup.diffMadMax,
@@ -61,20 +61,18 @@ export const CareerStatsModal: React.FC<CareerStatsModalProps> = ({
   const maxCharMatches = topChars[0]?.matchesPlayed || 1;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/88 overflow-y-auto pointer-events-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="career-stats-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          playSound.modalClose();
-          setConfirmReset(false);
-          onClose();
-        }
-      }}
-    >
-      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto space-y-5">
+    <AnimatePresence>
+      {isOpen && (
+        <ModalFrame
+          ariaLabelledBy="career-stats-title"
+          backdropClassName="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/88 overflow-y-auto pointer-events-auto"
+          className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto space-y-5"
+          onBackdropClick={() => {
+            playSound.modalClose();
+            setConfirmReset(false);
+            onClose();
+          }}
+        >
         {/* Header */}
         <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3 min-w-0">
@@ -85,7 +83,7 @@ export const CareerStatsModal: React.FC<CareerStatsModalProps> = ({
               <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400">
                 {t.modals.careerSubtitle}
               </div>
-              <h2 id="career-stats-title" className="text-xl sm:text-2xl font-black text-white truncate">
+              <h2 id="career-stats-title" className="hud-heading text-xl sm:text-2xl font-black text-white truncate">
                 {t.modals.careerTitle}
               </h2>
             </div>
@@ -264,7 +262,7 @@ export const CareerStatsModal: React.FC<CareerStatsModalProps> = ({
                                 ? t.common.draw
                                 : t.common.defeat}
                             </span>
-                            <span className="text-slate-500">·</span>
+                            <span className="text-slate-400">·</span>
                             <span className="text-teal-300 tabular-nums">
                               {match.efficiencyPct}%
                             </span>
@@ -276,7 +274,7 @@ export const CareerStatsModal: React.FC<CareerStatsModalProps> = ({
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0 text-[10px] text-slate-500 tabular-nums">
+                      <div className="text-right shrink-0 text-[10px] text-slate-400 tabular-nums">
                         <div>{formatShortDate(match.playedAt)}</div>
                         <div>{match.playerCount}</div>
                       </div>
@@ -344,7 +342,8 @@ export const CareerStatsModal: React.FC<CareerStatsModalProps> = ({
             {t.common.close}
           </button>
         </div>
-      </div>
-    </div>
+        </ModalFrame>
+      )}
+    </AnimatePresence>
   );
 };

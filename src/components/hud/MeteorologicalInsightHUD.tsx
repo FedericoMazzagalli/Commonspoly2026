@@ -7,6 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   CloudRain,
   Snowflake,
@@ -20,13 +21,13 @@ import {
   Compass,
   MapPin,
   ShieldCheck,
-  Sparkles,
   ArrowRight
 } from 'lucide-react';
 import { GameEngineState, GoodType, WeatherType } from '../../types/game';
 import { predictWeatherForecast, resolveWeather } from '../../utils/weather';
 import { formatWeatherImpactSummary } from '../../utils/weatherEvents';
 import { playSound } from '../../utils/audio';
+import { HudPanelMotion } from '../ui/MotionPrimitives';
 
 interface PrioritizedResourceAdvice {
   target: string;
@@ -272,8 +273,6 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   const isCurrentFavorable =
     currentWeather.type === 'RAIN' ||
     currentWeather.type === 'SUNNY' ||
@@ -291,56 +290,64 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
   })();
 
   return (
-    <section
-      aria-label="Meteorological Insight - Análisis Climático Estratégico"
-      className="pointer-events-auto fixed top-16 right-3 md:right-6 z-30 w-[26rem] sm:w-[32rem] max-w-[94vw] max-h-[calc(100vh-10rem)] overflow-y-auto bg-slate-900/95 border border-cyan-700/70 rounded-2xl shadow-2xl p-4 text-slate-100 select-none space-y-3.5"
-    >
-      {/* Cabecera */}
-      <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="p-1.5 rounded-xl bg-cyan-950/80 border border-cyan-700/60 text-cyan-300 shrink-0">
-            <Radar className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-bold text-white truncate">
-              Meteorological Insight
-            </h3>
-            <p className="text-[11px] text-slate-400 truncate tabular-nums">
-              Parte estratégico · Ronda {state.round}/20
-              {lastUpdatedRound !== null ? ` · Act. R${lastUpdatedRound}` : ''}
-            </p>
-          </div>
-        </div>
+    <AnimatePresence>
+      {isOpen && (
+        <HudPanelMotion
+          as="section"
+          direction="right"
+          onSwipeDismiss={() => {
+            playSound.modalClose();
+            onClose();
+          }}
+          ariaLabel="Meteorological Insight - Análisis Climático Estratégico"
+          className="pointer-events-auto fixed top-16 right-3 md:right-6 z-30 w-[26rem] sm:w-[32rem] max-w-[94vw] max-h-[calc(100vh-10rem)] overflow-y-auto bg-slate-900/95 border border-cyan-700/70 rounded-2xl shadow-2xl p-4 text-slate-100 select-none space-y-3.5"
+        >
+          {/* Cabecera */}
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-xl bg-cyan-950/80 border border-cyan-700/60 text-cyan-300 shrink-0">
+                <Radar className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="hud-heading text-sm font-bold text-white truncate">
+                  Meteorological Insight
+                </h3>
+                <p className="text-[11px] text-slate-400 truncate tabular-nums">
+                  Parte estratégico · Ronda {state.round}/20
+                  {lastUpdatedRound !== null ? ` · Act. R${lastUpdatedRound}` : ''}
+                </p>
+              </div>
+            </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              playSound.uiClick();
-              fetchInsight();
-            }}
-            disabled={loading}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-cyan-300 flex items-center gap-1.5 transition-colors"
-            title="Reanalizar clima, registros y tablero actual"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Actualizar</span>
-          </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.uiClick();
+                  fetchInsight();
+                }}
+                disabled={loading}
+                className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-cyan-300 flex items-center gap-1.5 transition-colors"
+                title="Reanalizar clima, registros y tablero actual"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Actualizar</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              playSound.modalClose();
-              onClose();
-            }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            aria-label="Cerrar Meteorological Insight"
-            title="Cerrar (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.modalClose();
+                  onClose();
+                }}
+                className="min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                aria-label="Cerrar Meteorological Insight"
+                title="Cerrar (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
       {/* Evento Meteorológico Dinámico Activo */}
       {state.activeWeatherEvent && (
@@ -418,7 +425,7 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
       {loading && (
         <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
           <div className="flex items-center gap-2 text-xs font-semibold text-cyan-300">
-            <Sparkles className="w-4 h-4 animate-spin shrink-0" />
+            <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
             <span>Analizando pronóstico climático, historial de turnos y recursos del tablero...</span>
           </div>
           <div className="h-3 w-3/4 rounded bg-slate-800" />
@@ -521,6 +528,8 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
           </div>
         </div>
       )}
-    </section>
+        </HudPanelMotion>
+      )}
+    </AnimatePresence>
   );
 };

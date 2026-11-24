@@ -197,11 +197,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
             {isCritical || isWarning ? (
               <AlertTriangle
                 className={`w-3 h-3 shrink-0 ${
-                  isCritical && !shouldReduceMotion
-                    ? 'text-rose-400 animate-bounce'
-                    : isCritical
-                    ? 'text-rose-400'
-                    : 'text-amber-400'
+                  isCritical ? 'text-rose-400' : 'text-amber-400'
                 }`}
               />
             ) : (

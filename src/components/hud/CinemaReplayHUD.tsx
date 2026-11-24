@@ -67,7 +67,7 @@ function renderLogTypeIcon(type: GameLogEntry['type']) {
 
 function DeltaReadout({ value, unit = '' }: { value: number; unit?: string }) {
   if (value === 0) {
-    return <span className="text-[10px] text-slate-500 tabular-nums">0{unit}</span>;
+    return <span className="text-[10px] text-slate-400 tabular-nums">0{unit}</span>;
   }
   const positive = value > 0;
   return (
@@ -252,7 +252,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
       aria-label="Modo Cine de Repetición de Partida"
     >
       {/* 1. BARRA SUPERIOR DE TELEMETRÍA Y CÁMARA */}
-      <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-2 bg-slate-950/92 border border-slate-700/80 rounded-2xl px-3.5 py-2.5 shadow-2xl">
+      <div className="hud-surface pointer-events-auto flex flex-wrap items-center justify-between gap-2 bg-slate-950/92 border border-slate-700/80 rounded-2xl px-3.5 py-2.5 shadow-2xl">
         <div className="flex flex-wrap items-center gap-3 min-w-0">
           <div className="flex items-center gap-2 text-amber-300 font-black text-xs sm:text-sm tracking-tight">
             <Film className="w-4 h-4 text-amber-400 shrink-0" />
@@ -336,7 +336,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
               playSound.uiClick();
               setShowAnalysisPanel(prev => !prev);
             }}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
             title={showAnalysisPanel ? 'Ocultar panel de análisis' : 'Mostrar panel de análisis'}
           >
             {showAnalysisPanel ? (
@@ -353,7 +353,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
               playSound.modalClose();
               onExit();
             }}
-            className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
+            className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
             <span>Salir (Esc)</span>
@@ -365,7 +365,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
       <div className="flex-1 min-h-0 flex justify-end items-stretch overflow-hidden">
         {showAnalysisPanel && analysis && (
           <aside
-            className="pointer-events-auto w-full sm:w-80 md:w-96 max-h-full bg-slate-950/92 border border-slate-700/80 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-3 overflow-y-auto"
+            className="hud-surface pointer-events-auto w-full sm:w-80 md:w-96 max-h-full bg-slate-950/92 border border-slate-700/80 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-3 overflow-y-auto"
             aria-label="Análisis de decisiones del turno"
           >
             {/* Cabecera del turno */}
@@ -482,7 +482,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
                       <div className="text-[11px] text-slate-300 flex items-center gap-1 truncate">
                         {moved ? (
                           <>
-                            <span className="text-slate-500 truncate">{prevTileName}</span>
+                            <span className="text-slate-400 truncate">{prevTileName}</span>
                             <ArrowRight className="w-3 h-3 text-teal-400 shrink-0" />
                             <span className="text-teal-200 font-medium truncate">
                               {tileName}
@@ -539,7 +539,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
                 Logs del Turno ({currentFrame.turnLogs.length})
               </div>
               {currentFrame.turnLogs.length === 0 ? (
-                <p className="text-[11px] text-slate-500 italic">
+                <p className="text-[11px] text-slate-400 italic">
                   Sin registros adicionales en este fotograma.
                 </p>
               ) : (
@@ -551,7 +551,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
                     >
                       {renderLogTypeIcon(log.type)}
                       <div className="min-w-0 flex-1">
-                        <span className="text-slate-500 mr-1.5 tabular-nums">
+                        <span className="text-slate-400 mr-1.5 tabular-nums">
                           R{log.round}
                         </span>
                         <span>{log.message}</span>
@@ -566,7 +566,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
       </div>
 
       {/* 3. DOCK INFERIOR DE TRANSPORTE Y LÍNEA TEMPORAL */}
-      <div className="pointer-events-auto bg-slate-950/92 border border-slate-700/80 rounded-2xl px-3.5 py-2.5 shadow-2xl space-y-2">
+      <div className="hud-surface pointer-events-auto bg-slate-950/92 border border-slate-700/80 rounded-2xl px-3.5 py-2.5 shadow-2xl space-y-2">
         {/* Línea de tiempo interactiva con marcadores por turno */}
         <div className="flex items-center gap-3">
           <span className="text-[11px] font-bold text-slate-400 tabular-nums shrink-0">
@@ -624,7 +624,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
               type="button"
               onClick={handleJumpStart}
               disabled={safeIndex === 0}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
+              className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
               title="Ir al primer fotograma (Inicio)"
               aria-label="Ir al primer fotograma"
             >
@@ -634,7 +634,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
               type="button"
               onClick={() => handleStep(-1)}
               disabled={safeIndex === 0}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
+              className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
               title="Turno anterior (Flecha izquierda)"
               aria-label="Turno anterior"
             >
@@ -644,7 +644,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
               type="button"
               onClick={handleTogglePlay}
               disabled={frames.length <= 1}
-              className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg transition-colors"
+              className="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg transition-colors"
               title="Reproducir o pausar repetición (Espacio)"
             >
               {isPlaying ? (
@@ -667,7 +667,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
               type="button"
               onClick={() => handleStep(1)}
               disabled={safeIndex >= frames.length - 1}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
+              className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
               title="Siguiente turno (Flecha derecha)"
               aria-label="Siguiente turno"
             >
@@ -677,7 +677,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
               type="button"
               onClick={handleJumpEnd}
               disabled={safeIndex >= frames.length - 1}
-              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
+              className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center p-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 text-slate-200 transition-colors"
               title="Ir al último fotograma (Fin)"
               aria-label="Ir al último fotograma"
             >
@@ -696,7 +696,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
                     playSound.uiClick();
                     onChangeSpeed(speed);
                   }}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                  className={`min-h-[36px] sm:min-h-[28px] px-2 py-1 rounded-lg text-[11px] font-bold transition-colors ${
                     playbackSpeed === speed
                       ? 'bg-teal-500 text-slate-950'
                       : 'text-slate-300 hover:text-white hover:bg-slate-800'
@@ -706,7 +706,7 @@ export const CinemaReplayHUD: React.FC<CinemaReplayHUDProps> = ({
                 </button>
               ))}
             </div>
-            <span className="hidden lg:inline text-[11px] text-slate-500 pl-1">
+            <span className="hidden lg:inline text-[11px] text-slate-400 pl-1">
               Espacio: Play/Pausa · ←/→: Turno · 1/2/3: Cámara
             </span>
           </div>

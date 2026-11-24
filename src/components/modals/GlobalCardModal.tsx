@@ -7,6 +7,7 @@ import React from 'react';
 import { Globe, Sparkles, ArrowRight } from 'lucide-react';
 import { GlobalCard } from '../../types/game';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface GlobalCardModalProps {
   card: GlobalCard | null;
@@ -19,9 +20,10 @@ export const GlobalCardModal: React.FC<GlobalCardModalProps> = ({ card, round, o
   if (!card) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88">
-      <div className="w-full max-w-xl bg-slate-900 border-2 border-amber-500/80 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
-        
+    <ModalFrame
+      ariaLabel={card.title}
+      className="w-full max-w-xl bg-slate-900 border-2 border-amber-500/80 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 my-auto"
+    >
         {/* Card Badge */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-widest">
@@ -35,7 +37,7 @@ export const GlobalCardModal: React.FC<GlobalCardModalProps> = ({ card, round, o
 
         {/* Card Body */}
         <div className="py-6 space-y-4">
-          <h3 className="text-2xl font-black text-white leading-tight">
+          <h3 className="hud-heading text-2xl font-black text-white leading-tight">
             {card.title}
           </h3>
 
@@ -53,16 +55,15 @@ export const GlobalCardModal: React.FC<GlobalCardModalProps> = ({ card, round, o
         {/* Action Button */}
         <div className="pt-4 border-t border-slate-800 flex justify-end">
           <button
+            type="button"
             onClick={onConfirm}
-            className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
+            className="min-h-[44px] sm:min-h-[38px] px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
           >
             <Sparkles className="w-4 h-4" />
             <span>{t.modals.acknowledgeCard}</span>
             <ArrowRight className="w-4 h-4 ml-1" />
           </button>
         </div>
-
-      </div>
-    </div>
+    </ModalFrame>
   );
 };

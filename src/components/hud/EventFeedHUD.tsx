@@ -8,6 +8,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Activity,
   AlertTriangle,
@@ -28,6 +29,7 @@ import {
 } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { useI18n } from '../../i18n';
+import { useSwipeToDismiss } from '../ui/MotionPrimitives';
 
 interface EventFeedHUDProps {
   state: GameEngineState;
@@ -363,10 +365,22 @@ export const EventFeedHUD: React.FC<EventFeedHUDProps> = ({
     return items.slice(0, 5);
   }, [state]);
 
+  const { swipeX, swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
+    direction: 'right',
+    enabled: !isCollapsed,
+    resetOnDismiss: true,
+    onDismiss: () => {
+      playSound.uiToggle(false);
+      setIsCollapsed(true);
+    }
+  });
+
   return (
-    <section
+    <motion.section
       aria-label={t.hud.eventFeedTitle || 'Eventos Críticos'}
-      className="pointer-events-auto w-full md:w-72 lg:w-80 bg-slate-900/90 border border-slate-700/80 rounded-2xl shadow-xl text-slate-100 overflow-hidden"
+      style={{ x: swipeX, y: swipeY }}
+      className={`pointer-events-auto w-full md:w-72 lg:w-80 bg-slate-900/90 border border-slate-700/80 rounded-2xl shadow-xl text-slate-100 overflow-hidden ${touchActionClass}`}
+      {...swipeHandlers}
     >
       {/* Cabecera */}
       <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-950/75 border-b border-slate-800/80">
@@ -477,6 +491,6 @@ export const EventFeedHUD: React.FC<EventFeedHUDProps> = ({
           )}
         </div>
       )}
-    </section>
+    </motion.section>
   );
 };

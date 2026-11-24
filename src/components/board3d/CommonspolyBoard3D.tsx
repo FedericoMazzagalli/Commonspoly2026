@@ -94,6 +94,7 @@ interface Board3DProps {
   speculatorHeatmap?: Record<number, BoardDangerZoneEntry> | null;
   speculatorTrajectories?: SpeculatorTrajectory[] | null;
   accessibilitySettings?: AccessibilitySettings;
+  selectedTileId?: number | null;
 }
 
 // Pre-allocated math helpers (zero per-frame GC allocations)
@@ -135,7 +136,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
   tutorialFocus = 'NONE',
   speculatorHeatmap = null,
   speculatorTrajectories = null,
-  accessibilitySettings = DEFAULT_ACCESSIBILITY_SETTINGS
+  accessibilitySettings = DEFAULT_ACCESSIBILITY_SETTINGS,
+  selectedTileId = null
 }) => {
   const { t } = useI18n();
   const mountRef = useRef<HTMLDivElement>(null);
@@ -185,7 +187,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     tutorialFocus,
     speculatorHeatmap,
     speculatorTrajectories,
-    accessibilitySettings
+    accessibilitySettings,
+    selectedTileId
   });
   propsRef.current = {
     tiles,
@@ -213,7 +216,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     tutorialFocus,
     speculatorHeatmap,
     speculatorTrajectories,
-    accessibilitySettings
+    accessibilitySettings,
+    selectedTileId
   };
 
   // Helper: map board tile ID to (x, y, z)
@@ -429,6 +433,43 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       intendedTargetRingPool.push(ringMesh);
       intendedTargetRingMaterials.push(ringMat);
     }
+
+    // Pre-allocated 3D Hover & Selected Tile Indicator Rings (zero per-frame allocations)
+    const hoverRingGeo = new THREE.RingGeometry(1.24, 1.38, 4);
+    const hoverRingMat = new THREE.MeshBasicMaterial({
+      color: 0x5eead4,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+      side: THREE.DoubleSide
+    });
+    const hoverRingMesh = new THREE.Mesh(hoverRingGeo, hoverRingMat);
+    hoverRingMesh.rotation.set(-Math.PI / 2, 0, Math.PI / 4);
+    hoverRingMesh.renderOrder = 4;
+    hoverRingMesh.visible = false;
+    scene.add(hoverRingMesh);
+
+    const selectedRingGeo = new THREE.RingGeometry(1.26, 1.44, 4);
+    const selectedRingMat = new THREE.MeshBasicMaterial({
+      color: 0x2dd4bf,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
+      side: THREE.DoubleSide
+    });
+    const selectedRingMesh = new THREE.Mesh(selectedRingGeo, selectedRingMat);
+    selectedRingMesh.rotation.set(-Math.PI / 2, 0, Math.PI / 4);
+    selectedRingMesh.renderOrder = 4;
+    selectedRingMesh.visible = false;
+    scene.add(selectedRingMesh);
+
+    let hoveredTileId: number | null = null;
 
     // Pre-allocated 3D Speculator Trajectory Indicators (zero per-frame allocations)
     const MAX_SPECULATOR_TRAJECTORIES = 6;
@@ -1462,6 +1503,11 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       let totalCullableObjects = 0;
       let culledObjects = 0;
 
+      const earlyA11ySettings = propsRef.current.accessibilitySettings ?? DEFAULT_ACCESSIBILITY_SETTINGS;
+      const isReducedMotion = Boolean(
+        reducedMotionQuery?.matches || earlyA11ySettings.reducedMotionOverride
+      );
+
       // Update Player Pawn Positions with smooth node-by-node stepping, frustum culling & distance LOD
       currPlayers.forEach((player, idx) => {
         const mesh = playerMeshesRef.current.get(player.id);
@@ -1486,12 +1532,12 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           }
 
           const hopY =
-            currPhase !== 'GAME_OVER' && travelDist > 0.08
+            !isReducedMotion && currPhase !== 'GAME_OVER' && travelDist > 0.08
               ? Math.min(0.62, travelDist * 0.16) * Math.abs(Math.sin(travelDist * 1.4))
               : 0;
           const targetY =
             currPhase === 'GAME_OVER' && currResult === 'VICTORY'
-              ? (player.inAgora ? 0.65 : 0.35) + Math.abs(Math.sin(elapsed * 3.5 + idx)) * 0.35
+              ? (player.inAgora ? 0.65 : 0.35) + (isReducedMotion ? 0 : Math.abs(Math.sin(elapsed * 3.5 + idx)) * 0.35)
               : (player.inAgora ? 0.65 : 0.35) + hopY;
 
           const pawnDamp = hasQueuedWaypoints ? 14 : 10;
@@ -1511,10 +1557,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
 
           if (isPawnVisible) {
             if (currPhase === 'GAME_OVER') {
-              mesh.rotation.y += delta * (currResult === 'VICTORY' ? 1.5 : 0.35);
-              mesh.scale.setScalar(1.0 + Math.sin(elapsed * 3 + idx) * 0.06);
+              mesh.rotation.y += isReducedMotion ? 0 : delta * (currResult === 'VICTORY' ? 1.5 : 0.35);
+              mesh.scale.setScalar(isReducedMotion ? 1.0 : 1.0 + Math.sin(elapsed * 3 + idx) * 0.06);
             } else if (idx === currIdx) {
-              mesh.scale.setScalar(1.0 + Math.sin(elapsed * 4) * 0.05);
+              mesh.scale.setScalar(isReducedMotion ? 1.06 : 1.0 + Math.sin(elapsed * 4) * 0.05);
             } else {
               mesh.scale.setScalar(1.0);
             }
@@ -1560,9 +1606,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         }
       }
 
-      const isReducedMotion = Boolean(
-        reducedMotionQuery?.matches || a11ySettings.reducedMotionOverride
-      );
+      const currSelectedTileId = currPhase !== 'GAME_OVER' ? propsRef.current.selectedTileId : null;
       const activeDecision = propsRef.current.neighborhoodDecision;
       const currTutorialFocus: TutorialBoardFocus =
         currPhase !== 'GAME_OVER' ? (propsRef.current.tutorialFocus ?? 'NONE') : 'NONE';
@@ -1570,6 +1614,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       const tutPulse = isReducedMotion ? 0.65 : 0.5 + 0.5 * Math.sin(elapsed * 4.2);
       const heatPulse = isReducedMotion ? 0.55 : 0.5 + 0.5 * Math.sin(elapsed * 4.6);
       let activeIntendedRings = 0;
+      let hoverRingApplied = false;
+      let selectedRingApplied = false;
 
       propsRef.current.tiles.forEach((tile, idx) => {
         const tileMesh = tileMeshesRef.current.get(tile.id);
@@ -1578,6 +1624,23 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         const cullRadius = tile.category === 'CORNER' ? 2.1 : 1.65;
         const isInView = isWorldSphereInFrustum(tile.x, 0.25, tile.z, cullRadius);
         const dangerEntry = currHeatmap ? currHeatmap[tile.id] : undefined;
+        const isSelectedTile = currSelectedTileId !== null && tile.id === currSelectedTileId;
+        const isHoveredTile = currPhase !== 'GAME_OVER' && hoveredTileId !== null && tile.id === hoveredTileId;
+
+        if (tileMesh && currPhase !== 'GAME_OVER') {
+          const targetTileY = isSelectedTile
+            ? isReducedMotion
+              ? 0.26
+              : 0.3
+            : isHoveredTile
+            ? isReducedMotion
+              ? 0.2
+              : 0.26
+            : 0.2;
+          tileMesh.position.y = THREE.MathUtils.damp(tileMesh.position.y, targetTileY, 12, delta);
+        }
+
+        const currentTileLift = tileMesh ? tileMesh.position.y - 0.2 : 0;
 
         if (padMesh) {
           const showPad = isInView && Boolean(dangerEntry && dangerEntry.tier !== 'NONE');
@@ -1585,6 +1648,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
             padMesh.visible = showPad;
           }
           if (showPad && dangerEntry && dangerEntry.tier !== 'NONE') {
+            padMesh.position.y = (tile.category === 'CORNER' ? 0.346 : 0.332) + currentTileLift;
             const padMat = padMesh.material as THREE.MeshBasicMaterial;
             const tierVis = a11yPalette.heatmapTiers[dangerEntry.tier];
             padMat.color.setHex(tierVis.hex);
@@ -1593,6 +1657,27 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
               0.24 + dangerEntry.intensity * 0.5 + (dangerEntry.isIntendedTarget ? heatPulse * 0.14 : 0)
             );
           }
+        }
+
+        if (isSelectedTile && isInView) {
+          selectedRingApplied = true;
+          selectedRingMesh.visible = true;
+          selectedRingMesh.position.set(
+            tile.x,
+            (tile.category === 'CORNER' ? 0.356 : 0.34) + currentTileLift,
+            tile.z
+          );
+          selectedRingMesh.scale.setScalar(tile.category === 'CORNER' ? 1.32 : 1.0);
+          selectedRingMat.opacity = isReducedMotion ? 0.88 : 0.78 + tutPulse * 0.18;
+        } else if (isHoveredTile && isInView) {
+          hoverRingApplied = true;
+          hoverRingMesh.visible = true;
+          hoverRingMesh.position.set(
+            tile.x,
+            (tile.category === 'CORNER' ? 0.352 : 0.336) + currentTileLift,
+            tile.z
+          );
+          hoverRingMesh.scale.setScalar(tile.category === 'CORNER' ? 1.32 : 1.0);
         }
 
         if (
@@ -1604,7 +1689,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
           const ringMesh = intendedTargetRingPool[activeIntendedRings];
           const ringMat = intendedTargetRingMaterials[activeIntendedRings];
           const tierVis = a11yPalette.heatmapTiers[dangerEntry.tier];
-          ringMesh.position.set(tile.x, tile.category === 'CORNER' ? 0.354 : 0.338, tile.z);
+          ringMesh.position.set(tile.x, (tile.category === 'CORNER' ? 0.354 : 0.338) + currentTileLift, tile.z);
           ringMat.color.setHex(tierVis.ringHex);
           ringMat.opacity = 0.72 + heatPulse * 0.24;
           ringMesh.scale.setScalar(
@@ -1733,12 +1818,20 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
             } else {
               mat.emissive.setHex(0x000000);
               mat.emissiveIntensity = 0;
-              chip.position.y = 0.42;
+              const tileLiftOffset = tileMesh ? tileMesh.position.y - 0.2 : 0;
+              chip.position.y = 0.42 + tileLiftOffset;
               chip.scale.setScalar(1.0);
             }
           }
         }
       });
+
+      if (!hoverRingApplied && hoverRingMesh.visible) {
+        hoverRingMesh.visible = false;
+      }
+      if (!selectedRingApplied && selectedRingMesh.visible) {
+        selectedRingMesh.visible = false;
+      }
 
       for (let r = activeIntendedRings; r < MAX_INTENDED_TARGET_RINGS; r++) {
         if (intendedTargetRingPool[r].visible) {
@@ -1917,10 +2010,12 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
         if (!diceVisible) culledObjects += 1;
         if (diceVisible || isRollingRef.current) {
           if (isRollingRef.current) {
-            diceGroupRef.current.rotation.x += 18 * delta;
-            diceGroupRef.current.rotation.y += 24 * delta;
-            diceGroupRef.current.rotation.z += 15 * delta;
-            diceGroupRef.current.position.y = 1.6 + Math.sin(elapsed * 12) * 0.4;
+            if (!isReducedMotion) {
+              diceGroupRef.current.rotation.x += 18 * delta;
+              diceGroupRef.current.rotation.y += 24 * delta;
+              diceGroupRef.current.rotation.z += 15 * delta;
+              diceGroupRef.current.position.y = 1.6 + Math.sin(elapsed * 12) * 0.4;
+            }
           } else {
             diceGroupRef.current.rotation.x = THREE.MathUtils.damp(diceGroupRef.current.rotation.x, diceTargetRotationRef.current.x, 8, delta);
             diceGroupRef.current.rotation.y = THREE.MathUtils.damp(diceGroupRef.current.rotation.y, diceTargetRotationRef.current.y, 8, delta);
@@ -2371,11 +2466,51 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     // Manejo de interacción táctil/ratón y raycasting sobre casillas
     let pointerStartX = 0;
     let pointerStartY = 0;
+    let lastHoverRaycastAt = 0;
 
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       pointerStartX = e.clientX;
       pointerStartY = e.clientY;
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!container || !renderer || !camera || isSoftwareGl) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - lastHoverRaycastAt < 45) return;
+      lastHoverRaycastAt = now;
+
+      if (propsRef.current.phase === 'GAME_OVER' || propsRef.current.activeModal) {
+        if (hoveredTileId !== null) {
+          hoveredTileId = null;
+          renderer.domElement.style.cursor = '';
+        }
+        return;
+      }
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      _raycasterPointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      _raycasterPointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      _raycaster.setFromCamera(_raycasterPointer, camera);
+
+      const tileMeshArray = Array.from(tileMeshesRef.current.values());
+      const intersects = _raycaster.intersectObjects(tileMeshArray, false);
+      const nextTileId =
+        intersects.length > 0 && intersects[0].object.userData?.tileId !== undefined
+          ? (intersects[0].object.userData.tileId as number)
+          : null;
+
+      if (hoveredTileId !== nextTileId) {
+        hoveredTileId = nextTileId;
+        renderer.domElement.style.cursor = nextTileId !== null ? 'pointer' : '';
+      }
+    };
+
+    const handlePointerLeave = () => {
+      hoveredTileId = null;
+      if (renderer?.domElement) {
+        renderer.domElement.style.cursor = '';
+      }
     };
 
     const handlePointerUp = (e: PointerEvent) => {
@@ -2407,6 +2542,8 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
     };
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    renderer.domElement.addEventListener('pointermove', handlePointerMove);
+    renderer.domElement.addEventListener('pointerleave', handlePointerLeave);
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
 
     // Resize Handler
@@ -2446,7 +2583,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
       renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+      renderer.domElement.removeEventListener('pointerleave', handlePointerLeave);
       renderer.domElement.removeEventListener('pointerup', handlePointerUp);
+      renderer.domElement.style.cursor = '';
       particleGeo.dispose();
       particleMat.dispose();
       particleTexture.dispose();
@@ -2480,6 +2620,10 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       heatmapTileGeo.dispose();
       heatmapCornerGeo.dispose();
       heatmapRingGeo.dispose();
+      hoverRingGeo.dispose();
+      hoverRingMat.dispose();
+      selectedRingGeo.dispose();
+      selectedRingMat.dispose();
       heatmapPadMaterials.forEach(m => m.dispose());
       intendedTargetRingMaterials.forEach(m => m.dispose());
       heatmapPadMeshes.clear();

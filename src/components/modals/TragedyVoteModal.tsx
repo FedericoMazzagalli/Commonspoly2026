@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { Skull, AlertTriangle, Check } from 'lucide-react';
 import { Tile } from '../../types/game';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface TragedyVoteModalProps {
   tiles: Tile[];
@@ -42,19 +43,20 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
   const needed = Math.min(3, commonTiles.length);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40">
-      <div className="w-full max-w-lg bg-slate-900 border-2 border-red-600 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
-        
+    <ModalFrame
+      ariaLabel={t.modals.tragedyVoteTitle}
+      className="w-full max-w-lg bg-slate-900 border-2 border-red-600 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 my-auto"
+    >
         {/* Header */}
         <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
           <div className="p-2.5 rounded-xl bg-red-600/20 text-red-400 border border-red-600/40">
-            <Skull className="w-6 h-6 animate-bounce" />
+            <Skull className="w-6 h-6" />
           </div>
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-red-400">
               {t.modals.tragedyVoteTitle}
             </div>
-            <h2 className="text-2xl font-black text-white">
+            <h2 className="hud-heading text-2xl font-black text-white">
               {t.modals.tragedyVoteTitle}
             </h2>
           </div>
@@ -102,15 +104,14 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
         {/* Footer */}
         <div className="pt-4 border-t border-slate-800 flex justify-end">
           <button
+            type="button"
             disabled={selectedIds.length < needed && commonTiles.length >= needed}
             onClick={handleConfirm}
-            className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-2 transition-all shadow-lg active:scale-95"
+            className="min-h-[44px] sm:min-h-[38px] px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-2 transition-all shadow-lg active:scale-95"
           >
             <span>{t.modals.confirmPrivatization}</span>
           </button>
         </div>
-
-      </div>
-    </div>
+    </ModalFrame>
   );
 };

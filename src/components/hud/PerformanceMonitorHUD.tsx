@@ -6,6 +6,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   Activity,
   Cpu,
@@ -23,6 +24,7 @@ import {
 } from '../../utils/performanceTelemetry';
 import { useI18n } from '../../i18n';
 import type { TranslationDict } from '../../i18n/types';
+import { HudPanelMotion } from '../ui/MotionPrimitives';
 
 interface PerformanceMonitorHUDProps {
   isOpen: boolean;
@@ -111,8 +113,6 @@ export const PerformanceMonitorHUD: React.FC<PerformanceMonitorHUDProps> = ({
     return () => window.clearInterval(intervalId);
   }, [isOpen, telemetryRef]);
 
-  if (!isOpen) return null;
-
   const fpsStatus = getFpsClassification(telemetry.fps, t.perf);
   const cullingPct =
     telemetry.totalCullableObjects > 0
@@ -126,43 +126,48 @@ export const PerformanceMonitorHUD: React.FC<PerformanceMonitorHUDProps> = ({
       : t.hud.camIsometric;
 
   return (
-    <aside
-      role="region"
-      aria-label={t.perf.title}
-      className="pointer-events-auto fixed left-3 right-3 sm:left-auto sm:right-6 top-16 sm:top-20 z-40 sm:w-80 bg-slate-950 border border-teal-700/80 rounded-2xl shadow-2xl text-slate-100 overflow-hidden"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-800 bg-slate-900">
-        <div className="flex items-center gap-2 min-w-0">
-          <Activity className="w-4 h-4 text-teal-400 shrink-0" />
-          <div className="min-w-0">
-            <h2 className="text-xs font-extrabold tracking-wide uppercase text-white truncate">
-              {t.perf.title}
-            </h2>
-          </div>
-        </div>
+    <AnimatePresence>
+      {isOpen && (
+        <HudPanelMotion
+          as="aside"
+          direction="right"
+          onSwipeDismiss={onClose}
+          role="region"
+          ariaLabel={t.perf.title}
+          className="pointer-events-auto fixed left-3 right-3 sm:left-auto sm:right-6 top-16 sm:top-20 z-40 sm:w-80 bg-slate-950 border border-teal-700/80 rounded-2xl shadow-2xl text-slate-100 overflow-hidden"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-800 bg-slate-900">
+            <div className="flex items-center gap-2 min-w-0">
+              <Activity className="w-4 h-4 text-teal-400 shrink-0" />
+              <div className="min-w-0">
+                <h2 className="hud-heading text-xs font-extrabold tracking-wide uppercase text-white truncate">
+                  {t.perf.title}
+                </h2>
+              </div>
+            </div>
 
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsCompact(prev => !prev)}
-            className="min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-            title={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
-            aria-label={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
-          >
-            {isCompact ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-            title={t.common.close}
-            aria-label={t.common.close}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsCompact(prev => !prev)}
+                className="min-w-[44px] min-h-[44px] sm:min-w-[30px] sm:min-h-[30px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                title={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
+                aria-label={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
+              >
+                {isCompact ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-w-[44px] min-h-[44px] sm:min-w-[30px] sm:min-h-[30px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                title={t.common.close}
+                aria-label={t.common.close}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
       {/* Compact Strip Mode (Ideal en pantallas móviles estrechas) */}
       {isCompact ? (
@@ -328,6 +333,8 @@ export const PerformanceMonitorHUD: React.FC<PerformanceMonitorHUDProps> = ({
           </div>
         </div>
       )}
-    </aside>
+        </HudPanelMotion>
+      )}
+    </AnimatePresence>
   );
 };

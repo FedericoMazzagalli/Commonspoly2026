@@ -6,6 +6,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   History,
   X,
@@ -28,6 +29,7 @@ import {
 } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { GameTimelinePanel } from './GameTimelinePanel';
+import { HudPanelMotion } from '../ui/MotionPrimitives';
 
 interface GameHistorySidebarProps {
   isOpen: boolean;
@@ -248,45 +250,51 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
     return { label: 'Acción', color: 'text-teal-300 bg-teal-950/80 border-teal-800/60' };
   };
 
-  if (!isOpen) return null;
-
   return (
-    <aside
-      aria-label="Panel de Chat y Narrativa de Sesión"
-      className="pointer-events-auto fixed top-16 right-3 md:right-6 bottom-6 w-[23rem] sm:w-[28rem] max-w-[94vw] z-40 flex flex-col bg-slate-900/95 border border-teal-700/80 rounded-2xl shadow-2xl overflow-hidden text-slate-100 select-text"
-    >
-      {/* CABECERA */}
-      <div className="px-4 py-3 bg-slate-950/90 border-b border-teal-900/50 flex flex-col gap-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-teal-400 shrink-0" />
-              <h2 className="text-sm font-extrabold text-white tracking-tight truncate">
-                Chat y Narrativa de Sesión
-              </h2>
-            </div>
-            <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 tabular-nums">
-              <span>{narrativeItems.length} registros</span>
-              <span aria-hidden="true">·</span>
-              <span>Ronda {round} / 20</span>
-              <span aria-hidden="true">·</span>
-              <span>{activeView === 'TIMELINE' ? 'Timeline de Hitos' : chronologicalAsc ? 'Cronológico' : 'Recientes'}</span>
-            </div>
-          </div>
+    <AnimatePresence>
+      {isOpen && (
+        <HudPanelMotion
+          as="aside"
+          direction="right"
+          onSwipeDismiss={() => {
+            playSound.modalClose();
+            onClose();
+          }}
+          ariaLabel="Panel de Chat y Narrativa de Sesión"
+          className="pointer-events-auto fixed top-16 right-3 md:right-6 bottom-6 w-[23rem] sm:w-[28rem] max-w-[94vw] z-40 flex flex-col bg-slate-900/95 border border-teal-700/80 rounded-2xl shadow-2xl overflow-hidden text-slate-100 select-text"
+        >
+          {/* CABECERA */}
+          <div className="px-4 py-3 bg-slate-950/90 border-b border-teal-900/50 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-teal-400 shrink-0" />
+                  <h2 className="hud-heading text-sm font-extrabold text-white tracking-tight truncate">
+                    Chat y Narrativa de Sesión
+                  </h2>
+                </div>
+                <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 tabular-nums">
+                  <span>{narrativeItems.length} registros</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Ronda {round} / 20</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{activeView === 'TIMELINE' ? 'Timeline de Hitos' : chronologicalAsc ? 'Cronológico' : 'Recientes'}</span>
+                </div>
+              </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              playSound.modalClose();
-              onClose();
-            }}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-            aria-label="Cerrar panel de chat y narrativa"
-            title="Cerrar (Esc)"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.modalClose();
+                  onClose();
+                }}
+                className="min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                aria-label="Cerrar panel de chat y narrativa"
+                title="Cerrar (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
         {/* Selector de modo: Narrativa & Chat vs Timeline de Hitos */}
         <div className="grid grid-cols-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs">
@@ -340,13 +348,13 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
           <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 space-y-2.5">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Buscar votación, rescate, chat o ronda..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                  className="w-full min-h-[38px] sm:min-h-[32px] bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-teal-500"
                 />
             {searchQuery && (
               <button
@@ -465,7 +473,7 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
                 {showRoundDivider && (
                   <div className="sticky top-0 z-10 py-1.5 bg-slate-900/95 border-b border-slate-800 text-[11px] font-bold text-teal-400 flex items-center justify-between tabular-nums">
                     <span>Ronda {item.round}</span>
-                    <span className="text-[10px] font-normal text-slate-500">
+                    <span className="text-[10px] font-normal text-slate-400">
                       Narrativa de Sesión
                     </span>
                   </div>
@@ -473,7 +481,7 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
 
                 <div className="py-2.5 px-3 rounded-xl bg-slate-950/40 border border-slate-800/80 hover:border-slate-700 transition-colors">
                   <div className="flex items-center gap-1.5 text-[11px] text-slate-400 tabular-nums flex-wrap mb-1">
-                    <span className="font-mono text-slate-500">#{item.sequenceNumber}</span>
+                    <span className="font-mono text-slate-400">#{item.sequenceNumber}</span>
                     <span aria-hidden="true">·</span>
                     <span className="font-bold" style={{ color: actorColor }}>
                       {item.actor}
@@ -482,7 +490,7 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
                     <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${badge.color}`}>
                       {badge.label}
                     </span>
-                    <span className="ml-auto font-mono text-[10px] text-slate-500">
+                    <span className="ml-auto font-mono text-[10px] text-slate-400">
                       {item.timestamp}
                     </span>
                   </div>
@@ -517,6 +525,8 @@ export const GameHistorySidebar: React.FC<GameHistorySidebarProps> = ({
       )}
         </>
       )}
-    </aside>
+        </HudPanelMotion>
+      )}
+    </AnimatePresence>
   );
 };

@@ -51,6 +51,7 @@ import { LeaderboardEntry, LeaderboardSubmissionStatus } from '../../utils/leade
 import { CareerMatchStats, getCareerSummary } from '../../utils/matchHistoryStats';
 import { type User } from '../../firebase';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface GameOverModalProps {
   result: 'VICTORY' | 'DRAW' | 'DEFEAT';
@@ -307,8 +308,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
       : t.gameover.metricLegitimacy;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 overflow-y-auto">
-      <div className="w-full max-w-5xl max-h-[92vh] overflow-y-auto bg-slate-900/95 border border-teal-500/60 rounded-3xl shadow-2xl p-5 sm:p-7 text-slate-100 animate-in fade-in zoom-in-95 duration-200 my-auto">
+    <ModalFrame
+      ariaLabel={t.gameover.summaryTitle}
+      backdropClassName="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 overflow-y-auto pointer-events-auto"
+      className="w-full max-w-5xl max-h-[92vh] overflow-y-auto bg-slate-900/95 border border-teal-500/60 rounded-3xl shadow-2xl p-5 sm:p-7 text-slate-100 my-auto"
+    >
         {/* Cabecera del desenlace */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-5 border-b border-slate-800">
           <div className="flex items-start sm:items-center gap-4 text-left">
@@ -334,7 +338,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400">
                 Commonspoly · {t.gameover.summaryTitle}
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight mt-0.5">
+              <h2 className="hud-heading text-2xl sm:text-3xl font-black text-white leading-tight mt-0.5">
                 {result === 'VICTORY' && t.gameover.victoryTitle}
                 {result === 'DRAW' && t.gameover.drawTitle}
                 {result === 'DEFEAT' && t.gameover.defeatTitle}
@@ -371,7 +375,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               {t.hud.roundLabel}
             </div>
             <div className="text-2xl font-black text-white tabular-nums mt-0.5">
-              {round} <span className="text-sm font-semibold text-slate-500">/ 20</span>
+              {round} <span className="text-sm font-semibold text-slate-400">/ 20</span>
             </div>
           </div>
 
@@ -420,7 +424,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('evolution')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'evolution'
                     ? 'bg-teal-500 text-slate-950 font-bold'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800'
@@ -432,7 +436,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('resources')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'resources'
                     ? 'bg-teal-500 text-slate-950 font-bold'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800'
@@ -444,7 +448,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('commons')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'commons'
                     ? 'bg-teal-500 text-slate-950 font-bold'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800'
@@ -456,7 +460,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('breakdown')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'breakdown'
                     ? 'bg-teal-500 text-slate-950 font-bold'
                     : 'text-slate-300 hover:text-white hover:bg-slate-800'
@@ -726,7 +730,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   type="button"
                   onClick={onSignInAndPublish}
                   disabled={isAuthBusy}
-                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>{isAuthBusy ? t.multiplayer.connecting : t.gameover.signInPublish}</span>
@@ -736,7 +740,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <button
                   type="button"
                   onClick={onOpenLeaderboard}
-                  className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-teal-300 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                  className="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-teal-300 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
                 >
                   <Globe className="w-3.5 h-3.5" />
                   <span>{t.gameover.viewLeaderboard}</span>
@@ -820,7 +824,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </ModalFrame>
   );
 };

@@ -10,6 +10,7 @@
  */
 
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   CloudRain,
   Snowflake,
@@ -33,6 +34,7 @@ import { resolveWeather } from '../../utils/weather';
 import { resolveCardAtmosphere, resolveGameTimeOfDay } from '../../utils/atmosphere';
 import { formatWeatherImpactSummary } from '../../utils/weatherEvents';
 import { playSound } from '../../utils/audio';
+import { HUD_EASE, isReducedMotionActive } from '../ui/MotionPrimitives';
 
 interface WeatherControllerHUDProps {
   state: GameEngineState;
@@ -126,7 +128,7 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
   return (
     <div
       aria-label="Controlador de Clima Dinámico"
-      className="pointer-events-auto bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl text-slate-100 overflow-hidden transition-all text-xs"
+      className="hud-surface pointer-events-auto bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl text-slate-100 overflow-hidden transition-all text-xs"
     >
       {/* Barra principal compacta con accesos directos rápidos */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5">
@@ -246,8 +248,15 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
       </div>
 
       {/* Panel expandido con detalles y selectores */}
+      <AnimatePresence initial={false}>
       {isExpanded && (
-        <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 space-y-2.5 animate-in fade-in duration-200">
+        <motion.div
+          initial={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -4 }}
+          animate={isReducedMotionActive() ? { opacity: 1 } : { opacity: 1, y: 0 }}
+          exit={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -4 }}
+          transition={{ duration: isReducedMotionActive() ? 0.01 : 0.18, ease: HUD_EASE }}
+          className="p-3 border-t border-slate-800/80 bg-slate-950/60 space-y-2.5"
+        >
           <p className="text-[11px] text-slate-300 leading-relaxed flex items-start gap-1.5">
             <Info className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
             <span>{condition.description}</span>
@@ -449,8 +458,9 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
               </button>
             </div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 };

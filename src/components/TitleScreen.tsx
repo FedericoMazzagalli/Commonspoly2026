@@ -171,12 +171,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
         {/* Saved Match Resume Block */}
         {savedGameMeta && onResumeSavedGame && (
-          <div className="w-full max-w-md bg-slate-900/90 border border-teal-700/70 rounded-2xl p-4 space-y-2.5 shadow-xl">
+          <div className="w-full max-w-md bg-slate-900/90 border border-teal-700/70 rounded-2xl p-4 space-y-2.5 hud-surface">
             <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={onResumeSavedGame}
-                className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-teal-400 hover:from-amber-300 hover:to-teal-300 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all whitespace-nowrap shrink-0"
+                className="flex-1 min-h-[44px] px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-teal-400 hover:from-amber-300 hover:to-teal-300 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all whitespace-nowrap shrink-0"
               >
                 <RotateCcw className="w-4 h-4 shrink-0" />
                 <span>{t('title.continueSaved')}</span>
@@ -186,7 +186,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 <button
                   type="button"
                   onClick={onDeleteSavedGame}
-                  className="p-3 rounded-xl bg-slate-950 hover:bg-rose-950/70 border border-slate-800 hover:border-rose-700/70 text-slate-400 hover:text-rose-300 transition-colors shrink-0"
+                  className="min-w-[44px] min-h-[44px] p-3 flex items-center justify-center rounded-xl bg-slate-950 hover:bg-rose-950/70 border border-slate-800 hover:border-rose-700/70 text-slate-400 hover:text-rose-300 transition-colors shrink-0"
                   title={t('title.deleteSaved')}
                   aria-label={t('title.deleteSaved')}
                 >
@@ -269,7 +269,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
         {/* Deterministic Daily Seed Challenge Card */}
         {dailyConfig && onStartDailyChallenge && (
-          <div className="w-full max-w-xl bg-slate-900/90 border border-emerald-700/60 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left shadow-lg">
+          <div className="w-full max-w-xl bg-slate-900/90 border border-emerald-700/60 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left hud-surface">
             <div className="min-w-0 space-y-0.5">
               <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-emerald-300">
                 <Calendar className="w-3.5 h-3.5 shrink-0" />
@@ -401,7 +401,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       </div>
 
       {/* Control Hint Line */}
-      <div className="pb-2 text-[11px] text-slate-500 font-mono tracking-wide">
+      <div className="pb-2 text-[11px] text-slate-400 font-mono tracking-wide">
         {t('title.hintBar')}
       </div>
 

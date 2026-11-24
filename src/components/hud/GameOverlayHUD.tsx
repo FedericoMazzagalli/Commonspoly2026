@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { 
   Dices, 
   Sparkles, 
@@ -79,8 +79,13 @@ import { OfflineIndicator } from './OfflineIndicator';
 import { LanguageSelector } from './LanguageSelector';
 import { useI18n } from '../../i18n';
 import type { BoardPerformanceTelemetry } from '../../utils/performanceTelemetry';
-import type { AccessibilitySettings } from '../../utils/accessibility';
+import {
+  DEFAULT_ACCESSIBILITY_SETTINGS,
+  getAccessibilityPalette,
+  type AccessibilitySettings
+} from '../../utils/accessibility';
 import type { SandboxMutation } from '../../store/gameEngine';
+import { HUD_EASE, isReducedMotionActive, useSwipeToDismiss } from '../ui/MotionPrimitives';
 import { playSound, audioManager } from '../../utils/audio';
 import { resolveWeather } from '../../utils/weather';
 import { hapticsManager } from '../../utils/haptics';
@@ -246,9 +251,25 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const [sfxVol, setSfxVol] = useState(() => audioManager.getSfxVolume());
   const [justSaved, setJustSaved] = useState(false);
   const [saveType, setSaveType] = useState<'MANUAL' | 'AUTO'>('MANUAL');
-  const [isRecentChatCollapsed, setIsRecentChatCollapsed] = useState(false);
+  const [isRecentChatCollapsed, setIsRecentChatCollapsed] = useState(true);
+  const [isChatLogMinimized, setIsChatLogMinimized] = useState(true);
+  const [isCoopLogMinimized, setIsCoopLogMinimized] = useState(true);
   const prevAutosaveCountRef = useRef<number>(savedGameMeta?.autosaveCount ?? 0);
   const recentChatMessages = state.chatMessages.slice(-4);
+
+  const {
+    swipeX: mobileMenuSwipeX,
+    touchActionClass: mobileMenuTouchAction,
+    swipeHandlers: mobileMenuSwipeHandlers
+  } = useSwipeToDismiss({
+    direction: 'right',
+    enabled: isMobileMenuOpen,
+    resetOnDismiss: true,
+    onDismiss: () => {
+      playSound.uiToggle(false);
+      setIsMobileMenuOpen(false);
+    }
+  });
 
   useEffect(() => {
     const nextCount = savedGameMeta?.autosaveCount ?? 0;
@@ -268,6 +289,12 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const isGameHistoryOpen = controlledHistoryOpen ?? internalHistoryOpen;
   const isEvolutionOpen = controlledEvolutionOpen ?? internalEvolutionOpen;
 
+  useEffect(() => {
+    if (isGameHistoryOpen || isEvolutionOpen || isPerformanceMonitorOpen || isEconomyDebugOpen) {
+      setIsCoopLogMinimized(true);
+    }
+  }, [isGameHistoryOpen, isEvolutionOpen, isPerformanceMonitorOpen, isEconomyDebugOpen]);
+
   const handleToggleDock = () => {
     playSound.uiToggle(isDockCollapsed);
     if (onToggleDock) {
@@ -277,14 +304,37 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     }
   };
 
-  const closeAllOtherPanels = (except?: 'history' | 'evolution' | 'meteorological' | 'impact' | 'speculator') => {
+  const closeAllOtherPanels = (except?: 'history' | 'evolution' | 'meteorological' | 'impact' | 'speculator' | 'coopLog') => {
     if (except !== 'history') handleCloseHistory();
     if (except !== 'evolution') handleCloseEvolution();
     if (except !== 'meteorological') setIsMeteorologicalInsightOpen(false);
     if (except !== 'impact') setIsCollectiveImpactOpen(false);
     if (except !== 'speculator') setIsSpeculatorDashboardOpen(false);
+    if (except !== 'coopLog') setIsCoopLogMinimized(true);
     if (isPerformanceMonitorOpen && onClosePerformanceMonitor) onClosePerformanceMonitor();
     if (isEconomyDebugOpen && onCloseEconomyDebug) onCloseEconomyDebug();
+  };
+
+  const handleToggleChatLog = () => {
+    setIsChatLogMinimized(prev => {
+      const nextMinimized = !prev;
+      if (!nextMinimized) {
+        setIsCoopLogMinimized(true);
+      }
+      return nextMinimized;
+    });
+  };
+
+  const handleToggleCoopLog = () => {
+    setIsCoopLogMinimized(prev => {
+      const nextMinimized = !prev;
+      if (!nextMinimized) {
+        closeAllOtherPanels('coopLog');
+        setIsChatLogMinimized(true);
+        setIsRecentChatCollapsed(true);
+      }
+      return nextMinimized;
+    });
   };
 
   const handleToggleHistory = () => {
@@ -374,6 +424,9 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const achievementsList = state.achievements ?? [];
   const unlockedAchievementsCount = achievementsList.filter(a => a.isUnlocked).length;
 
+  const resolvedA11y = accessibilitySettings ?? DEFAULT_ACCESSIBILITY_SETTINGS;
+  const a11yPalette = getAccessibilityPalette(resolvedA11y.colorVisionMode);
+
   const activePlayer = state.players[state.activePlayerIndex];
   const currentTile = state.tiles.find(t => t.id === activePlayer?.position);
   const detainedTeammate = state.players.find(p => p.isDetained && p.id !== activePlayer?.id);
@@ -434,11 +487,11 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
           {/* Brand & Round Tracker */}
           <div
             data-tutorial-target="top-status"
-            className="flex items-center gap-2 sm:gap-3 bg-slate-900/90 border border-teal-800/80 px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl shadow-xl min-h-[44px]"
+            className="hud-surface flex items-center gap-2 sm:gap-3 bg-slate-900/90 border border-teal-800/80 px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl shadow-xl min-h-[44px]"
           >
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0" />
-              <h1 className="text-sm font-black tracking-tight text-white uppercase hidden sm:block">
+              <h1 className="hud-heading text-sm font-black tracking-tight text-white uppercase hidden sm:block">
                 Commonspoly
               </h1>
             </div>
@@ -640,8 +693,15 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
 
-              {isAudioMixerOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-slate-900/95 border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-40 text-slate-100 space-y-3">
+              <AnimatePresence>
+                {isAudioMixerOpen && (
+                  <motion.div
+                    initial={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
+                    animate={isReducedMotionActive() ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                    exit={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+                    transition={{ duration: isReducedMotionActive() ? 0.01 : 0.18, ease: HUD_EASE }}
+                    className="hud-surface absolute right-0 top-full mt-2 w-72 bg-slate-900/95 border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-40 text-slate-100 space-y-3"
+                  >
                   <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800">
                     <div className="flex items-center gap-2">
                       <Headphones className="w-4 h-4 text-teal-400 shrink-0" />
@@ -796,7 +856,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                       <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
                         <span>Dispositivo:</span>
                         <span aria-hidden="true">·</span>
-                        <span className={hapticsSupported ? 'text-emerald-400' : 'text-slate-500'}>
+                        <span className={hapticsSupported ? 'text-emerald-400' : 'text-slate-400'}>
                           {hapticsSupported ? 'Compatible (navigator.vibrate)' : 'Sin motor de vibración'}
                         </span>
                       </div>
@@ -851,8 +911,9 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                       </button>
                     </div>
                   )}
-                </div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <button
@@ -1124,74 +1185,85 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         </div>
 
         {/* MOBILE DRAWER MENU (< md) */}
-        {isMobileMenuOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Menú táctico de partida"
-            className="md:hidden fixed inset-x-3 top-16 bottom-4 z-50 bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl p-4 overflow-y-auto pointer-events-auto space-y-4 text-slate-100"
-          >
-            <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800">
-              <span className="text-sm font-black text-white uppercase tracking-wide">
-                {t.hud.menuBtn}
-              </span>
-              <div className="flex items-center gap-2">
-                <LanguageSelector variant="compact" />
-                <button
-                  type="button"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-950 border border-slate-800 text-slate-300 hover:text-white"
-                  aria-label={t.common.close}
-                >
-                  <X className="w-5 h-5" />
-                </button>
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Menú táctico de partida"
+              initial={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -10, scale: 0.98 }}
+              animate={isReducedMotionActive() ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+              exit={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
+              transition={{ duration: isReducedMotionActive() ? 0.01 : 0.2, ease: HUD_EASE }}
+              style={{ x: mobileMenuSwipeX }}
+              className={`hud-surface md:hidden fixed inset-x-3 top-16 bottom-4 z-50 bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl p-4 overflow-y-auto pointer-events-auto space-y-4 text-slate-100 ${mobileMenuTouchAction}`}
+              {...mobileMenuSwipeHandlers}
+            >
+              <div aria-hidden="true" className="pointer-events-none flex justify-center -mt-1.5 -mb-2">
+                <span className="w-9 h-1 rounded-full bg-slate-400/55" />
               </div>
-            </div>
-
-            {/* Cámara 3D */}
-            <div className="space-y-1.5">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                {t.hud.cameraBtn}
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(
-                  [
-                    { id: 'ISOMETRIC', label: t.hud.camIsometric },
-                    { id: 'TOP_DOWN', label: t.hud.camTopDown },
-                    { id: 'FOLLOW', label: t.hud.camFollow }
-                  ] as const
-                ).map(cam => (
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                <span className="hud-heading text-sm font-black text-white uppercase tracking-wide">
+                  {t.hud.menuBtn}
+                </span>
+                <div className="flex items-center gap-2">
+                  <LanguageSelector variant="compact" />
                   <button
-                    key={cam.id}
                     type="button"
-                    onClick={() => onSetCameraMode(cam.id)}
-                    className={`min-h-[44px] px-2 rounded-xl text-xs font-bold transition-colors ${
-                      state.cameraMode === cam.id
-                        ? 'bg-teal-600 text-white'
-                        : 'bg-slate-950 border border-slate-800 text-slate-300'
-                    }`}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-950 border border-slate-800 text-slate-300 hover:text-white"
+                    aria-label={t.common.close}
                   >
-                    {cam.label}
+                    <X className="w-5 h-5" />
                   </button>
-                ))}
+                </div>
               </div>
-            </div>
 
-            {/* Trackers embebidos en móvil */}
-            <div className="space-y-3">
-              <GlobalResourceTracker
-                state={state}
-                isEvolutionOpen={isEvolutionOpen}
-                onToggleEvolution={() => {
-                  setIsMobileMenuOpen(false);
-                  handleToggleEvolution();
-                }}
-                isCollectiveImpactOpen={isCollectiveImpactOpen}
-                onToggleCollectiveImpact={() => {
-                  setIsMobileMenuOpen(false);
-                  handleToggleCollectiveImpact();
-                }}
-              />
+              {/* Cámara 3D */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  {t.hud.cameraBtn}
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      { id: 'ISOMETRIC', label: t.hud.camIsometric },
+                      { id: 'TOP_DOWN', label: t.hud.camTopDown },
+                      { id: 'FOLLOW', label: t.hud.camFollow }
+                    ] as const
+                  ).map(cam => (
+                    <button
+                      key={cam.id}
+                      type="button"
+                      onClick={() => onSetCameraMode(cam.id)}
+                      className={`min-h-[44px] px-2 rounded-xl text-xs font-bold transition-colors ${
+                        state.cameraMode === cam.id
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-slate-950 border border-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {cam.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Trackers embebidos en móvil */}
+              <div className="space-y-3">
+                <GlobalResourceTracker
+                  state={state}
+                  isEvolutionOpen={isEvolutionOpen}
+                  onToggleEvolution={() => {
+                    setIsMobileMenuOpen(false);
+                    handleToggleEvolution();
+                  }}
+                  isCollectiveImpactOpen={isCollectiveImpactOpen}
+                  onToggleCollectiveImpact={() => {
+                    setIsMobileMenuOpen(false);
+                    handleToggleCollectiveImpact();
+                  }}
+                  accessibilitySettings={resolvedA11y}
+                />
               <WeatherControllerHUD
                 state={state}
                 onSetWeatherMode={onSetWeatherMode}
@@ -1404,8 +1476,9 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 <span>{t.hud.exitTitle}</span>
               </button>
             )}
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 2. SUB-ROW: PlayerTurnIndicator (Top-Left) & GlobalResourceTracker (Top-Right) */}
         <div className="w-full flex flex-col md:flex-row items-start justify-between gap-2.5">
@@ -1420,22 +1493,32 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             </div>
             {/* REGISTRO DE CHAT Y ACCIONES: oculto en móviles muy estrechos para liberar tablero */}
             <div className="hidden sm:block">
-              <GameChatLog state={state} />
+              <GameChatLog
+                state={state}
+                isMinimized={isChatLogMinimized}
+                onToggleMinimize={handleToggleChatLog}
+              />
             </div>
 
             {/* HISTORIAL RECIENTE PERSISTENTE DEL CHAT COOPERATIVO */}
             <section
               aria-label={t.hud.recentChatTitle || 'Decisiones Recientes · Chat'}
-              className="pointer-events-auto max-w-md rounded-xl border border-teal-800/60 bg-slate-900/90 shadow-lg text-slate-100 overflow-hidden"
+              className="hud-surface pointer-events-auto max-w-md rounded-xl border border-teal-800/60 bg-slate-900/90 shadow-lg text-slate-100 overflow-hidden"
             >
               <button
                 type="button"
                 onClick={() => {
                   playSound.uiToggle(isRecentChatCollapsed);
-                  setIsRecentChatCollapsed((prev) => !prev);
+                  setIsRecentChatCollapsed((prev) => {
+                    const nextCollapsed = !prev;
+                    if (!nextCollapsed) {
+                      setIsCoopLogMinimized(true);
+                    }
+                    return nextCollapsed;
+                  });
                 }}
                 aria-expanded={!isRecentChatCollapsed}
-                className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-slate-950/75 border-b border-slate-800/80 text-[11px] font-bold hover:bg-slate-900/90 transition-colors cursor-pointer"
+                className="w-full min-h-[44px] sm:min-h-[34px] flex items-center justify-between gap-2 px-3 py-1.5 bg-slate-950/75 border-b border-slate-800/80 text-[11px] font-bold hover:bg-slate-900/90 transition-colors cursor-pointer"
               >
                 <span className="flex items-center gap-1.5 min-w-0">
                   <MessageSquare className="w-3.5 h-3.5 text-teal-400 shrink-0" />
@@ -1488,7 +1571,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                               </span>
                             )}
                           </span>
-                          <span className="text-[9px] text-slate-500 tabular-nums shrink-0">
+                          <span className="text-[9px] text-slate-400 tabular-nums shrink-0">
                             {msg.timestamp}
                           </span>
                         </div>
@@ -1604,6 +1687,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   onToggleEvolution={handleToggleEvolution}
                   isCollectiveImpactOpen={isCollectiveImpactOpen}
                   onToggleCollectiveImpact={handleToggleCollectiveImpact}
+                  accessibilitySettings={resolvedA11y}
                 />
               </div>
             </div>
@@ -1644,8 +1728,13 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         isDockCollapsed={isDockCollapsed}
       />
 
-      {/* 5. HISTORIAL COLABORATIVO INFERIOR IZQUIERDO (GameLogComponent con auto-scroll) */}
-      <GameLogComponent state={state} isDockCollapsed={isDockCollapsed} />
+      {/* 5. HISTORIAL COLABORATIVO INFERIOR IZQUIERDO (GameLogComponent con auto-scroll, colapsado por defecto) */}
+      <GameLogComponent
+        state={state}
+        isDockCollapsed={isDockCollapsed}
+        isMinimized={isCoopLogMinimized}
+        onToggleMinimize={handleToggleCoopLog}
+      />
 
       {/* 5B. GAME HISTORY SIDEBAR (Registro cronológico completo de toda la partida) */}
       <GameHistorySidebar
@@ -1761,7 +1850,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
 
           <button
             onClick={handleToggleDock}
-            className="px-4 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors shadow-lg"
+            className="hud-surface min-h-[44px] sm:min-h-[34px] px-4 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-semibold text-slate-300 hover:text-white flex items-center gap-1 transition-colors shadow-lg"
             title={`${isDockCollapsed ? t.hud.dockExpand : t.hud.dockCollapse} (H)`}
           >
             {isDockCollapsed ? (
@@ -1781,7 +1870,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         {!isDockCollapsed && (
           <div
             data-tutorial-target="bottom-dock"
-            className="w-full max-w-4xl bg-slate-900/95 border border-teal-800/80 rounded-2xl shadow-2xl p-3 sm:p-4 md:p-5 text-slate-100 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4"
+            className="hud-surface w-full max-w-4xl bg-slate-900/95 border border-teal-800/80 rounded-2xl shadow-2xl p-3 sm:p-4 md:p-5 text-slate-100 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4"
           >
             
             {/* Active Turn Persona & Current Tile Info */}
@@ -1795,7 +1884,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
 
               <div className="space-y-0.5 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-extrabold text-sm sm:text-base text-white truncate">
+                  <h3 className="hud-heading font-extrabold text-sm sm:text-base text-white truncate">
                     {t.hud.playerTurn} · {activePlayer?.name}
                   </h3>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
@@ -1806,10 +1895,18 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
                   <span className="truncate"><strong className="text-slate-200">{currentTile?.name || t.common.loading}</strong></span>
                   {currentTile?.state && (
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
-                      currentTile.state === 'COMMON' ? 'bg-emerald-950 text-emerald-300' :
-                      currentTile.state === 'PUBLIC' ? 'bg-slate-800 text-slate-300' : 'bg-rose-950 text-rose-300'
-                    }`}>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 border ${
+                        resolvedA11y.colorVisionMode !== 'STANDARD'
+                          ? a11yPalette.tileStateBadgeCss[currentTile.state]
+                          : currentTile.state === 'COMMON'
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700/60'
+                          : currentTile.state === 'PUBLIC'
+                          ? 'bg-slate-800 text-slate-300 border-slate-700'
+                          : 'bg-rose-950 text-rose-300 border-rose-700/60'
+                      }`}
+                    >
+                      {resolvedA11y.showSymbolicShapes ? `${a11yPalette.tileStateShapes[currentTile.state]} ` : ''}
                       {currentTile.state === 'COMMON' ? t.common.common : currentTile.state === 'PUBLIC' ? t.common.public : t.common.private}
                     </span>
                   )}
@@ -2019,6 +2116,13 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         }
         onVisibilityChange={(visible) => {
           setInternalTutorialVisible(visible);
+          if (visible) {
+            setIsMeteorologicalInsightOpen(false);
+            setIsCollectiveImpactOpen(false);
+            setIsSpeculatorDashboardOpen(false);
+            setIsCoopLogMinimized(true);
+            setIsRecentChatCollapsed(true);
+          }
           onTutorialVisibilityChange?.(visible);
         }}
         onBoardFocusChange={onTutorialBoardFocusChange}

@@ -6,6 +6,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   CheckCircle2,
   Copy,
@@ -30,6 +31,7 @@ import {
   MultiplayerRoom
 } from '../../utils/multiplayerRooms';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface MultiplayerLobbyModalProps {
   isOpen: boolean;
@@ -109,8 +111,6 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
     }
   }, [authUser, alias]);
 
-  if (!isOpen) return null;
-
   const isHost = Boolean(activeRoom && authUser && activeRoom.hostUid === authUser.uid);
   const currentMember = activeRoom?.members.find(m => m.uid === authUser?.uid);
   const usedCharIds = new Set(
@@ -178,17 +178,14 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t.multiplayer.title}
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/85 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-3xl bg-slate-900 border border-teal-500/50 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto space-y-5"
-        onClick={e => e.stopPropagation()}
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <ModalFrame
+          ariaLabel={t.multiplayer.title}
+          backdropClassName="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 overflow-y-auto pointer-events-auto"
+          className="w-full max-w-3xl bg-slate-900 border border-teal-500/50 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto space-y-5"
+          onBackdropClick={onClose}
+        >
         {/* Cabecera */}
         <div className="flex items-start justify-between gap-3 pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -196,7 +193,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-extrabold text-white tracking-tight">
+              <h2 className="hud-heading text-lg font-extrabold text-white tracking-tight">
                 {t.multiplayer.title}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -208,7 +205,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             aria-label={t.common.close}
           >
             <X className="w-4 h-4" />
@@ -561,7 +558,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                       {t.common.loading}
                     </div>
                   ) : publicRooms.length === 0 ? (
-                    <div className="text-[11px] text-slate-500 py-3 text-center">
+                    <div className="text-[11px] text-slate-400 py-3 text-center">
                       {t.multiplayer.noPublicRooms}
                     </div>
                   ) : (
@@ -594,7 +591,8 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
             </div>
           </div>
         )}
-      </div>
-    </div>
+        </ModalFrame>
+      )}
+    </AnimatePresence>
   );
 };

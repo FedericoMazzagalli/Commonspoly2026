@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { motion } from 'motion/react';
 import {
   MessageSquare,
   Bot,
@@ -22,10 +23,13 @@ import {
 import { GameEngineState } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { GameTimelinePanel } from './GameTimelinePanel';
+import { useSwipeToDismiss } from '../ui/MotionPrimitives';
 
 export interface GameChatLogProps {
   state: GameEngineState;
   className?: string;
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
 }
 
 export interface UnifiedLogItem {
@@ -48,9 +52,12 @@ type FilterType = 'ALL' | 'BOTS' | 'PLAYERS' | 'CHAT';
 
 export const GameChatLog: React.FC<GameChatLogProps> = ({
   state,
-  className = ''
+  className = '',
+  isMinimized: controlledMinimized,
+  onToggleMinimize
 }) => {
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [internalMinimized, setInternalMinimized] = useState(true);
+  const isMinimized = controlledMinimized ?? internalMinimized;
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [modalViewMode, setModalViewMode] = useState<'LOGS' | 'TIMELINE'>('LOGS');
@@ -195,13 +202,29 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
     });
   }, [unifiedItems, modalFilter, searchQuery]);
 
+  const { swipeX, swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
+    direction: 'left',
+    enabled: !isMinimized,
+    resetOnDismiss: true,
+    onDismiss: () => {
+      playSound.uiToggle(false);
+      if (onToggleMinimize) {
+        onToggleMinimize();
+      } else {
+        setInternalMinimized(true);
+      }
+    }
+  });
+
   return (
     <>
-      <div
-        className={`pointer-events-auto w-full max-w-lg md:max-w-xl transition-all duration-200 select-none ${className}`}
+      <motion.div
+        style={{ x: swipeX, y: swipeY }}
+        className={`pointer-events-auto w-full max-w-lg md:max-w-xl transition-all duration-200 select-none ${touchActionClass} ${className}`}
         aria-label="Registro de Chat y Acciones de Partida"
+        {...swipeHandlers}
       >
-        <div className="bg-slate-900/90 border border-teal-800/60 hover:border-teal-600/70 rounded-2xl shadow-xl overflow-hidden backdrop-blur-none transition-colors">
+        <div className="hud-surface bg-slate-900/90 border border-teal-800/60 hover:border-teal-600/70 rounded-2xl shadow-xl overflow-hidden backdrop-blur-none transition-colors">
           
           {/* BARRA SUPERIOR / CABECERA */}
           <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950/70 border-b border-teal-900/40 gap-2">
@@ -259,10 +282,15 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  playSound.uiToggle(!isMinimized);
-                  setIsMinimized(!isMinimized);
+                  playSound.uiToggle(isMinimized);
+                  if (onToggleMinimize) {
+                    onToggleMinimize();
+                  } else {
+                    setInternalMinimized(prev => !prev);
+                  }
                 }}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                aria-expanded={!isMinimized}
+                className="min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                 title={isMinimized ? 'Expandir últimos 5 mensajes' : 'Minimizar registro'}
                 aria-label={isMinimized ? 'Expandir últimos 5 mensajes' : 'Minimizar registro'}
               >
@@ -402,7 +430,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                           ) : null}
 
                           {/* Ronda y hora */}
-                          <span className="text-[10px] text-slate-500 font-mono tabular-nums ml-auto shrink-0">
+                          <span className="text-[10px] text-slate-400 font-mono tabular-nums ml-auto shrink-0">
                             R{item.round} · {item.timestamp}
                           </span>
                         </div>
@@ -423,7 +451,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
           )}
 
         </div>
-      </div>
+      </motion.div>
 
       {/* MODAL / DRAWER: HISTORIAL COMPLETO DE ACCIONES DE BOTS Y JUGADORES */}
       {isHistoryModalOpen && (
@@ -549,7 +577,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Buscar bot, jugador o acción..."
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-7 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-7 py-1 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-teal-500"
                   />
                   {searchQuery && (
                     <button
@@ -674,7 +702,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                           </span>
                         )}
 
-                        <span className="text-[11px] text-slate-500 font-mono tabular-nums ml-auto shrink-0">
+                        <span className="text-[11px] text-slate-400 font-mono tabular-nums ml-auto shrink-0">
                           Ronda {item.round} · {item.timestamp}
                         </span>
                       </div>

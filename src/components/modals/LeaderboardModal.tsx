@@ -5,6 +5,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   Trophy,
   Medal,
@@ -33,6 +34,7 @@ import {
 import { DailyChallengeConfig, DailyChallengeEntry } from '../../utils/dailyChallenge';
 import { OFFICIAL_CHARACTERS } from '../../data/characters';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface LeaderboardModalProps {
   isOpen: boolean;
@@ -130,8 +132,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     latestMatchEfficiencyPct ??
     null;
 
-  if (!isOpen) return null;
-
   const handleSaveAlias = (e: React.FormEvent) => {
     e.preventDefault();
     playSound.uiClick();
@@ -141,17 +141,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t.leaderboard.title}
-      className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-950/85 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-4xl bg-slate-900 border border-teal-500/50 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto"
-        onClick={e => e.stopPropagation()}
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <ModalFrame
+          ariaLabel={t.leaderboard.title}
+          backdropClassName="fixed inset-0 z-[75] flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 overflow-y-auto pointer-events-auto"
+          className="w-full max-w-4xl bg-slate-900 border border-teal-500/50 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto"
+          onBackdropClick={onClose}
+        >
         {/* Header */}
         <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -159,7 +156,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
               <Globe className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-extrabold text-white tracking-tight">
+              <h2 className="hud-heading text-lg font-extrabold text-white tracking-tight">
                 {t.leaderboard.title}
               </h2>
               <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap tabular-nums mt-0.5">
@@ -192,7 +189,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 }
               }}
               disabled={activeBoardTab === 'DAILY' ? isDailyLoading : isLoading}
-              className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 disabled:opacity-50 transition-colors"
+              className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 disabled:opacity-50 transition-colors"
               title={t.leaderboard.refresh}
               aria-label={t.leaderboard.refresh}
             >
@@ -205,7 +202,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               aria-label={t.common.close}
               title={t.common.close}
             >
@@ -568,7 +565,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                             ) : rank === 3 ? (
                               <Medal className="w-4 h-4 text-amber-600 shrink-0" />
                             ) : (
-                              <span className="w-4 text-center text-slate-500 font-bold">
+                              <span className="w-4 text-center text-slate-400 font-bold">
                                 #{rank}
                               </span>
                             )}
@@ -660,13 +657,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors whitespace-nowrap shrink-0"
+              className="min-h-[44px] sm:min-h-[38px] px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors whitespace-nowrap shrink-0"
             >
               {t.common.close}
             </button>
           </div>
         </div>
-      </div>
-    </div>
+        </ModalFrame>
+      )}
+    </AnimatePresence>
   );
 };

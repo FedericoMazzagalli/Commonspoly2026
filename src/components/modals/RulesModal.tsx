@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { BookOpen, X, Award } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { OFFICIAL_CHARACTERS } from '../../data/characters';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface RulesModalProps {
   onClose: () => void;
@@ -27,24 +28,22 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
   }, [onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88 overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t.rules.title}
+    <ModalFrame
+      ariaLabel={t.rules.title}
+      onBackdropClick={onClose}
+      className="w-full max-w-3xl bg-slate-900 border border-teal-800 rounded-2xl shadow-2xl p-6 text-slate-100 my-auto flex flex-col max-h-[90vh]"
     >
-      <div className="w-full max-w-3xl bg-slate-900 border border-teal-800 rounded-2xl shadow-2xl p-6 text-slate-100 my-auto flex flex-col max-h-[90vh]">
-        
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-teal-400" />
-            <h3 className="font-extrabold text-xl text-white">{t.rules.title}</h3>
+            <h3 className="hud-heading font-extrabold text-xl text-white">{t.rules.title}</h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label={t.common.close}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -53,40 +52,45 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
         {/* Tabs */}
         <div className="flex gap-2 py-3 border-b border-slate-800 text-xs font-semibold overflow-x-auto shrink-0">
           <button
+            type="button"
             onClick={() => setTab('RULES')}
-            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+            className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
               tab === 'RULES' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
             {t.rules.tabRules}
           </button>
           <button
+            type="button"
             onClick={() => setTab('COMMONS')}
-            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+            className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
               tab === 'COMMONS' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
             {t.rules.tabCommons}
           </button>
           <button
+            type="button"
             onClick={() => setTab('SPECIAL')}
-            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+            className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
               tab === 'SPECIAL' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
             {t.rules.tabSpecialTiles ?? 'Casillas Especiales'}
           </button>
           <button
+            type="button"
             onClick={() => setTab('SPECULATORS')}
-            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+            className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
               tab === 'SPECULATORS' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
             {t.rules.tabSpeculators}
           </button>
           <button
+            type="button"
             onClick={() => setTab('HISTORY')}
-            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+            className={`min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
               tab === 'HISTORY' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -233,14 +237,13 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
         {/* Footer */}
         <div className="pt-4 border-t border-slate-800 flex justify-end shrink-0">
           <button
+            type="button"
             onClick={onClose}
-            className="px-6 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs"
+            className="min-h-[44px] sm:min-h-[38px] px-6 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs transition-colors"
           >
             {t.common.understood}
           </button>
         </div>
-
-      </div>
-    </div>
+    </ModalFrame>
   );
 };

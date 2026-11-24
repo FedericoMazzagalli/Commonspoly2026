@@ -7,6 +7,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   CloudRain,
   CloudSun,
@@ -27,6 +28,7 @@ import {
 } from '../../utils/weatherSettings';
 import { playSound } from '../../utils/audio';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface WeatherSettingsModalProps {
   isOpen: boolean;
@@ -68,8 +70,6 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
     [config.particleDensityScale, config.atmosphereImpactScale]
   );
 
-  if (!isOpen) return null;
-
   const isPresetActive = (presetCfg: WeatherAdvancedConfig) =>
     Math.abs(presetCfg.eventFrequencyMultiplier - config.eventFrequencyMultiplier) < 0.05 &&
     presetCfg.minCooldownTurns === config.minCooldownTurns &&
@@ -86,19 +86,17 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 pointer-events-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="weather-settings-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          playSound.modalClose();
-          onClose();
-        }
-      }}
-    >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-950/95 border border-slate-700/80 rounded-2xl shadow-2xl text-slate-100 p-5 sm:p-6 space-y-5">
+    <AnimatePresence>
+      {isOpen && (
+        <ModalFrame
+          ariaLabelledBy="weather-settings-title"
+          backdropClassName="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 overflow-y-auto pointer-events-auto"
+          className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-950/95 border border-slate-700/80 rounded-2xl shadow-2xl text-slate-100 p-5 sm:p-6 space-y-5 my-auto"
+          onBackdropClick={() => {
+            playSound.modalClose();
+            onClose();
+          }}
+        >
         {/* Cabecera */}
         <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
           <div className="space-y-1 min-w-0">
@@ -108,7 +106,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
             </div>
             <h2
               id="weather-settings-title"
-              className="text-xl font-black text-white tracking-tight"
+              className="hud-heading text-xl font-black text-white tracking-tight"
             >
               {t.modals.weatherTitle}
             </h2>
@@ -122,7 +120,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
               playSound.modalClose();
               onClose();
             }}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors shrink-0"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors shrink-0"
             aria-label={t.common.close}
           >
             <X className="w-4 h-4" />
@@ -271,7 +269,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
                 aria-label="Frecuencia de eventos meteorológicos"
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
               />
-              <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+              <div className="flex justify-between text-[10px] text-slate-400 tabular-nums">
                 <span>0% (Desactivado)</span>
                 <span>100% (Estándar)</span>
                 <span>200% (Extremo)</span>
@@ -303,7 +301,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
                 aria-label="Intervalo mínimo entre eventos meteorológicos"
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
               />
-              <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+              <div className="flex justify-between text-[10px] text-slate-400 tabular-nums">
                 <span>1 turno (Inmediato)</span>
                 <span>2 turnos (Estándar)</span>
                 <span>6 turnos (Espaciado)</span>
@@ -348,7 +346,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
                 aria-label="Densidad e impacto visual de partículas 3D"
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
               />
-              <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+              <div className="flex justify-between text-[10px] text-slate-400 tabular-nums">
                 <span>0% (Ocultas)</span>
                 <span>100%</span>
                 <span>150% (Denso)</span>
@@ -379,7 +377,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
                 aria-label="Impacto atmosférico en niebla e iluminación 3D"
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
               />
-              <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+              <div className="flex justify-between text-[10px] text-slate-400 tabular-nums">
                 <span>0% (Nítido)</span>
                 <span>100%</span>
                 <span>150% (Dramático)</span>
@@ -408,7 +406,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
                 aria-label="Intensidad climática base"
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400"
               />
-              <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+              <div className="flex justify-between text-[10px] text-slate-400 tabular-nums">
                 <span>20% (Suave)</span>
                 <span>85%</span>
                 <span>100% (Máxima)</span>
@@ -439,7 +437,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
                 aria-label="Opacidad de efectos atmosféricos sobre pantalla"
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400"
               />
-              <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+              <div className="flex justify-between text-[10px] text-slate-400 tabular-nums">
                 <span>0% (Desactivado)</span>
                 <span>85%</span>
                 <span>100%</span>
@@ -453,7 +451,7 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
           <button
             type="button"
             onClick={handleReset}
-            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>{t.common.reset}</span>
@@ -465,12 +463,13 @@ export const WeatherSettingsModal: React.FC<WeatherSettingsModalProps> = ({
               playSound.modalClose();
               onClose();
             }}
-            className="px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs whitespace-nowrap shrink-0 transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs whitespace-nowrap shrink-0 transition-colors"
           >
             {t.common.apply}
           </button>
         </div>
-      </div>
-    </div>
+        </ModalFrame>
+      )}
+    </AnimatePresence>
   );
 };

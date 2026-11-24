@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { 
   HeartHandshake, 
   Sparkles, 
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { GameLogEntry, CooperativeActionType } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { HudPanelMotion } from '../ui/MotionPrimitives';
 
 interface BitacoraHUDProps {
   logs: GameLogEntry[];
@@ -117,15 +119,23 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
       </div>
 
       {/* 3. PANEL COMPLETO DE BITÁCORA COLABORATIVA (Drawer lateral) */}
+      <AnimatePresence>
       {isOpen && (
-        <div className="pointer-events-auto fixed top-16 right-4 bottom-24 w-84 md:w-96 max-w-[94vw] bg-slate-900/95 border border-teal-700/60 rounded-3xl shadow-2xl p-4 flex flex-col z-30 animate-in fade-in slide-in-from-right-4 duration-200">
-          
+        <HudPanelMotion
+          direction="right"
+          onSwipeDismiss={() => {
+            playSound.uiToggle(false);
+            setIsOpen(false);
+          }}
+          ariaLabel="Bitácora Cooperativa"
+          className="pointer-events-auto fixed top-16 right-4 bottom-24 w-84 md:w-96 max-w-[94vw] bg-slate-900/95 border border-teal-700/60 rounded-3xl shadow-2xl p-4 flex flex-col z-30"
+        >
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
             <div className="flex items-center gap-2">
               <ScrollText className="w-4 h-4 text-teal-400" />
               <div>
-                <h3 className="font-extrabold text-sm text-white leading-none">
+                <h3 className="hud-heading font-extrabold text-sm text-white leading-none">
                   Bitácora Cooperativa
                 </h3>
                 <span className="text-[10px] text-slate-400">
@@ -134,11 +144,13 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
               </div>
             </div>
             <button
+              type="button"
               onClick={() => {
                 playSound.uiToggle(false);
                 setIsOpen(false);
               }}
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              aria-label="Cerrar bitácora"
+              className="min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -235,7 +247,7 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
                           <span>{badge.label}</span>
                         </span>
                       ) : (
-                        <span className="text-[10px] text-slate-500 tabular-nums">
+                        <span className="text-[10px] text-slate-400 tabular-nums">
                           Ronda {log.round}
                         </span>
                       )}
@@ -247,7 +259,7 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
                     </p>
 
                     {/* Footer metadata */}
-                    <div className="flex items-center justify-between pt-1.5 text-[10px] text-slate-500">
+                    <div className="flex items-center justify-between pt-1.5 text-[10px] text-slate-400">
                       <span>{log.timestamp}</span>
                       {log.target && (
                         <span className="text-teal-400/90 font-medium">
@@ -259,7 +271,7 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
                 );
               })
             ) : (
-              <div className="p-8 text-center text-xs text-slate-500">
+              <div className="p-8 text-center text-xs text-slate-400">
                 Aún no hay eventos registrados en esta categoría.
               </div>
             )}
@@ -269,9 +281,9 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
           <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-400 italic text-center shrink-0">
             &quot;La cooperación mutua es la base de la felicidad radical.&quot;
           </div>
-
-        </div>
+        </HudPanelMotion>
       )}
+      </AnimatePresence>
     </>
   );
 };

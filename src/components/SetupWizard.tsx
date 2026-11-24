@@ -177,7 +177,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 bg-slate-950/90 overflow-y-auto">
-      <div className="w-full max-w-5xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-4 sm:p-5 md:p-7 text-slate-100 my-auto">
+      <div className="hud-surface w-full max-w-5xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-4 sm:p-5 md:p-7 text-slate-100 my-auto">
         
         {/* Header con pasos */}
         <div className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-slate-800 gap-4">
@@ -186,7 +186,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               <Sparkles className="w-4 h-4" />
               <span>{t.setup.officialPrep}</span>
             </div>
-            <h2 className="text-2xl md:text-3xl font-extrabold text-white">
+            <h2 className="hud-heading text-2xl md:text-3xl font-extrabold text-white">
               {step === 1 ? t.setup.step1Title : t.setup.step2Title}
             </h2>
           </div>
@@ -239,7 +239,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     <button
                       type="button"
                       onClick={() => cycleExpandedChar(-1)}
-                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
+                      className="min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] flex items-center justify-center rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
                       title={t.setup.prevChar}
                       aria-label={t.setup.prevChar}
                     >
@@ -248,7 +248,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     <button
                       type="button"
                       onClick={() => cycleExpandedChar(1)}
-                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
+                      className="min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] flex items-center justify-center rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors"
                       title={t.setup.nextChar}
                       aria-label={t.setup.nextChar}
                     >
@@ -257,7 +257,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     <button
                       type="button"
                       onClick={() => handleToggleExpand(expandedChar.id)}
-                      className="ml-1 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition-colors"
+                      className="ml-1 min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition-colors"
                     >
                       <span>{t.setup.collapse}</span>
                       <ChevronUp className="w-3.5 h-3.5" />
@@ -281,7 +281,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                         type="button"
                         onClick={() => toggleCharacter(expandedChar.id)}
                         disabled={Boolean(expandedSelection) && selectedChars.length <= 2}
-                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-colors ${
+                        className={`flex-1 min-h-[44px] sm:min-h-[38px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-colors ${
                           expandedSelection
                             ? selectedChars.length <= 2
                               ? 'bg-teal-950/60 text-teal-300/70 border-teal-800/50 cursor-not-allowed'
@@ -303,7 +303,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                         <button
                           type="button"
                           onClick={() => toggleController(expandedChar.id)}
-                          className={`py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-colors ${
+                          className={`min-h-[44px] sm:min-h-[38px] py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-colors ${
                             expandedSelection.controller === 'HUMAN'
                               ? 'bg-teal-600/30 text-teal-200 border-teal-500/50 hover:bg-teal-600/40'
                               : 'bg-indigo-950/70 text-indigo-200 border-indigo-700/60 hover:bg-indigo-900/70'
@@ -481,13 +481,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                           type="button"
                           onClick={() => toggleCharacter(char.id)}
                           disabled={isSelected && selectedChars.length <= 2}
-                          className={`p-1 rounded text-xs transition-colors ${
-                            isSelected ? 'text-teal-400 hover:text-teal-300' : 'text-slate-500 hover:text-white'
+                          className={`min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] flex items-center justify-center rounded text-xs transition-colors ${
+                            isSelected ? 'text-teal-400 hover:text-teal-300' : 'text-slate-400 hover:text-white'
                           }`}
                           title={isSelected ? 'Quitar del equipo' : 'Añadir al equipo'}
                           aria-label={isSelected ? `Quitar a ${char.name}` : `Añadir a ${char.name}`}
                         >
-                          <CheckCircle2 className={`w-5 h-5 ${isSelected ? 'fill-teal-500/20 text-teal-400' : 'text-slate-600'}`} />
+                          <CheckCircle2 className={`w-5 h-5 ${isSelected ? 'fill-teal-500/20 text-teal-400' : 'text-slate-400'}`} />
                         </button>
                       </div>
 
@@ -531,7 +531,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                       <button
                         type="button"
                         onClick={() => handleToggleExpand(char.id)}
-                        className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border transition-colors ${
+                        className={`w-full min-h-[44px] sm:min-h-[36px] py-1.5 px-2.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 border transition-colors ${
                           isExpanded
                             ? 'bg-teal-500/20 text-teal-200 border-teal-400/60'
                             : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:border-teal-500/50 hover:text-teal-200'
@@ -547,7 +547,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                         <button
                           type="button"
                           onClick={() => toggleController(char.id)}
-                          className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                          className={`w-full min-h-[44px] sm:min-h-[36px] py-1.5 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                             current.controller === 'HUMAN'
                               ? 'bg-teal-600/30 text-teal-300 border border-teal-500/50 hover:bg-teal-600/40'
                               : 'bg-indigo-950/60 text-indigo-300 border border-indigo-700/50 hover:bg-indigo-900/60'
@@ -629,7 +629,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               <button
                 onClick={rollInitialDice}
                 disabled={isRolling}
-                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-600/50 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-md active:scale-95"
+                className="min-h-[44px] px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-600/50 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-md active:scale-95"
               >
                 <RefreshCw className={`w-4 h-4 ${isRolling ? 'animate-spin' : ''}`} />
                 <span>{isRolling ? t.setup.rollingDice : t.setup.rerollDice}</span>
@@ -813,7 +813,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     playSound.modalOpen();
                     onOpenWeatherSettings();
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 font-bold text-xs whitespace-nowrap shrink-0 transition-colors"
+                  className="min-h-[44px] sm:min-h-[38px] px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 font-bold text-xs whitespace-nowrap shrink-0 transition-colors"
                 >
                   {t.setup.configWeatherBtn}
                 </button>

@@ -7,6 +7,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   HeartHandshake,
   Sparkles,
@@ -28,19 +29,26 @@ import {
   CooperativeActionType
 } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { useSwipeToDismiss } from '../ui/MotionPrimitives';
 
 interface GameLogComponentProps {
   state: GameEngineState;
   isDockCollapsed?: boolean;
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
 }
 
 export const GameLogComponent: React.FC<GameLogComponentProps> = ({
   state,
-  isDockCollapsed = false
+  isDockCollapsed = false,
+  isMinimized: controlledMinimized,
+  onToggleMinimize
 }) => {
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [internalMinimized, setInternalMinimized] = useState(true);
+  const isMinimized = controlledMinimized ?? internalMinimized;
   const [unreadCount, setUnreadCount] = useState(0);
   const [stateEvents, setStateEvents] = useState<GameLogEntry[]>([]);
+  const hasInitializedUnreadRef = useRef(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -185,9 +193,18 @@ export const GameLogComponent: React.FC<GameLogComponentProps> = ({
 
   // Auto-scroll suave y contador de no leídos cuando está minimizado
   useEffect(() => {
+    if (!hasInitializedUnreadRef.current) {
+      hasInitializedUnreadRef.current = true;
+      prevMonitorRef.current.seenLogCount = cooperativeLogs.length;
+      return;
+    }
+
     const prevCount = prevMonitorRef.current.seenLogCount;
     if (cooperativeLogs.length > prevCount && isMinimized) {
       setUnreadCount(u => u + (cooperativeLogs.length - prevCount));
+    }
+    if (!isMinimized) {
+      setUnreadCount(0);
     }
     prevMonitorRef.current.seenLogCount = cooperativeLogs.length;
 
@@ -205,7 +222,11 @@ export const GameLogComponent: React.FC<GameLogComponentProps> = ({
     if (willExpand) {
       setUnreadCount(0);
     }
-    setIsMinimized(!isMinimized);
+    if (onToggleMinimize) {
+      onToggleMinimize();
+    } else {
+      setInternalMinimized(prev => !prev);
+    }
   };
 
   const getActionIcon = (action?: CooperativeActionType) => {
@@ -256,22 +277,32 @@ export const GameLogComponent: React.FC<GameLogComponentProps> = ({
     }
   };
 
+  const { swipeX, swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
+    direction: 'down',
+    enabled: !isMinimized,
+    resetOnDismiss: true,
+    onDismiss: handleToggleMinimize
+  });
+
   // Posición en esquina inferior izquierda sin ocluir el dock central de acciones ni el temporizador
   const bottomOffsetClass = isDockCollapsed
-    ? 'bottom-16 md:bottom-16'
-    : 'bottom-48 md:bottom-48 2xl:bottom-6';
+    ? 'bottom-20 md:bottom-20'
+    : 'bottom-52 md:bottom-44';
 
   return (
-    <aside
+    <motion.aside
       aria-label="Registro de Eventos Cooperativos"
-      className={`pointer-events-auto fixed ${bottomOffsetClass} left-3 md:left-6 z-20 w-72 sm:w-80 max-w-[84vw] select-none transition-all duration-300`}
+      style={{ x: swipeX, y: swipeY }}
+      className={`pointer-events-auto fixed ${bottomOffsetClass} left-3 md:left-6 z-20 w-68 sm:w-80 max-w-[82vw] select-none transition-all duration-300 ${touchActionClass}`}
+      {...swipeHandlers}
     >
-      <div className="bg-slate-950/65 hover:bg-slate-950/80 border border-teal-700/45 hover:border-teal-500/70 rounded-2xl shadow-xl overflow-hidden text-slate-100 transition-colors">
+      <div className="bg-slate-950/75 hover:bg-slate-950/88 border border-teal-700/50 hover:border-teal-500/75 rounded-2xl hud-surface overflow-hidden text-slate-100 transition-colors">
         {/* Cabecera compacta */}
         <button
           type="button"
           onClick={handleToggleMinimize}
-          className="w-full flex items-center justify-between px-3 py-2 bg-slate-900/70 border-b border-teal-800/35 cursor-pointer text-xs text-left"
+          aria-expanded={!isMinimized}
+          className="w-full min-h-[44px] sm:min-h-[36px] flex items-center justify-between px-3 py-2 bg-slate-900/75 border-b border-teal-800/35 cursor-pointer text-xs text-left"
         >
           <div className="flex items-center gap-2 font-bold text-teal-300 min-w-0">
             <ScrollText className="w-3.5 h-3.5 text-teal-400 shrink-0" />
@@ -280,7 +311,7 @@ export const GameLogComponent: React.FC<GameLogComponentProps> = ({
               ({cooperativeLogs.length})
             </span>
             {isMinimized && unreadCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black tabular-nums animate-pulse">
+              <span className="px-1.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black tabular-nums shadow-sm">
                 +{unreadCount}
               </span>
             )}
@@ -315,7 +346,7 @@ export const GameLogComponent: React.FC<GameLogComponentProps> = ({
 
             <div
               ref={scrollContainerRef}
-              className="p-2.5 max-h-44 md:max-h-52 overflow-y-auto space-y-1.5 text-xs scroll-smooth"
+              className="p-2.5 max-h-36 md:max-h-44 overflow-y-auto space-y-1.5 text-xs scroll-smooth"
             >
               {cooperativeLogs.length > 0 ? (
                 cooperativeLogs.map((log) => (
@@ -364,6 +395,6 @@ export const GameLogComponent: React.FC<GameLogComponentProps> = ({
           </>
         )}
       </div>
-    </aside>
+    </motion.aside>
   );
 };

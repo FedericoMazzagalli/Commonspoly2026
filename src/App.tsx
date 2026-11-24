@@ -4,6 +4,7 @@
  */
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, MotionConfig } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useCommonspolyGame } from './store/gameEngine';
 import { CommonspolyBoard3D } from './components/board3d/CommonspolyBoard3D';
@@ -1464,6 +1465,7 @@ export default function App() {
   }, [leaderboardEntries, authUser]);
 
   return (
+    <MotionConfig reducedMotion={accessibilitySettings.reducedMotionOverride ? 'always' : 'user'}>
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
       
       {/* 1. THREE.JS 3D BOARD VIEWPORT (100% full-bleed) */}
@@ -1493,6 +1495,7 @@ export default function App() {
         neighborhoodDecision={isCinemaMode ? null : state.neighborhoodDecision}
         postProcessingEnabled={state.postProcessingEnabled}
         tutorialFocus={isCinemaMode || state.activeModal ? 'NONE' : tutorialBoardFocus}
+        selectedTileId={isCinemaMode ? null : inspectedTileId}
         speculatorHeatmap={speculatorHeatmap}
         speculatorTrajectories={speculatorTrajectories}
         accessibilitySettings={accessibilitySettings}
@@ -1598,7 +1601,12 @@ export default function App() {
               setTutorialOpenOverride(isTutorialOverlayVisible ? false : true)
             }
             onCloseTutorial={() => setTutorialOpenOverride(undefined)}
-            onTutorialVisibilityChange={setIsTutorialOverlayVisible}
+            onTutorialVisibilityChange={(visible) => {
+              setIsTutorialOverlayVisible(visible);
+              if (visible) {
+                closeAllAppPanels();
+              }
+            }}
             onTutorialBoardFocusChange={setTutorialBoardFocus}
             onSetCameraMode={setCameraMode}
             onToggleSound={toggleSound}
@@ -1642,104 +1650,112 @@ export default function App() {
             isRemoteMultiplayerTurn={isRemoteMultiplayerTurn}
             remoteTurnOwnerName={remoteTurnOwnerName}
           />
-          {!state.activeModal && (
-            <TileInspectorHUD
-              tile={inspectedTile}
-              players={state.players}
-              speculators={state.speculators}
-              activeCrisis={state.activeCrisis}
-              activeWeatherEvent={state.activeWeatherEvent}
-              onClose={() => setInspectedTileId(null)}
-            />
-          )}
+          <TileInspectorHUD
+            tile={state.activeModal ? null : inspectedTile}
+            players={state.players}
+            speculators={state.speculators}
+            activeCrisis={state.activeCrisis}
+            activeWeatherEvent={state.activeWeatherEvent}
+            accessibilitySettings={accessibilitySettings}
+            onClose={() => setInspectedTileId(null)}
+          />
         </>
       )}
 
       {/* 5. MODALES INTERACTIVOS */}
+      <AnimatePresence mode="wait">
+        {/* Carta Global de la Ronda */}
+        {state.activeModal === 'GLOBAL_CARD' && (
+          <GlobalCardModal
+            key="modal-global-card"
+            card={state.currentGlobalCard}
+            round={state.round}
+            onConfirm={handleActionAcknowledgeGlobalCard}
+          />
+        )}
 
-      {/* Carta Global de la Ronda */}
-      {state.activeModal === 'GLOBAL_CARD' && (
-        <GlobalCardModal
-          card={state.currentGlobalCard}
-          round={state.round}
-          onConfirm={handleActionAcknowledgeGlobalCard}
-        />
-      )}
+        {/* Carta de Situación individual */}
+        {state.activeModal === 'SITUATION_CARD' && activePlayer && (
+          <SituationCardModal
+            key="modal-situation-card"
+            card={state.currentSituationCard}
+            player={activePlayer}
+            weather={resolveWeather(
+              state.tiles,
+              state.weatherMode,
+              state.weatherIntensity ?? 0.85,
+              state.round,
+              state.activePlayerIndex,
+              state.activeWeatherEvent
+            )}
+            onConfirm={handleActionResolveSituationCard}
+          />
+        )}
 
-      {/* Carta de Situación individual */}
-      {state.activeModal === 'SITUATION_CARD' && activePlayer && (
-        <SituationCardModal
-          card={state.currentSituationCard}
-          player={activePlayer}
-          weather={resolveWeather(
-            state.tiles,
-            state.weatherMode,
-            state.weatherIntensity ?? 0.85,
-            state.round,
-            state.activePlayerIndex,
-            state.activeWeatherEvent
-          )}
-          onConfirm={handleActionResolveSituationCard}
-        />
-      )}
+        {/* Insurrección Colectiva en el Ágora */}
+        {state.activeModal === 'AGORA_INSURRECTION' && (
+          <AgoraInsurrectionModal
+            key="modal-agora-insurrection"
+            tiles={state.tiles}
+            onSelectCategory={handleActionAgoraInsurrection}
+          />
+        )}
 
-      {/* Insurrección Colectiva en el Ágora */}
-      {state.activeModal === 'AGORA_INSURRECTION' && (
-        <AgoraInsurrectionModal
-          tiles={state.tiles}
-          onSelectCategory={handleActionAgoraInsurrection}
-        />
-      )}
+        {/* Rescate solidario de Detención */}
+        {state.activeModal === 'DETENTION_RESCUE' && detainedPlayer && (
+          <DetentionRescueModal
+            key="modal-detention-rescue"
+            detainedPlayer={detainedPlayer}
+            allPlayers={state.players}
+            onRescue={handleActionDetentionRescue}
+            onDismiss={handleActionCloseModal}
+          />
+        )}
 
-      {/* Rescate solidario de Detención */}
-      {state.activeModal === 'DETENTION_RESCUE' && detainedPlayer && (
-        <DetentionRescueModal
-          detainedPlayer={detainedPlayer}
-          allPlayers={state.players}
-          onRescue={handleActionDetentionRescue}
-          onDismiss={handleActionCloseModal}
-        />
-      )}
+        {/* Tragedia de los Comunes (Privatización obligatoria de 3) */}
+        {state.activeModal === 'TRAGEDY_VOTE' && (
+          <TragedyVoteModal
+            key="modal-tragedy-vote"
+            tiles={state.tiles}
+            onConfirmPrivatization={handleActionTragedySelect}
+          />
+        )}
 
-      {/* Tragedia de los Comunes (Privatización obligatoria de 3) */}
-      {state.activeModal === 'TRAGEDY_VOTE' && (
-        <TragedyVoteModal
-          tiles={state.tiles}
-          onConfirmPrivatization={handleActionTragedySelect}
-        />
-      )}
+        {/* Gestión Pública en Burocracia (ID 10) */}
+        {state.activeModal === 'BUREAUCRACY' && activePlayer && (
+          <BureaucracyModal
+            key="modal-bureaucracy"
+            player={activePlayer}
+            tiles={state.tiles}
+            onConfirm={handleActionBureaucracy}
+            onPass={handleActionCloseModal}
+          />
+        )}
 
-      {/* Gestión Pública en Burocracia (ID 10) */}
-      {state.activeModal === 'BUREAUCRACY' && activePlayer && (
-        <BureaucracyModal
-          player={activePlayer}
-          tiles={state.tiles}
-          onConfirm={handleActionBureaucracy}
-          onPass={handleActionCloseModal}
-        />
-      )}
+        {/* Caja Solidaria / Crowdfunding Barrial (ID 38) */}
+        {state.activeModal === 'CROWDFUNDING' && activePlayer && (
+          <CrowdfundingModal
+            key="modal-crowdfunding"
+            donor={activePlayer}
+            players={state.players}
+            onDonate={handleActionCrowdfunding}
+            onPass={handleActionCloseModal}
+          />
+        )}
 
-      {/* Caja Solidaria / Crowdfunding Barrial (ID 38) */}
-      {state.activeModal === 'CROWDFUNDING' && activePlayer && (
-        <CrowdfundingModal
-          donor={activePlayer}
-          players={state.players}
-          onDonate={handleActionCrowdfunding}
-          onPass={handleActionCloseModal}
-        />
-      )}
-
-      {/* Votación In-Situ para Decisión Barrial */}
-      {state.activeModal === 'NEIGHBORHOOD_DECISION' && activePlayer && (
-        <NeighborhoodDecisionModal
-          decision={state.neighborhoodDecision}
-          activePlayer={activePlayer}
-          players={state.players}
-          tiles={state.tiles}
-          onCastVote={handleActionCastNeighborhoodVote}
-          onClose={handleActionCloseModal}
-        />
-      )}
+        {/* Votación In-Situ para Decisión Barrial */}
+        {state.activeModal === 'NEIGHBORHOOD_DECISION' && activePlayer && (
+          <NeighborhoodDecisionModal
+            key="modal-neighborhood-decision"
+            decision={state.neighborhoodDecision}
+            activePlayer={activePlayer}
+            players={state.players}
+            tiles={state.tiles}
+            onCastVote={handleActionCastNeighborhoodVote}
+            onClose={handleActionCloseModal}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Fin de Juego: Superposición cinematográfica de partículas + Modal Resumen */}
       {state.phase === 'GAME_OVER' && state.gameResult && !isCinemaMode && (
@@ -1752,8 +1768,10 @@ export default function App() {
             showSummaryModal={showGameOverSummary}
             onToggleSummary={() => setShowGameOverSummary(prev => !prev)}
           />
-          {showGameOverSummary && (
-            <GameOverModal
+          <AnimatePresence>
+            {showGameOverSummary && (
+              <GameOverModal
+                key="modal-game-over"
               result={state.gameResult}
               details={state.gameResultDetails}
               round={state.round}
@@ -1791,8 +1809,9 @@ export default function App() {
               isSandboxSession={state.isSandboxSession}
               dailyChallengeDate={state.dailyChallengeDate}
               onRestart={handleExitToTitle}
-            />
-          )}
+              />
+            )}
+          </AnimatePresence>
         </>
       )}
 
@@ -1814,14 +1833,17 @@ export default function App() {
       )}
 
       {/* Manual de Reglas */}
-      {showRules && (
-        <RulesModal
-          onClose={() => {
-            playSound.modalClose();
-            setShowRules(false);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {showRules && (
+          <RulesModal
+            key="modal-rules"
+            onClose={() => {
+              playSound.modalClose();
+              setShowRules(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Guía de Atajos de Teclado Globales */}
       <KeyboardShortcutsModal
@@ -1924,5 +1946,6 @@ export default function App() {
       </Suspense>
 
     </div>
+    </MotionConfig>
   );
 }

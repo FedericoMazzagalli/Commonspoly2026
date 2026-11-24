@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   Accessibility,
   BookOpen,
@@ -29,6 +30,7 @@ import {
 import { playSound } from '../../utils/audio';
 import { useI18n } from '../../i18n';
 import { LanguageSelector } from '../hud/LanguageSelector';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface AccessibilityModalProps {
   isOpen: boolean;
@@ -45,7 +47,6 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
 }) => {
   const { t, languageMeta } = useI18n();
   const [showVisualGuide, setShowVisualGuide] = useState(true);
-  if (!isOpen) return null;
 
   const activePalette = getAccessibilityPalette(settings.colorVisionMode);
   const standardPalette = getAccessibilityPalette('STANDARD');
@@ -132,17 +133,14 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t.accessibility.title}
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/85 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-2xl bg-slate-900 border border-teal-500/50 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto space-y-5"
-        onClick={e => e.stopPropagation()}
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <ModalFrame
+          ariaLabel={t.accessibility.title}
+          backdropClassName="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 overflow-y-auto pointer-events-auto"
+          className="w-full max-w-2xl bg-slate-900 border border-teal-500/50 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto space-y-5"
+          onBackdropClick={onClose}
+        >
         {/* Cabecera */}
         <div className="flex items-start justify-between gap-3 pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -150,7 +148,7 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
               <Accessibility className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-extrabold text-white tracking-tight">
+              <h2 className="hud-heading text-lg font-extrabold text-white tracking-tight">
                 {t.accessibility.title}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -162,7 +160,7 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             aria-label={t.common.close}
             title={t.common.close}
           >
@@ -535,7 +533,7 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
                 <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                 {t.accessibility.symbolicShapes}
               </span>
-              <span className={settings.showSymbolicShapes ? 'text-emerald-300' : 'text-slate-500'}>
+              <span className={settings.showSymbolicShapes ? 'text-emerald-300' : 'text-slate-400'}>
                 {settings.showSymbolicShapes ? t.common.on : t.common.off}
               </span>
             </div>
@@ -559,7 +557,7 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
                 <Type className="w-3.5 h-3.5 text-sky-400" />
                 {t.accessibility.largeText}
               </span>
-              <span className={settings.hudTextScale === 'LARGE' ? 'text-sky-300' : 'text-slate-500'}>
+              <span className={settings.hudTextScale === 'LARGE' ? 'text-sky-300' : 'text-slate-400'}>
                 {settings.hudTextScale === 'LARGE' ? '115%' : '100%'}
               </span>
             </div>
@@ -580,7 +578,7 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
           >
             <div className="flex items-center justify-between gap-2 text-xs font-bold mb-1">
               <span>{t.accessibility.reducedMotion}</span>
-              <span className={settings.reducedMotionOverride ? 'text-amber-300' : 'text-slate-500'}>
+              <span className={settings.reducedMotionOverride ? 'text-amber-300' : 'text-slate-400'}>
                 {settings.reducedMotionOverride ? t.common.on : t.common.auto}
               </span>
             </div>
@@ -595,7 +593,7 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
           <button
             type="button"
             onClick={handleReset}
-            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>{t.accessibility.resetDefault}</span>
@@ -604,12 +602,13 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[40px] px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors"
           >
             {t.accessibility.applyClose}
           </button>
         </div>
-      </div>
-    </div>
+        </ModalFrame>
+      )}
+    </AnimatePresence>
   );
 };

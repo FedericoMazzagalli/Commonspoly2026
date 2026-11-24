@@ -8,6 +8,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   AlertTriangle,
   Building2,
@@ -27,6 +28,7 @@ import {
   SpeculatorDefenseTier,
   SpeculatorFinancialProfile
 } from '../../utils/speculatorFinancials';
+import { HudPanelMotion } from '../ui/MotionPrimitives';
 
 interface SpeculatorDashboardHUDProps {
   isOpen: boolean;
@@ -109,41 +111,44 @@ export const SpeculatorDashboardHUD: React.FC<SpeculatorDashboardHUDProps> = ({
     });
   }, [dashboard.profiles, sortMode]);
 
-  if (!isOpen) return null;
-
   return (
-    <aside
-      role="dialog"
-      aria-label={t.hud.specDashboardTitle ?? 'Balance y Capacidad de Especuladores'}
-      className="pointer-events-auto fixed inset-x-3 sm:inset-x-auto sm:right-6 top-16 sm:top-20 bottom-20 sm:bottom-auto z-40 sm:w-[480px] sm:max-h-[calc(100vh-11rem)] flex flex-col bg-slate-950 border border-rose-700/75 rounded-2xl shadow-2xl text-slate-100 overflow-hidden"
-    >
-      {/* Cabecera */}
-      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900 shrink-0">
-        <div className="flex items-start gap-2.5 min-w-0">
-          <div className="p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 shrink-0">
-            <Landmark className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-xs sm:text-sm font-extrabold text-white truncate">
-              {t.hud.specDashboardTitle ?? 'Balance y Capacidad de Especuladores'}
-            </h2>
-            <p className="text-[11px] text-slate-400 leading-snug mt-0.5">
-              {t.hud.specDashboardSubtitle ??
-                'Valor neto de activos privatizados y liquidez operativa para financiar vandalismo y ataques en 1d6.'}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-          title={t.common.close}
-          aria-label={t.common.close}
+    <AnimatePresence>
+      {isOpen && (
+        <HudPanelMotion
+          as="aside"
+          direction="right"
+          onSwipeDismiss={onClose}
+          role="dialog"
+          ariaLabel={t.hud.specDashboardTitle ?? 'Balance y Capacidad de Especuladores'}
+          className="pointer-events-auto fixed inset-x-3 sm:inset-x-auto sm:right-6 top-16 sm:top-20 bottom-20 sm:bottom-auto z-40 sm:w-[480px] sm:max-h-[calc(100vh-11rem)] flex flex-col bg-slate-950 border border-rose-700/75 rounded-2xl shadow-2xl text-slate-100 overflow-hidden"
         >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+          {/* Cabecera */}
+          <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900 shrink-0">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 shrink-0">
+                <Landmark className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="hud-heading text-xs sm:text-sm font-extrabold text-white truncate">
+                  {t.hud.specDashboardTitle ?? 'Balance y Capacidad de Especuladores'}
+                </h2>
+                <p className="text-[11px] text-slate-400 leading-snug mt-0.5">
+                  {t.hud.specDashboardSubtitle ??
+                    'Valor neto de activos privatizados y liquidez operativa para financiar vandalismo y ataques en 1d6.'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+              title={t.common.close}
+              aria-label={t.common.close}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
       {/* KPIs Globales */}
       <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/60 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs tabular-nums shrink-0">
@@ -204,7 +209,7 @@ export const SpeculatorDashboardHUD: React.FC<SpeculatorDashboardHUDProps> = ({
           <button
             type="button"
             onClick={() => setSortMode('CAPACITY')}
-            className={`px-2.5 py-1 rounded-lg font-bold border transition-colors ${
+            className={`min-h-[38px] sm:min-h-[28px] px-2.5 py-1 rounded-lg font-bold border transition-colors ${
               sortMode === 'CAPACITY'
                 ? 'bg-rose-500 text-white border-rose-400'
                 : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
@@ -215,7 +220,7 @@ export const SpeculatorDashboardHUD: React.FC<SpeculatorDashboardHUDProps> = ({
           <button
             type="button"
             onClick={() => setSortMode('NAV')}
-            className={`px-2.5 py-1 rounded-lg font-bold border transition-colors ${
+            className={`min-h-[38px] sm:min-h-[28px] px-2.5 py-1 rounded-lg font-bold border transition-colors ${
               sortMode === 'NAV'
                 ? 'bg-amber-500 text-slate-950 border-amber-400'
                 : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
@@ -229,7 +234,7 @@ export const SpeculatorDashboardHUD: React.FC<SpeculatorDashboardHUDProps> = ({
           <button
             type="button"
             onClick={onOpenEconomyDebug}
-            className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 font-bold shrink-0"
+            className="min-h-[38px] sm:min-h-[28px] px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 font-bold shrink-0"
           >
             {t.hud.economyDebug}
           </button>
@@ -433,6 +438,8 @@ export const SpeculatorDashboardHUD: React.FC<SpeculatorDashboardHUDProps> = ({
           </div>
         )}
       </div>
-    </aside>
+        </HudPanelMotion>
+      )}
+    </AnimatePresence>
   );
 };

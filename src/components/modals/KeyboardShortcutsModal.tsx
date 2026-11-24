@@ -4,9 +4,11 @@
  */
 
 import React from 'react';
+import { AnimatePresence } from 'motion/react';
 import { Keyboard, X } from 'lucide-react';
 import { KEYBOARD_SHORTCUTS, KeyboardShortcutItem } from '../../hooks/useKeyboardShortcuts';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface KeyboardShortcutsModalProps {
   isOpen: boolean;
@@ -19,8 +21,6 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
 }) => {
   const { t } = useI18n();
 
-  if (!isOpen) return null;
-
   const sectionMeta: { id: KeyboardShortcutItem['category']; title: string }[] = [
     { id: 'TURN', title: t.common.turn },
     { id: 'MODALS', title: t.hud.menuBtn },
@@ -28,17 +28,14 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
   ];
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t.modals.shortcutsTitle}
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/75 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-2xl bg-slate-900 border border-teal-500/60 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto animate-in fade-in zoom-in-95 duration-150"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <ModalFrame
+          ariaLabel={t.modals.shortcutsTitle}
+          backdropClassName="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 overflow-y-auto pointer-events-auto"
+          className="w-full max-w-2xl bg-slate-900 border border-teal-500/60 rounded-2xl shadow-2xl p-5 sm:p-6 text-slate-100 my-auto"
+          onBackdropClick={onClose}
+        >
         {/* Header */}
         <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -46,7 +43,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
               <Keyboard className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-extrabold text-white tracking-tight">
+              <h2 className="hud-heading text-lg font-extrabold text-white tracking-tight">
                 {t.modals.shortcutsTitle}
               </h2>
               <p className="text-xs text-slate-400">
@@ -58,7 +55,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             aria-label={t.common.close}
             title={t.common.close}
           >
@@ -116,12 +113,13 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-colors"
           >
             {t.common.close}
           </button>
         </div>
-      </div>
-    </div>
+        </ModalFrame>
+      )}
+    </AnimatePresence>
   );
 };

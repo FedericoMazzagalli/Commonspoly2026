@@ -8,6 +8,7 @@ import React, { useMemo, useState } from 'react';
 import { Sparkles, HeartPulse, Building2, BookOpen, Trees, Flame, CheckCircle2 } from 'lucide-react';
 import { GoodType, Tile } from '../../types/game';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface AgoraInsurrectionModalProps {
   tiles?: Tile[];
@@ -82,9 +83,10 @@ export const AgoraInsurrectionModal: React.FC<AgoraInsurrectionModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85">
-      <div className="w-full max-w-2xl bg-slate-900 border-2 border-pink-500 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
-        
+    <ModalFrame
+      ariaLabel={t.modals.agoraInsurrectionTitle}
+      className="w-full max-w-2xl bg-slate-900 border-2 border-pink-500 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 my-auto"
+    >
         {/* Header */}
         <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
           <div className="p-2.5 rounded-xl bg-pink-500/20 text-pink-400 border border-pink-500/40">
@@ -94,7 +96,7 @@ export const AgoraInsurrectionModal: React.FC<AgoraInsurrectionModalProps> = ({
             <div className="text-xs font-bold uppercase tracking-wider text-pink-400">
               {t.modals.agoraInsurrectionTitle}
             </div>
-            <h2 className="text-2xl font-black text-white">
+            <h2 className="hud-heading text-2xl font-black text-white">
               {t.modals.agoraInsurrectionTitle}
             </h2>
           </div>
@@ -159,14 +161,12 @@ export const AgoraInsurrectionModal: React.FC<AgoraInsurrectionModalProps> = ({
           <button
             type="button"
             onClick={() => onSelectCategory(selected)}
-            className="px-8 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500 text-white font-black text-sm flex items-center gap-2 shadow-xl active:scale-95 transition-all"
+            className="min-h-[44px] px-8 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500 text-white font-black text-sm flex items-center gap-2 shadow-xl active:scale-95 transition-all"
           >
             <Sparkles className="w-5 h-5" />
             <span>{t.common.confirm}</span>
           </button>
         </div>
-
-      </div>
-    </div>
+    </ModalFrame>
   );
 };

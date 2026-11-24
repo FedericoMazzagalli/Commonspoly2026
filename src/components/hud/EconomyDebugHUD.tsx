@@ -9,6 +9,8 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
+import { HudPanelMotion } from '../ui/MotionPrimitives';
 import {
   Bug,
   ChevronDown,
@@ -504,8 +506,6 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
     });
   }, [snapshot.tileRows, tileFilter, tileSort, searchQuery]);
 
-  if (!isOpen) return null;
-
   const { speculation, economySummary, familySummaries } = snapshot;
   const attackSeverity = getRiskSeverityStyle(speculation.roundAttackHitChancePct, t.debug);
   const crisisSeverity = getRiskSeverityStyle(speculation.crisisTriggerChancePct, t.debug);
@@ -532,58 +532,63 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
   };
 
   return (
-    <aside
-      role="region"
-      aria-label={t.debug.title}
-      className={`pointer-events-auto fixed left-3 right-3 sm:left-6 sm:right-auto top-16 sm:top-20 z-40 flex flex-col bg-slate-950 border border-amber-600/70 rounded-2xl shadow-2xl text-slate-100 overflow-hidden ${
-        isCompact ? 'sm:w-96' : 'bottom-20 sm:bottom-auto sm:w-[440px] sm:max-h-[calc(100vh-11rem)]'
-      }`}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-800 bg-slate-900 shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <Bug className="w-4 h-4 text-amber-400 shrink-0" />
-          <div className="min-w-0">
-            <h2 className="text-xs font-extrabold tracking-wide text-white truncate">
-              {t.debug.title} · {t.hud.roundLabel} {state.round}/20
-            </h2>
-            <p className="text-[11px] text-slate-400 truncate tabular-nums">
-              {getDifficultyLabel(speculation.difficulty, t.setup)} · {speculation.speculatorsCount} {t.debug.speculatorsLbl} · {economySummary.activePlayerName}
-            </p>
-          </div>
-        </div>
+    <AnimatePresence>
+      {isOpen && (
+        <HudPanelMotion
+          as="aside"
+          direction="left"
+          onSwipeDismiss={onClose}
+          role="region"
+          ariaLabel={t.debug.title}
+          className={`pointer-events-auto fixed left-3 right-3 sm:left-6 sm:right-auto top-16 sm:top-20 z-40 flex flex-col bg-slate-950 border border-amber-600/70 rounded-2xl shadow-2xl text-slate-100 overflow-hidden ${
+            isCompact ? 'sm:w-96' : 'bottom-20 sm:bottom-auto sm:w-[440px] sm:max-h-[calc(100vh-11rem)]'
+          }`}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-800 bg-slate-900 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <Bug className="w-4 h-4 text-amber-400 shrink-0" />
+              <div className="min-w-0">
+                <h2 className="hud-heading text-xs font-extrabold tracking-wide text-white truncate">
+                  {t.debug.title} · {t.hud.roundLabel} {state.round}/20
+                </h2>
+                <p className="text-[11px] text-slate-400 truncate tabular-nums">
+                  {getDifficultyLabel(speculation.difficulty, t.setup)} · {speculation.speculatorsCount} {t.debug.speculatorsLbl} · {economySummary.activePlayerName}
+                </p>
+              </div>
+            </div>
 
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={handleExportJson}
-            className="px-2 py-1 min-h-[32px] sm:min-h-[32px] flex items-center gap-1 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/50 text-amber-200 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-            title={t.debug.exportJson ?? 'Exportar JSON'}
-            aria-label={t.debug.exportJson ?? 'Exportar JSON'}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">JSON</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsCompact(prev => !prev)}
-            className="min-w-[40px] min-h-[40px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-            title={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
-            aria-label={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
-          >
-            {isCompact ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-w-[40px] min-h-[40px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-            title={t.common.close}
-            aria-label={t.common.close}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={handleExportJson}
+                className="px-2.5 py-1 min-h-[44px] sm:min-h-[32px] flex items-center gap-1 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/50 text-amber-200 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                title={t.debug.exportJson ?? 'Exportar JSON'}
+                aria-label={t.debug.exportJson ?? 'Exportar JSON'}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">JSON</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCompact(prev => !prev)}
+                className="min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                title={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
+                aria-label={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
+              >
+                {isCompact ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                title={t.common.close}
+                aria-label={t.common.close}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
       {/* Compact Strip Mode */}
       {isCompact ? (
@@ -766,7 +771,7 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
                       <div className="font-bold text-rose-300">
                         {speculation.roundDetentionRiskPct}%
                       </div>
-                      <div className="text-[10px] text-slate-500">
+                      <div className="text-[10px] text-slate-400">
                         ({speculation.detentionOnHitPct}%)
                       </div>
                     </div>
@@ -775,14 +780,14 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
                       <div className="font-bold text-amber-300">
                         {speculation.roundStealRiskPct}%
                       </div>
-                      <div className="text-[10px] text-slate-500">{t.common.wellness} / {t.common.legitimacy}</div>
+                      <div className="text-[10px] text-slate-400">{t.common.wellness} / {t.common.legitimacy}</div>
                     </div>
                     <div className="py-1.5 border-t border-slate-800">
                       <div className="text-slate-400">{t.debug.mutualProtection}</div>
                       <div className="font-bold text-emerald-300">
                         {speculation.mutualProtectionZones}
                       </div>
-                      <div className="text-[10px] text-slate-500">2+</div>
+                      <div className="text-[10px] text-slate-400">2+</div>
                     </div>
                   </div>
 
@@ -885,7 +890,7 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
                                   <div className="text-[11px] font-semibold text-slate-100 truncate">
                                     {accessibilitySettings.showSymbolicShapes && a11yTier ? `${a11yTier.shape} ` : ''}
                                     #{hotspot.tileId} {hotspot.tileName}
-                                    <span className="text-slate-500 font-normal"> · {hotspot.boardSideLabel}</span>
+                                    <span className="text-slate-400 font-normal"> · {hotspot.boardSideLabel}</span>
                                   </div>
                                   <div className="text-[10px] text-slate-400 truncate">
                                     {hotspot.summaryLabel}
@@ -2948,6 +2953,8 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
           </div>
         </>
       )}
-    </aside>
+        </HudPanelMotion>
+      )}
+    </AnimatePresence>
   );
 };

@@ -9,6 +9,7 @@ import { ShieldAlert, HeartHandshake, Lock, Check } from 'lucide-react';
 import { Character } from '../../types/game';
 import { formatSignedScore, getEffectiveBailCostPerRound, getReputationProfile } from '../../utils/reputation';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface DetentionRescueModalProps {
   detainedPlayer: Character;
@@ -40,9 +41,10 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
   const totalCost = detainedPlayer.detentionRoundsLeft * selectedBail.effectivePerRound;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88">
-      <div className="w-full max-w-lg bg-slate-900 border-2 border-rose-500 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
-        
+    <ModalFrame
+      ariaLabel={t.modals.detentionRescueTitle}
+      className="w-full max-w-lg bg-slate-900 border-2 border-rose-500 rounded-2xl shadow-2xl p-6 md:p-8 text-slate-100 my-auto"
+    >
         {/* Header */}
         <div className="flex items-center gap-3 pb-4 border-b border-slate-800">
           <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/40">
@@ -52,7 +54,7 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
             <div className="text-xs font-bold uppercase tracking-wider text-rose-400">
               {t.hud.detainedLabel}
             </div>
-            <h2 className="text-2xl font-black text-white">
+            <h2 className="hud-heading text-2xl font-black text-white">
               {t.modals.detentionRescueTitle} · {detainedPlayer.name}
             </h2>
           </div>
@@ -136,24 +138,24 @@ export const DetentionRescueModal: React.FC<DetentionRescueModalProps> = ({
         {/* Action Buttons */}
         <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
           <button
+            type="button"
             onClick={onDismiss}
-            className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-xs font-semibold"
+            className="min-h-[44px] sm:min-h-[38px] px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs font-semibold transition-colors"
           >
             {t.common.cancel}
           </button>
 
           {potentialRescuers.length > 0 && (
             <button
+              type="button"
               onClick={() => onRescue(chosenRescuerId, detainedPlayer.id)}
-              className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all tabular-nums"
+              className="min-h-[44px] sm:min-h-[38px] px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all tabular-nums"
             >
               <HeartHandshake className="w-4 h-4" />
               <span>{t.modals.bailOut} ({totalCost})</span>
             </button>
           )}
         </div>
-
-      </div>
-    </div>
+    </ModalFrame>
   );
 };

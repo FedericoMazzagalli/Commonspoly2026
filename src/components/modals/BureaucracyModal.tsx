@@ -10,6 +10,7 @@ import { Character, GoodType, Tile } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { formatSignedScore, getEffectiveBureaucracyCost, getReputationProfile } from '../../utils/reputation';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface BureaucracyModalProps {
   player: Character;
@@ -40,13 +41,10 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
   const canAfford = player.wellness > costInfo.effectiveCost && privateTiles.length > 0;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t.modals.bureaucracyTitle}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80"
+    <ModalFrame
+      ariaLabel={t.modals.bureaucracyTitle}
+      className="w-full max-w-lg bg-slate-900 border border-sky-500/60 rounded-2xl shadow-2xl p-6 text-slate-100 my-auto"
     >
-      <div className="w-full max-w-lg bg-slate-900 border border-sky-500/60 rounded-2xl shadow-2xl p-6 text-slate-100">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 pb-4 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -57,7 +55,7 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
               <div className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
                 {t.modals.bureaucracyTitle}
               </div>
-              <h2 className="text-xl font-extrabold text-white">
+              <h2 className="hud-heading text-xl font-extrabold text-white">
                 {t.modals.bureaucracyTitle}
               </h2>
             </div>
@@ -69,7 +67,7 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
               playSound.modalClose();
               onPass();
             }}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             aria-label={t.common.close}
           >
             <X className="w-4 h-4" />
@@ -158,7 +156,7 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
               playSound.uiClick();
               onPass();
             }}
-            className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[44px] sm:min-h-[38px] px-4 py-2 rounded-xl border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
           >
             {t.hud.passTurn}
           </button>
@@ -167,14 +165,13 @@ export const BureaucracyModal: React.FC<BureaucracyModalProps> = ({
             <button
               type="button"
               onClick={() => onConfirm(selectedTileId)}
-              className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 tabular-nums"
+              className="min-h-[44px] sm:min-h-[38px] px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 tabular-nums"
             >
               <span>{t.common.public} (-{costInfo.effectiveCost} {t.common.wellness})</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
-      </div>
-    </div>
+    </ModalFrame>
   );
 };

@@ -23,9 +23,16 @@ import {
 import { GameEngineState, GoodType } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { useI18n } from '../../i18n';
+import {
+  AccessibilitySettings,
+  DEFAULT_ACCESSIBILITY_SETTINGS,
+  getAccessibilityPalette
+} from '../../utils/accessibility';
+import { useSwipeToDismiss } from '../ui/MotionPrimitives';
 
 interface GlobalResourceTrackerProps {
   state: GameEngineState;
+  accessibilitySettings?: AccessibilitySettings;
   isEvolutionOpen?: boolean;
   onToggleEvolution?: () => void;
   isCollectiveImpactOpen?: boolean;
@@ -46,14 +53,27 @@ interface CategoryStats {
 
 export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
   state,
+  accessibilitySettings = DEFAULT_ACCESSIBILITY_SETTINGS,
   isEvolutionOpen = false,
   onToggleEvolution,
   isCollectiveImpactOpen = false,
   onToggleCollectiveImpact
 }) => {
   const { t } = useI18n();
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [pulseGain, setPulseGain] = useState(false);
+  const a11yPalette = getAccessibilityPalette(accessibilitySettings.colorVisionMode);
+  const useCustomPalette = accessibilitySettings.colorVisionMode !== 'STANDARD';
+
+  const { swipeX, swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
+    direction: 'up',
+    enabled: isExpanded,
+    resetOnDismiss: true,
+    onDismiss: () => {
+      playSound.uiToggle(false);
+      setIsExpanded(false);
+    }
+  });
 
   const resourceTiles = state.tiles.filter(
     t => t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY'
@@ -137,27 +157,29 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
   ];
 
   return (
-    <section
+    <motion.section
       aria-label={t.hud.globalCommons}
-      className={`pointer-events-auto w-full md:w-72 lg:w-80 bg-slate-900/90 border rounded-2xl shadow-xl text-slate-100 overflow-hidden transition-colors duration-300 ${
+      style={{ x: swipeX, y: swipeY }}
+      className={`pointer-events-auto w-full md:w-72 lg:w-80 bg-slate-900/90 border rounded-2xl hud-surface text-slate-100 overflow-hidden transition-colors duration-300 ${touchActionClass} ${
         pulseGain ? 'border-emerald-400 shadow-emerald-500/20' : 'border-teal-800/70'
       }`}
+      {...swipeHandlers}
     >
       {/* Cabecera y barra de progreso global animada */}
       <div className="p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <Sparkles
-              className={`w-3.5 h-3.5 shrink-0 ${
-                pulseGain ? 'text-emerald-300 animate-spin' : 'text-teal-400'
+              className={`w-3.5 h-3.5 shrink-0 transition-transform duration-300 ${
+                pulseGain ? 'text-emerald-300 scale-125' : 'text-teal-400'
               }`}
             />
-            <h2 className="text-[11px] font-extrabold uppercase tracking-wider text-teal-200 truncate">
+            <h2 className="text-[11px] font-extrabold uppercase tracking-wider text-teal-200 truncate hud-heading">
               {t.hud.globalCommons}
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-xs font-black text-white tabular-nums">
               {totalCommon}
               <span className="text-slate-400 font-semibold">/{resourceTiles.length}</span>
@@ -172,7 +194,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                   playSound.uiToggle(!isCollectiveImpactOpen);
                   onToggleCollectiveImpact();
                 }}
-                className={`p-1 rounded-md transition-colors ${
+                className={`min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg transition-colors ${
                   isCollectiveImpactOpen
                     ? 'bg-emerald-600 text-white'
                     : 'text-emerald-300 hover:text-white hover:bg-slate-800'
@@ -191,7 +213,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                   playSound.uiToggle(!isEvolutionOpen);
                   onToggleEvolution();
                 }}
-                className={`p-1 rounded-md transition-colors ${
+                className={`min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg transition-colors ${
                   isEvolutionOpen
                     ? 'bg-teal-600 text-white'
                     : 'text-teal-300 hover:text-white hover:bg-slate-800'
@@ -209,9 +231,10 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                 playSound.uiToggle(!isExpanded);
                 setIsExpanded(!isExpanded);
               }}
-              className="p-0.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="min-w-[36px] min-h-[36px] sm:min-w-[26px] sm:min-h-[26px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               title={isExpanded ? t.hud.dockCollapse : t.hud.dockExpand}
               aria-label={isExpanded ? t.hud.dockCollapse : t.hud.dockExpand}
+              aria-expanded={isExpanded}
             >
               {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
@@ -232,6 +255,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
             animate={{ width: `${commonPercent}%` }}
             transition={{ duration: 0.65, ease: 'easeOut' }}
             className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 rounded-l-full relative"
+            style={useCustomPalette ? { background: a11yPalette.tileStateBadgeCss.COMMON } : undefined}
           >
             {pulseGain && (
               <motion.span
@@ -249,23 +273,63 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
               animate={{ width: `${publicPercent}%` }}
               transition={{ duration: 0.65, ease: 'easeOut' }}
               className="h-full bg-sky-500/45"
+              style={useCustomPalette ? { background: a11yPalette.tileStateBadgeCss.PUBLIC, opacity: 0.65 } : undefined}
               title={`${totalPublic} ${t.hud.publicPlural}`}
             />
           )}
         </div>
 
-        {/* Leyenda compacta Común / Público / Privado */}
-        <div className="flex items-center justify-between text-[10px] text-slate-400 tabular-nums">
+        {/* Leyenda compacta Común / Público / Privado (con formas simbólicas cuando accesibilidad activa) */}
+        <div className="flex items-center justify-between text-[10px] text-slate-300 tabular-nums">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            {accessibilitySettings.showSymbolicShapes ? (
+              <span
+                className="font-bold leading-none"
+                style={{ color: a11yPalette.tileStateBadgeCss.COMMON }}
+                aria-hidden="true"
+              >
+                {a11yPalette.tileStateShapes.COMMON}
+              </span>
+            ) : (
+              <span
+                className="w-2 h-2 rounded-full bg-emerald-400"
+                style={useCustomPalette ? { backgroundColor: a11yPalette.tileStateBadgeCss.COMMON } : undefined}
+              />
+            )}
             <span>{t.hud.commonPlural}: {totalCommon}</span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-sky-400/70" />
+            {accessibilitySettings.showSymbolicShapes ? (
+              <span
+                className="font-bold leading-none"
+                style={{ color: a11yPalette.tileStateBadgeCss.PUBLIC }}
+                aria-hidden="true"
+              >
+                {a11yPalette.tileStateShapes.PUBLIC}
+              </span>
+            ) : (
+              <span
+                className="w-2 h-2 rounded-full bg-sky-400/70"
+                style={useCustomPalette ? { backgroundColor: a11yPalette.tileStateBadgeCss.PUBLIC } : undefined}
+              />
+            )}
             <span>{t.hud.publicPlural}: {totalPublic}</span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-rose-400/70" />
+            {accessibilitySettings.showSymbolicShapes ? (
+              <span
+                className="font-bold leading-none"
+                style={{ color: a11yPalette.tileStateBadgeCss.PRIVATE }}
+                aria-hidden="true"
+              >
+                {a11yPalette.tileStateShapes.PRIVATE}
+              </span>
+            ) : (
+              <span
+                className="w-2 h-2 rounded-full bg-rose-400/70"
+                style={useCustomPalette ? { backgroundColor: a11yPalette.tileStateBadgeCss.PRIVATE } : undefined}
+              />
+            )}
             <span>{t.hud.privatePlural}: {totalPrivate}</span>
           </span>
         </div>
@@ -302,6 +366,6 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
           })}
         </div>
       )}
-    </section>
+    </motion.section>
   );
 };

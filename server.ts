@@ -12,6 +12,15 @@ const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 const MODEL_NAME = 'gemini-4-hydrogen';
+const MODEL_TTS = 'gemini-3.8-flash-lite-tts';
+const ALLOWED_TTS_VOICES = new Set(['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr']);
+
+interface TutorialTtsRequestBody {
+  text: string;
+  voiceName?: string;
+  style?: string;
+  lang?: string;
+}
 
 interface MeteorologicalInsightRequestBody {
   round: number;
@@ -207,6 +216,66 @@ async function generateInsightWithRetry(
   throw lastError;
 }
 
+async function generateSpeechWithRetry(
+  ai: GoogleGenAI,
+  params: {
+    text: string;
+    voiceName: string;
+    style: string;
+  }
+): Promise<string> {
+  let lastError: unknown;
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: MODEL_TTS,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: params.text,
+                speechMetadata: {
+                  style: params.style
+                }
+              }
+            ]
+          }
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: params.voiceName
+              }
+            }
+          }
+        }
+      });
+
+      const parts = response.candidates?.[0]?.content?.parts ?? [];
+      const base64Audio = parts.find(part => part.inlineData?.data)?.inlineData?.data;
+      if (!base64Audio) {
+        throw new Error('Gemini TTS no devolvió audio WAV.');
+      }
+      return base64Audio;
+    } catch (err) {
+      lastError = err;
+      const status = extractStatusCode(err);
+      const isRetryable = status === 429 || status >= 500;
+      if (!isRetryable || attempt === maxAttempts) {
+        throw err;
+      }
+      await sleep(350 * Math.pow(2, attempt - 1));
+    }
+  }
+
+  throw lastError;
+}
+
 async function startServer() {
   const app = express();
   const httpServer = http.createServer(app);
@@ -282,6 +351,89 @@ async function startServer() {
       res.status(502).json({
         error: 'No se pudo completar el análisis meteorológico con Gemini.',
         details: message
+      });
+    }
+  });
+
+  app.post('/api/tutorial-tts', async (req: Request, res: Response) => {
+    const body = req.body as Partial<TutorialTtsRequestBody> | undefined;
+    const rawText = typeof body?.text === 'string' ? body.text.trim() : '';
+
+    if (!rawText) {
+      res.status(400).json({
+        error: 'Falta el texto a narrar.',
+        fallbackRecommended: false
+      });
+      return;
+    }
+
+    if (rawText.length > 1800) {
+      res.status(400).json({
+        error: 'El texto de narración excede el máximo permitido (1800 caracteres).',
+        fallbackRecommended: false
+      });
+      return;
+    }
+
+    const ai = getGenAIClient();
+    if (!ai) {
+      res.status(503).json({
+        error:
+          'GEMINI_API_KEY no configurada en el servidor; usando voz mejorada del sistema.',
+        fallbackRecommended: true
+      });
+      return;
+    }
+
+    const requestedVoice = typeof body?.voiceName === 'string' ? body.voiceName.trim() : '';
+    const voiceName = ALLOWED_TTS_VOICES.has(requestedVoice) ? requestedVoice : 'Kore';
+    const rawStyle = typeof body?.style === 'string' ? body.style.trim().slice(0, 280) : '';
+    const langHint = typeof body?.lang === 'string' && body.lang.trim() ? body.lang.trim() : 'es';
+    const style =
+      rawStyle ||
+      `Natural, warm, expressive, conversational human narrator speaking ${langHint} with clear diction and gentle pauses.`;
+
+    try {
+      const audioBase64 = await generateSpeechWithRetry(ai, {
+        text: rawText,
+        voiceName,
+        style
+      });
+
+      res.json({
+        audioBase64,
+        mimeType: 'audio/wav',
+        model: MODEL_TTS,
+        voiceName
+      });
+    } catch (err) {
+      const status = extractStatusCode(err);
+      const message =
+        err instanceof Error ? err.message : 'Error inesperado al generar voz con Gemini.';
+
+      if (status === 400 || status === 403) {
+        res.status(status).json({
+          error:
+            'La clave de Gemini no es válida o no tiene permisos para generar voz neural.',
+          details: message,
+          fallbackRecommended: true
+        });
+        return;
+      }
+
+      if (status === 429) {
+        res.status(429).json({
+          error: 'Límite temporal de peticiones de voz alcanzado. Usando voz del sistema.',
+          details: message,
+          fallbackRecommended: true
+        });
+        return;
+      }
+
+      res.status(502).json({
+        error: 'No se pudo sintetizar la voz neural con Gemini.',
+        details: message,
+        fallbackRecommended: true
       });
     }
   });

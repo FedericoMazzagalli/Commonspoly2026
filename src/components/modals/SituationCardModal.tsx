@@ -8,6 +8,7 @@ import React from 'react';
 import { HelpCircle, Check, Sparkles, CloudSun } from 'lucide-react';
 import { SituationCard, Character, WeatherCondition } from '../../types/game';
 import { useI18n } from '../../i18n';
+import { ModalFrame } from '../ui/MotionPrimitives';
 
 interface SituationCardModalProps {
   card: SituationCard | null;
@@ -23,9 +24,10 @@ export const SituationCardModal: React.FC<SituationCardModalProps> = ({ card, pl
   const isFavorable = weather && (weather.type === 'RAIN' || weather.type === 'SUNNY' || weather.type === 'TEMPERATE');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88">
-      <div className="w-full max-w-lg bg-slate-900 border-2 border-sky-500/80 rounded-2xl shadow-2xl p-6 text-slate-100 animate-in fade-in zoom-in-95 duration-200">
-        
+    <ModalFrame
+      ariaLabel={card.title}
+      className="w-full max-w-lg bg-slate-900 border-2 border-sky-500/80 rounded-2xl shadow-2xl p-6 text-slate-100 my-auto"
+    >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2 text-sky-400 font-bold text-xs uppercase tracking-widest">
@@ -39,7 +41,7 @@ export const SituationCardModal: React.FC<SituationCardModalProps> = ({ card, pl
 
         {/* Content */}
         <div className="py-5 space-y-4">
-          <h3 className="text-xl font-bold text-white">
+          <h3 className="hud-heading text-xl font-bold text-white">
             {card.title}
           </h3>
 
@@ -71,15 +73,14 @@ export const SituationCardModal: React.FC<SituationCardModalProps> = ({ card, pl
         {/* Actions */}
         <div className="pt-4 border-t border-slate-800 flex justify-end">
           <button
+            type="button"
             onClick={onConfirm}
-            className="px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
+            className="min-h-[44px] sm:min-h-[38px] px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm flex items-center gap-2 transition-all shadow-lg active:scale-95"
           >
             <Check className="w-4 h-4" />
             <span>{t.modals.resolveCard}</span>
           </button>
         </div>
-
-      </div>
-    </div>
+    </ModalFrame>
   );
 };
