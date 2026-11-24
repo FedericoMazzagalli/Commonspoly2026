@@ -8,6 +8,7 @@
 import React, { useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, Eye, Trophy, HeartHandshake, AlertCircle, Trees, Layers, Lock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Tile } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { CooperativeEfficiencyBreakdown } from '../../utils/cooperativeEfficiency';
@@ -40,6 +41,7 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
   showSummaryModal,
   onToggleSummary
 }) => {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const commonCount = tiles.filter(t => t.state === 'COMMON' || t.category === 'INALIENABLE_COMMON').length;
@@ -122,10 +124,10 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
 
   const titleText =
     result === 'VICTORY'
-      ? '¡Victoria de los Bienes Comunes!'
+      ? t('gameOverCinematic.victoryTitle')
       : result === 'DRAW'
-      ? 'Empate Social de Transición'
-      : 'Fin de Partida · Avance Neoliberal';
+      ? t('gameOverCinematic.drawTitle')
+      : t('gameOverCinematic.defeatTitle');
 
   const accentBorder =
     result === 'VICTORY'
@@ -151,24 +153,24 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
           {result === 'DRAW' && <HeartHandshake className="w-4 h-4 text-sky-400" />}
           {result === 'DEFEAT' && <AlertCircle className="w-4 h-4 text-rose-400" />}
           <span className="font-black text-white uppercase tracking-wider">{titleText}</span>
-          <span className="text-slate-400 tabular-nums">· Ronda {round}/20</span>
+          <span className="text-slate-400 tabular-nums">· {t('common.round')} {round}/20</span>
         </div>
 
         {/* Estado final del tablero en vivo */}
         <div className="pointer-events-auto hidden sm:flex items-center gap-3 px-4 py-2 rounded-2xl bg-slate-950/85 border border-slate-800 shadow-xl text-xs tabular-nums">
           <span className="flex items-center gap-1.5 text-emerald-300 font-bold">
             <Trees className="w-3.5 h-3.5" />
-            {commonCount} Comunes
+            {commonCount} {t('hud.commonPlural')}
           </span>
           <span className="text-slate-600">·</span>
           <span className="flex items-center gap-1.5 text-sky-300 font-bold">
             <Layers className="w-3.5 h-3.5" />
-            {publicCount} Públicos
+            {publicCount} {t('hud.publicPlural')}
           </span>
           <span className="text-slate-600">·</span>
           <span className="flex items-center gap-1.5 text-rose-300 font-bold">
             <Lock className="w-3.5 h-3.5" />
-            {privateCount} Privados
+            {privateCount} {t('hud.privatePlural')}
           </span>
         </div>
       </motion.div>
@@ -185,10 +187,10 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
             <div className="pointer-events-auto w-full max-w-md px-4 py-2.5 rounded-2xl bg-slate-950/90 border border-teal-500/40 shadow-xl space-y-1.5">
               <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
                 <span className="text-teal-300 uppercase tracking-wider">
-                  Limpieza del Tablero · {cooperativeEfficiency.tierLabel}
+                  {t('gameOverCinematic.boardCleanliness')} · {cooperativeEfficiency.tierLabel}
                 </span>
                 <span className="text-white tabular-nums">
-                  {cooperativeEfficiency.efficiencyPct}% eficiencia
+                  {cooperativeEfficiency.efficiencyPct}% {t('gameOverCinematic.efficiencySuffix')}
                 </span>
               </div>
               <div className="h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
@@ -211,12 +213,12 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
             className="pointer-events-auto px-6 py-3 rounded-2xl bg-slate-950/90 hover:bg-slate-900 border-2 border-teal-500 text-white font-black text-xs md:text-sm flex items-center gap-2 shadow-2xl transition-all active:scale-95"
           >
             <Sparkles className="w-4 h-4 text-teal-400" />
-            <span>Ver Resumen Final de la Sociedad</span>
+            <span>{t('gameOverCinematic.viewSummaryBtn')}</span>
           </button>
         </motion.div>
       )}
 
-      {/* Botón discreto cuando el resumen está abierto (redundante si se cierra desde el modal, mantiene control claro) */}
+      {/* Botón discreto cuando el resumen está abierto */}
       {showSummaryModal && (
         <div className="relative z-10 w-full px-4 pb-4 flex justify-end">
           <button
@@ -228,7 +230,7 @@ export const GameOverCinematicOverlay: React.FC<GameOverCinematicOverlayProps> =
             className="pointer-events-auto px-3.5 py-2 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 shadow-lg transition-colors"
           >
             <Eye className="w-3.5 h-3.5 text-teal-400" />
-            <span>Ver Vuelo 3D</span>
+            <span>{t('gameOverCinematic.view3dFlightBtn')}</span>
           </button>
         </div>
       )}

@@ -65,6 +65,7 @@ import {
   updateCameraFrustum
 } from './frustumCulling';
 import type { BoardPerformanceTelemetry } from '../../utils/performanceTelemetry';
+import { useI18n } from '../../i18n';
 
 interface Board3DProps {
   tiles: Tile[];
@@ -136,6 +137,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
   speculatorTrajectories = null,
   accessibilitySettings = DEFAULT_ACCESSIBILITY_SETTINGS
 }) => {
+  const { t } = useI18n();
   const mountRef = useRef<HTMLDivElement>(null);
   const [webglLost, setWebglLost] = useState(false);
 
@@ -380,6 +382,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       ENVIRONMENT: { color: 0x16a34a, roughness: 0.4 },   // Verde Medioambiental
       INALIENABLE: { color: 0xec4899, roughness: 0.35 },  // Rosa Inalienable
       SPECIAL: { color: 0x334155, roughness: 0.5 },      // Gris Pizarra Especial
+      CASINO: { color: 0x881337, roughness: 0.35, metalness: 0.25 }, // Casino Especulativo
       SITUATION: { color: 0x0284c7, roughness: 0.4 },    // Azul Situación
       CORNER: { color: 0x1e293b, roughness: 0.5 },       // Esquinas
       AGORA_ENTRY: { color: 0x0d9488, roughness: 0.4 },  // Columnas hacia el Ágora
@@ -559,6 +562,7 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       else if (tile.category === 'CORNER') matKey = 'CORNER';
       else if (tile.category === 'AGORA_ENTRY') matKey = 'AGORA_ENTRY';
       else if (tile.category === 'AGORA_CENTER') matKey = 'AGORA_CENTER';
+      else if (tile.specialType === 'CASINO') matKey = 'CASINO';
       else if (tile.goodType && tilePaletteConfig[tile.goodType]) matKey = tile.goodType;
 
       const cfg = tilePaletteConfig[matKey] ?? tilePaletteConfig.SPECIAL;
@@ -1667,6 +1671,18 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
                 } else {
                   tileMat.emissiveIntensity = 0.1 + dangerEntry.intensity * 0.22;
                 }
+              } else if (
+                currPhase !== 'GAME_OVER' &&
+                propsRef.current.players.length > 0 &&
+                tile.category === 'AGORA_ENTRY' &&
+                propsRef.current.players.reduce((s, p) => s + p.legitimacy, 0) >=
+                  propsRef.current.players.length * 10
+              ) {
+                tileMat.emissive.setHex(0x14b8a6);
+                tileMat.emissiveIntensity = 0.12 + tutPulse * 0.14;
+              } else if (currPhase !== 'GAME_OVER' && tile.specialType === 'CASINO') {
+                tileMat.emissive.setHex(0xbe123c);
+                tileMat.emissiveIntensity = 0.12;
               } else if (tileMat.emissiveIntensity !== 0) {
                 tileMat.emissive.setHex(0x000000);
                 tileMat.emissiveIntensity = 0;
@@ -2623,9 +2639,9 @@ export const CommonspolyBoard3D: React.FC<Board3DProps> = ({
       {webglLost && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/90 text-slate-200 p-6 text-center z-0">
           <div className="max-w-sm space-y-2">
-            <h3 className="text-base font-bold text-white">Restaurando escena 3D del tablero</h3>
+            <h3 className="text-base font-bold text-white">{t.hud.webglLostTitle}</h3>
             <p className="text-xs text-slate-400">
-              El contexto gráfico WebGL se suspendió temporalmente y se reanudará en cuanto esté disponible.
+              {t.hud.webglLostDesc}
             </p>
           </div>
         </div>

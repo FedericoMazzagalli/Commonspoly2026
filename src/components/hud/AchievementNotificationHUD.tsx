@@ -17,6 +17,7 @@ import {
   Flame,
   X
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CooperativeAchievement } from '../../types/game';
 import { playSound } from '../../utils/audio';
 
@@ -52,38 +53,12 @@ function renderAchievementIcon(iconName: string, className: string) {
   }
 }
 
-function getTierMeta(tier?: CooperativeAchievement['tier']) {
-  switch (tier) {
-    case 'GOLD':
-      return {
-        label: 'Oro',
-        border: 'border-amber-400/70',
-        iconWrap: 'bg-amber-500/15 text-amber-300',
-        kickerColor: 'text-amber-300'
-      };
-    case 'SILVER':
-      return {
-        label: 'Plata',
-        border: 'border-teal-400/70',
-        iconWrap: 'bg-teal-500/15 text-teal-300',
-        kickerColor: 'text-teal-300'
-      };
-    case 'BRONZE':
-    default:
-      return {
-        label: 'Bronce',
-        border: 'border-emerald-500/60',
-        iconWrap: 'bg-emerald-500/15 text-emerald-300',
-        kickerColor: 'text-emerald-300'
-      };
-  }
-}
-
 export const AchievementNotificationHUD: React.FC<AchievementNotificationHUDProps> = ({
   achievement,
   onDismiss,
   onOpenAchievements
 }) => {
+  const { t } = useTranslation();
   const [isHovering, setIsHovering] = useState(false);
 
   useEffect(() => {
@@ -94,13 +69,40 @@ export const AchievementNotificationHUD: React.FC<AchievementNotificationHUDProp
     return () => window.clearTimeout(timer);
   }, [achievement, isHovering, onDismiss]);
 
+  const getTierMeta = (tier?: CooperativeAchievement['tier']) => {
+    switch (tier) {
+      case 'GOLD':
+        return {
+          label: t('modals.tierGold'),
+          border: 'border-amber-400/70',
+          iconWrap: 'bg-amber-500/15 text-amber-300',
+          kickerColor: 'text-amber-300'
+        };
+      case 'SILVER':
+        return {
+          label: t('modals.tierSilver'),
+          border: 'border-teal-400/70',
+          iconWrap: 'bg-teal-500/15 text-teal-300',
+          kickerColor: 'text-teal-300'
+        };
+      case 'BRONZE':
+      default:
+        return {
+          label: t('modals.tierBronze'),
+          border: 'border-emerald-500/60',
+          iconWrap: 'bg-emerald-500/15 text-emerald-300',
+          kickerColor: 'text-emerald-300'
+        };
+    }
+  };
+
   const tierMeta = getTierMeta(achievement?.tier);
 
   return (
     <div
       role="status"
       aria-live="polite"
-      aria-label="Logro local desbloqueado"
+      aria-label={t('achievementToast.ariaLabel')}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
       className="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-40 w-[90vw] max-w-sm"
@@ -122,14 +124,14 @@ export const AchievementNotificationHUD: React.FC<AchievementNotificationHUDProp
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400 tabular-nums">
                 <span className={`font-bold uppercase tracking-wider ${tierMeta.kickerColor}`}>
-                  Logro desbloqueado
+                  {t('achievementToast.unlockedKicker')}
                 </span>
                 <span aria-hidden="true">·</span>
                 <span>{tierMeta.label}</span>
                 {achievement.unlockedAtRound !== undefined && (
                   <>
                     <span aria-hidden="true">·</span>
-                    <span>Ronda {achievement.unlockedAtRound}</span>
+                    <span>{t('common.round')} {achievement.unlockedAtRound}</span>
                   </>
                 )}
               </div>
@@ -152,7 +154,7 @@ export const AchievementNotificationHUD: React.FC<AchievementNotificationHUDProp
                     }}
                     className="text-[11px] font-semibold text-amber-300 hover:text-amber-200 underline whitespace-nowrap shrink-0 transition-colors"
                   >
-                    Ver logros
+                    {t('achievementToast.viewAll')}
                   </button>
                 )}
               </div>
@@ -165,8 +167,8 @@ export const AchievementNotificationHUD: React.FC<AchievementNotificationHUDProp
                 onDismiss();
               }}
               className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-              aria-label="Cerrar notificación de logro"
-              title="Cerrar"
+              aria-label={t('achievementToast.closeAria')}
+              title={t('common.close')}
             >
               <X className="w-3.5 h-3.5" />
             </button>

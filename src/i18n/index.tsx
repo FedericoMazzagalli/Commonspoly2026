@@ -31,6 +31,8 @@ import { zh } from './locales/zh';
 import { ar } from './locales/ar';
 import { hi } from './locales/hi';
 
+import i18n from 'i18next';
+
 export type { LanguageCode, LanguageMeta, TranslationDict } from './types';
 export { SUPPORTED_LANGUAGES, LANGUAGE_META_MAP, isSupportedLanguage, detectBrowserLanguage };
 
@@ -118,6 +120,9 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     activeGlobalLanguage = language;
     syncDocumentLanguage(language);
+    if (i18n.isInitialized && i18n.language !== language) {
+      void i18n.changeLanguage(language);
+    }
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(STORAGE_KEY, language);

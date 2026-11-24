@@ -7,6 +7,7 @@
 import gsap from 'gsap';
 import * as THREE from 'three';
 import { Tile } from '../../types/game';
+import { findAgoraColumnByTileId } from '../../data/tiles';
 
 export interface BoardNodeCoord {
   tileId: number;
@@ -24,12 +25,39 @@ interface CameraProxyState {
 }
 
 /**
- * Resuelve la secuencia ordenada de nodos (IDs de casillas) entre origen y destino.
+ * Resuelve la secuencia ordenada de nodos (IDs de casillas) entre origen y destino,
+ * incluyendo el ascenso/descenso radial por las columnas de acceso al Ágora (#100).
  */
 export function resolveBoardNodePath(fromTileId: number, toTileId: number): number[] {
   if (fromTileId === toTileId) return [toTileId];
 
-  // Entrada o salida del Ágora Central (ID 100)
+  // Si origen o destino están en una columna radial del Ágora, trazar el camino por la columna
+  const fromCol = findAgoraColumnByTileId(fromTileId);
+  const toCol = findAgoraColumnByTileId(toTileId);
+
+  if (fromCol && (toCol?.columnId === fromCol.columnId || toTileId === 100)) {
+    const chain = [fromCol.entryTileId, ...fromCol.tileIds, 100];
+    const startIdx = chain.indexOf(fromTileId);
+    const endIdx = chain.indexOf(toTileId);
+    if (startIdx >= 0 && endIdx >= 0) {
+      const path: number[] = [];
+      const dir = endIdx >= startIdx ? 1 : -1;
+      for (let i = startIdx; dir > 0 ? i <= endIdx : i >= endIdx; i += dir) {
+        path.push(chain[i]);
+      }
+      return path;
+    }
+  }
+
+  if (fromTileId === 100 && toCol) {
+    const chain = [100, ...[...toCol.tileIds].reverse(), toCol.entryTileId];
+    const endIdx = chain.indexOf(toTileId);
+    if (endIdx >= 0) {
+      return chain.slice(0, endIdx + 1);
+    }
+  }
+
+  // Entrada o salida directa del Ágora Central (ID 100) en modo Expandido
   if (fromTileId === 100 || toTileId === 100) {
     return [fromTileId, toTileId];
   }

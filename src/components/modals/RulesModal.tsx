@@ -3,9 +3,10 @@
  * Manual interactivo de reglas, glosario e historia de Commonspoly (Edición Verde)
  */
 
-import React, { useState } from 'react';
-import { BookOpen, X, Shield, Dices, Users, HeartHandshake, History, Award } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { BookOpen, X, Award } from 'lucide-react';
 import { useI18n } from '../../i18n';
+import { OFFICIAL_CHARACTERS } from '../../data/characters';
 
 interface RulesModalProps {
   onClose: () => void;
@@ -13,10 +14,25 @@ interface RulesModalProps {
 
 export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
   const { t } = useI18n();
-  const [tab, setTab] = useState<'RULES' | 'COMMONS' | 'SPECULATORS' | 'HISTORY'>('RULES');
+  const [tab, setTab] = useState<'RULES' | 'COMMONS' | 'SPECIAL' | 'SPECULATORS' | 'HISTORY'>('RULES');
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/88 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t.rules.title}
+    >
       <div className="w-full max-w-3xl bg-slate-900 border border-teal-800 rounded-2xl shadow-2xl p-6 text-slate-100 my-auto flex flex-col max-h-[90vh]">
         
         {/* Header */}
@@ -51,6 +67,14 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
             }`}
           >
             {t.rules.tabCommons}
+          </button>
+          <button
+            onClick={() => setTab('SPECIAL')}
+            className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+              tab === 'SPECIAL' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            {t.rules.tabSpecialTiles ?? 'Casillas Especiales'}
           </button>
           <button
             onClick={() => setTab('SPECULATORS')}
@@ -91,6 +115,15 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
                 <p>{t.rules.mutualProtRule}</p>
                 <p>{t.rules.globalCardsRule}</p>
               </div>
+
+              <div className="p-3 bg-emerald-950/35 rounded-xl border border-emerald-800/50 text-xs space-y-1">
+                <h5 className="font-bold text-emerald-300">
+                  {t.rules.rulesetModesTitle ?? 'Modo Oficial ZEMOS98 vs. Digital Expandido'}
+                </h5>
+                <p className="text-slate-300">
+                  {t.rules.rulesetModesBody ?? 'El modo Oficial ZEMOS98 aplica las reglas estrictas del manual físico; el modo Expandido añade bonificadores únicos, crisis, clima dinámico y reputación.'}
+                </p>
+              </div>
             </div>
           )}
 
@@ -124,6 +157,55 @@ export const RulesModal: React.FC<RulesModalProps> = ({ onClose }) => {
               <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 space-y-1">
                 <h5 className="font-bold text-white">{t.rules.agoraTitle}</h5>
                 <p>{t.rules.agoraBody}</p>
+              </div>
+            </div>
+          )}
+
+          {tab === 'SPECIAL' && (
+            <div className="space-y-4 text-xs">
+              <p>{t.rules.specialTilesIntro}</p>
+              <ul className="list-disc list-inside space-y-1.5 bg-slate-800/50 rounded-xl border border-slate-700/60 p-3.5">
+                <li>{t.rules.tileStart}</li>
+                <li>{t.rules.tileBureaucracy}</li>
+                <li>{t.rules.tileDetention}</li>
+                <li>{t.rules.tileTragedy}</li>
+                <li>{t.rules.tileBank}</li>
+                <li>{t.rules.tileAssembly}</li>
+                <li>{t.rules.tileCasino}</li>
+                <li>{t.rules.tileCrowdfunding}</li>
+                <li>{t.rules.tileColumns}</li>
+              </ul>
+
+              <div className="space-y-2">
+                <h5 className="font-bold text-white text-xs uppercase tracking-wider">
+                  {t.rules.charactersOverviewTitle ?? 'Los 8 Personajes Oficiales'}
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {OFFICIAL_CHARACTERS.map(c => (
+                    <div
+                      key={c.id}
+                      className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 font-bold text-white">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: c.color }}
+                          />
+                          <span>{c.name}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 tabular-nums">
+                          {c.skills.care}/{c.skills.occupy}/{c.skills.share}/{c.skills.regenerate}
+                        </span>
+                      </div>
+                      {c.uniqueBonus && (
+                        <div className="text-[11px] text-amber-300/90 leading-snug">
+                          {c.uniqueBonus.title}: {c.uniqueBonus.shortLabel}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

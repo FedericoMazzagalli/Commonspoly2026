@@ -223,6 +223,7 @@ service cloud.firestore {
           'status',
           'isPublic',
           'difficulty',
+          'rulesetMode',
           'maxPlayers',
           'memberUids',
           'members',
@@ -231,6 +232,10 @@ service cloud.firestore {
           'round',
           'activePlayerIndex',
           'currentDiceRoll',
+          'activeModal',
+          'currentGlobalCardId',
+          'currentSituationCardId',
+          'recentChats',
           'playersSummary',
           'speculatorsSummary',
           'tileStates',
@@ -245,6 +250,7 @@ service cloud.firestore {
           'status',
           'isPublic',
           'difficulty',
+          'rulesetMode',
           'maxPlayers',
           'memberUids',
           'members',
@@ -253,6 +259,10 @@ service cloud.firestore {
           'round',
           'activePlayerIndex',
           'currentDiceRoll',
+          'activeModal',
+          'currentGlobalCardId',
+          'currentSituationCardId',
+          'recentChats',
           'playersSummary',
           'speculatorsSummary',
           'tileStates',
@@ -269,6 +279,7 @@ service cloud.firestore {
         data.status in ['WAITING', 'PLAYING', 'FINISHED'] &&
         data.isPublic is bool &&
         data.difficulty in ['COMUNLANDIA', 'EN_TRANSICION', 'MAD_MAX'] &&
+        data.rulesetMode in ['OFFICIAL', 'EXPANDED'] &&
         data.maxPlayers is int &&
         data.maxPlayers >= 2 &&
         data.maxPlayers <= 4 &&
@@ -293,6 +304,16 @@ service cloud.firestore {
         data.currentDiceRoll is int &&
         data.currentDiceRoll >= 0 &&
         data.currentDiceRoll <= 6 &&
+        data.activeModal is string &&
+        data.activeModal.size() >= 1 &&
+        data.activeModal.size() <= 32 &&
+        data.currentGlobalCardId is string &&
+        data.currentGlobalCardId.size() <= 64 &&
+        data.currentSituationCardId is string &&
+        data.currentSituationCardId.size() <= 64 &&
+        data.recentChats is list &&
+        data.recentChats.size() <= 8 &&
+        (data.recentChats.size() == 0 || (data.recentChats[0] is string && data.recentChats[0].size() <= 140)) &&
         data.playersSummary is list &&
         data.playersSummary.size() >= 1 &&
         data.playersSummary.size() <= 8 &&
@@ -344,6 +365,15 @@ service cloud.firestore {
           'TRY_AGORA',
           'STAY_AGORA',
           'RESOLVE_CARD',
+          'ACK_GLOBAL_CARD',
+          'AGORA_INSURRECTION',
+          'OPEN_DETENTION_RESCUE',
+          'DETENTION_RESCUE',
+          'TRAGEDY_SELECT',
+          'BUREAUCRACY_TRANSFORM',
+          'CROWDFUND_DONATE',
+          'OPEN_NEIGHBORHOOD_DECISION',
+          'NEIGHBORHOOD_VOTE',
           'CLOSE_MODAL',
           'RESCUE_PLAYER',
           'CHAT'
@@ -471,6 +501,7 @@ service cloud.firestore {
         incoming().hostUid == existing().hostUid &&
         incoming().roomCode == existing().roomCode &&
         incoming().difficulty == existing().difficulty &&
+        incoming().rulesetMode == existing().rulesetMode &&
         incoming().maxPlayers == existing().maxPlayers &&
         incoming().isPublic == existing().isPublic &&
         incoming().createdAt == existing().createdAt &&
@@ -486,6 +517,10 @@ service cloud.firestore {
               'round',
               'activePlayerIndex',
               'currentDiceRoll',
+              'activeModal',
+              'currentGlobalCardId',
+              'currentSituationCardId',
+              'recentChats',
               'playersSummary',
               'speculatorsSummary',
               'tileStates',

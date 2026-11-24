@@ -371,13 +371,13 @@ export const INITIAL_TILES: Tile[] = [
   },
   {
     id: 36,
-    code: 'CAPILLA_MULTI',
-    name: 'Capilla Multiconfesional',
-    category: 'RESOURCE',
-    goodType: 'URBAN',
+    code: 'CASINO',
+    name: 'Casino',
+    category: 'SPECIAL',
+    specialType: 'CASINO',
     x: -10,
     z: 2,
-    description: 'Espacio de convivencia intercultural y acogida espiritual.'
+    description: '¡Trampa especulativa! Si caes aquí pierdes 6 Puntos de Legitimidad.'
   },
   {
     id: 37,
@@ -574,6 +574,84 @@ export const INITIAL_TILES: Tile[] = [
     description: 'El corazón asambleario de Commonspoly. ¡Reunid a 3 personajes con suficiente Legitimidad colectiva para desprivatizar una categoría entera de bienes!'
   }
 ];
+
+export interface AgoraColumnConfig {
+  entryTileId: number;
+  columnId: 'BOTTOM' | 'RIGHT' | 'TOP' | 'LEFT';
+  tileIds: [number, number, number];
+}
+
+export const AGORA_COLUMNS: AgoraColumnConfig[] = [
+  { entryTileId: 5, columnId: 'BOTTOM', tileIds: [41, 42, 43] },
+  { entryTileId: 15, columnId: 'RIGHT', tileIds: [45, 46, 47] },
+  { entryTileId: 25, columnId: 'TOP', tileIds: [48, 49, 50] },
+  { entryTileId: 35, columnId: 'LEFT', tileIds: [51, 52, 53] }
+];
+
+export function findAgoraColumnByTileId(tileId: number): AgoraColumnConfig | undefined {
+  return AGORA_COLUMNS.find(
+    col => col.entryTileId === tileId || col.tileIds.includes(tileId)
+  );
+}
+
+export function isAgoraEntryOrColumnTile(tileId: number): boolean {
+  return Boolean(findAgoraColumnByTileId(tileId));
+}
+
+export interface AgoraColumnMoveResult {
+  targetPos: number;
+  enteredAgora: boolean;
+  reboundedInColumn: boolean;
+  pathTileIds: number[];
+}
+
+/**
+ * Calcula el avance radial por las columnas de acceso al Ágora Central (regla oficial:
+ * entrada desde casillas 5, 15, 25 o 35 con Legitimidad colectiva suficiente y entrada por tirada exacta al #100 con rebote).
+ */
+export function computeAgoraColumnMove(
+  currentPos: number,
+  roll: number,
+  collectiveLegitimacyMet: boolean
+): AgoraColumnMoveResult | null {
+  const col = findAgoraColumnByTileId(currentPos);
+  if (!col) return null;
+
+  const isInsideColumn = col.tileIds.includes(currentPos);
+  // Sólo se puede iniciar el ascenso desde el perímetro si el grupo alcanzó la Legitimidad colectiva
+  if (!isInsideColumn && !collectiveLegitimacyMet) {
+    return null;
+  }
+
+  const chain: number[] = [col.entryTileId, ...col.tileIds, 100];
+  const startIdx = chain.indexOf(currentPos);
+  if (startIdx < 0) return null;
+
+  let idx = startIdx;
+  let dir = 1;
+  let reboundedInColumn = false;
+  const pathTileIds: number[] = [chain[idx]];
+
+  for (let step = 1; step <= roll; step++) {
+    const maxReachableIdx = collectiveLegitimacyMet ? 4 : 3;
+    if (idx >= maxReachableIdx) {
+      dir = -1;
+      reboundedInColumn = true;
+    } else if (idx <= 0) {
+      dir = 1;
+    }
+    idx += dir;
+    pathTileIds.push(chain[idx]);
+  }
+
+  const targetPos = chain[idx];
+  return {
+    targetPos,
+    enteredAgora: targetPos === 100,
+    reboundedInColumn,
+    pathTileIds
+  };
+}
 
 export function applyInitialDifficultyToTiles(tiles: Tile[], rolls: { health: number; urban: number; knowledge: number; environment: number }): Tile[] {
   const stateFromRoll = (val: number): GoodState => {

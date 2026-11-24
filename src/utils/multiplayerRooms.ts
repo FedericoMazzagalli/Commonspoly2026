@@ -30,6 +30,7 @@ import {
   GameEngineState,
   GamePhase,
   GoodState,
+  RulesetMode,
   SetupInitialRolls,
   Speculator
 } from '../types/game';
@@ -47,6 +48,15 @@ export type MultiplayerActionType =
   | 'TRY_AGORA'
   | 'STAY_AGORA'
   | 'RESOLVE_CARD'
+  | 'ACK_GLOBAL_CARD'
+  | 'AGORA_INSURRECTION'
+  | 'OPEN_DETENTION_RESCUE'
+  | 'DETENTION_RESCUE'
+  | 'TRAGEDY_SELECT'
+  | 'BUREAUCRACY_TRANSFORM'
+  | 'CROWDFUND_DONATE'
+  | 'OPEN_NEIGHBORHOOD_DECISION'
+  | 'NEIGHBORHOOD_VOTE'
   | 'CLOSE_MODAL'
   | 'RESCUE_PLAYER'
   | 'CHAT';
@@ -87,6 +97,7 @@ export interface MultiplayerRoom {
   status: RoomStatus;
   isPublic: boolean;
   difficulty: DifficultyLevel;
+  rulesetMode: RulesetMode;
   maxPlayers: number;
   memberUids: string[];
   members: MultiplayerMember[];
@@ -95,6 +106,10 @@ export interface MultiplayerRoom {
   round: number;
   activePlayerIndex: number;
   currentDiceRoll: number;
+  activeModal: string;
+  currentGlobalCardId: string;
+  currentSituationCardId: string;
+  recentChats: string[];
   playersSummary: CompactRoomPlayer[];
   speculatorsSummary: CompactRoomSpeculator[];
   tileStates: CompactTileState[];
@@ -148,7 +163,10 @@ function toMillis(ts: unknown): number | undefined {
   return undefined;
 }
 
-export function buildSetupRollsForDifficulty(difficulty: DifficultyLevel): SetupInitialRolls {
+export function buildSetupRollsForDifficulty(
+  difficulty: DifficultyLevel,
+  rulesetMode: RulesetMode = 'EXPANDED'
+): SetupInitialRolls {
   if (difficulty === 'MAD_MAX') {
     return {
       health: 2,
@@ -157,7 +175,8 @@ export function buildSetupRollsForDifficulty(difficulty: DifficultyLevel): Setup
       environment: 2,
       totalSum: 9,
       difficulty,
-      speculatorsCount: 3
+      speculatorsCount: 1,
+      rulesetMode
     };
   }
   if (difficulty === 'COMUNLANDIA') {
@@ -168,7 +187,8 @@ export function buildSetupRollsForDifficulty(difficulty: DifficultyLevel): Setup
       environment: 4,
       totalSum: 18,
       difficulty,
-      speculatorsCount: 2
+      speculatorsCount: 3,
+      rulesetMode
     };
   }
   return {
@@ -178,7 +198,8 @@ export function buildSetupRollsForDifficulty(difficulty: DifficultyLevel): Setup
     environment: 4,
     totalSum: 14,
     difficulty: 'EN_TRANSICION',
-    speculatorsCount: 2
+    speculatorsCount: 2,
+    rulesetMode
   };
 }
 
@@ -300,6 +321,13 @@ function docToRoom(id: string, data: Record<string, unknown>): MultiplayerRoom {
       ? data.difficulty
       : 'EN_TRANSICION';
 
+  const validRuleset: RulesetMode = data.rulesetMode === 'OFFICIAL' ? 'OFFICIAL' : 'EXPANDED';
+  const rawChats = Array.isArray(data.recentChats) ? data.recentChats : [];
+  const recentChats = rawChats
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    .slice(-8)
+    .map(entry => entry.slice(0, 140));
+
   return {
     roomId: id,
     roomCode: typeof data.roomCode === 'string' ? data.roomCode : id.slice(0, 6).toUpperCase(),
@@ -307,6 +335,7 @@ function docToRoom(id: string, data: Record<string, unknown>): MultiplayerRoom {
     status: validStatus,
     isPublic: Boolean(data.isPublic),
     difficulty: validDifficulty,
+    rulesetMode: validRuleset,
     maxPlayers: clampInt(Number(data.maxPlayers ?? 4), 2, 4),
     memberUids: Array.isArray(data.memberUids)
       ? data.memberUids.filter((u): u is string => typeof u === 'string')
@@ -317,6 +346,10 @@ function docToRoom(id: string, data: Record<string, unknown>): MultiplayerRoom {
     round: clampInt(Number(data.round ?? 1), 1, 20),
     activePlayerIndex: clampInt(Number(data.activePlayerIndex ?? 0), 0, 7),
     currentDiceRoll: clampInt(Number(data.currentDiceRoll ?? 0), 0, 6),
+    activeModal: typeof data.activeModal === 'string' && data.activeModal.length > 0 ? data.activeModal.slice(0, 32) : 'NONE',
+    currentGlobalCardId: typeof data.currentGlobalCardId === 'string' ? data.currentGlobalCardId.slice(0, 64) : '',
+    currentSituationCardId: typeof data.currentSituationCardId === 'string' ? data.currentSituationCardId.slice(0, 64) : '',
+    recentChats,
     playersSummary,
     speculatorsSummary,
     tileStates,
@@ -337,7 +370,8 @@ export async function createMultiplayerRoom(
   characterId: string,
   difficulty: DifficultyLevel,
   maxPlayers = 4,
-  isPublic = true
+  isPublic = true,
+  rulesetMode: RulesetMode = 'EXPANDED'
 ): Promise<MultiplayerRoom> {
   if (!user.emailVerified) {
     throw new Error('Se requiere una cuenta de Google con correo verificado para crear una sala.');
@@ -351,8 +385,19 @@ export async function createMultiplayerRoom(
   const cleanCharId = sanitizeCharId(characterId);
   const baseChar = OFFICIAL_CHARACTERS.find(c => c.id === cleanCharId) || OFFICIAL_CHARACTERS[0];
   const initialPlayer = createInitialCharacter(baseChar, 'HUMAN');
-  const rolls = buildSetupRollsForDifficulty(difficulty);
+  const rolls = buildSetupRollsForDifficulty(difficulty, rulesetMode);
   const initialTiles = applyInitialDifficultyToTiles(INITIAL_TILES, rolls);
+  const initialSpeculators: Speculator[] = Array.from({ length: rolls.speculatorsCount }, (_, i) => ({
+    id: i + 1,
+    position: 0,
+    name:
+      i === 0
+        ? 'Fondo Buitre Inmobiliario'
+        : i === 1
+        ? 'Corporación Farmacéutica'
+        : 'Monopolio Tecnológico',
+    color: i === 0 ? '#FFFFFF' : i === 1 ? '#E2E8F0' : '#CBD5E1'
+  }));
 
   const member: MultiplayerMember = {
     uid: user.uid,
@@ -368,6 +413,7 @@ export async function createMultiplayerRoom(
     status: 'WAITING' as RoomStatus,
     isPublic: Boolean(isPublic),
     difficulty,
+    rulesetMode,
     maxPlayers: clampInt(maxPlayers, 2, 4),
     memberUids: [user.uid],
     members: [member],
@@ -376,11 +422,12 @@ export async function createMultiplayerRoom(
     round: 1,
     activePlayerIndex: 0,
     currentDiceRoll: 0,
+    activeModal: 'NONE',
+    currentGlobalCardId: '',
+    currentSituationCardId: '',
+    recentChats: [] as string[],
     playersSummary: serializePlayersSummary([initialPlayer]),
-    speculatorsSummary: serializeSpeculatorsSummary([
-      { id: 1, position: 0, name: 'Fondo Buitre Inmobiliario', color: '#FFFFFF' },
-      { id: 2, position: 0, name: 'Corporación Farmacéutica', color: '#E2E8F0' }
-    ]),
+    speculatorsSummary: serializeSpeculatorsSummary(initialSpeculators),
     tileStates: serializeTilesToArray(initialTiles),
     gameResult: 'NONE' as const,
     gameResultDetails: '',
@@ -609,6 +656,10 @@ export async function launchRoomMatchByHost(
       round: 1,
       activePlayerIndex: 0,
       currentDiceRoll: 0,
+      activeModal: 'NONE',
+      currentGlobalCardId: '',
+      currentSituationCardId: '',
+      recentChats: [] as string[],
       playersSummary: serializePlayersSummary(players),
       speculatorsSummary: serializeSpeculatorsSummary(speculators),
       tileStates: serializeTilesToArray(tiles),
@@ -629,6 +680,10 @@ export async function syncHostGameStateToRoom(
   const path = `${ROOMS_COLLECTION}/${roomId}`;
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
   const status: RoomStatus = state.phase === 'GAME_OVER' ? 'FINISHED' : 'PLAYING';
+  const recentChats = (state.chatMessages ?? [])
+    .slice(-8)
+    .map(m => `${m.senderName}: ${m.text}`.trim().slice(0, 140))
+    .filter(Boolean);
 
   try {
     await updateDoc(roomRef, {
@@ -638,6 +693,10 @@ export async function syncHostGameStateToRoom(
       round: clampInt(state.round, 1, 20),
       activePlayerIndex: clampInt(state.activePlayerIndex, 0, 7),
       currentDiceRoll: clampInt(state.currentDiceRoll ?? 0, 0, 6),
+      activeModal: (state.activeModal ?? 'NONE').slice(0, 32),
+      currentGlobalCardId: (state.currentGlobalCard?.id ?? '').slice(0, 64),
+      currentSituationCardId: (state.currentSituationCard?.id ?? '').slice(0, 64),
+      recentChats,
       playersSummary: serializePlayersSummary(state.players),
       speculatorsSummary: serializeSpeculatorsSummary(state.speculators),
       tileStates: serializeTilesToArray(state.tiles),
@@ -732,5 +791,39 @@ export async function markRoomActionProcessed(roomId: string, actionId: string):
     await updateDoc(actionRef, { processed: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+const ACTIVE_ROOM_STORAGE_KEY = 'commonspoly_active_room_id';
+
+export function saveActiveRoomId(roomId: string | null): void {
+  try {
+    if (!roomId) {
+      localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+    } else {
+      localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, roomId);
+    }
+  } catch {
+    // Ignorar en entornos sin localStorage disponible
+  }
+}
+
+export function loadSavedActiveRoomId(): string | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
+    return raw && /^room_[A-Z0-9]{4,8}$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchMultiplayerRoomById(roomId: string): Promise<MultiplayerRoom | null> {
+  if (!/^room_[A-Z0-9]{4,8}$/.test(roomId)) return null;
+  try {
+    const snap = await getDoc(doc(db, ROOMS_COLLECTION, roomId));
+    if (!snap.exists()) return null;
+    return docToRoom(snap.id, snap.data() as Record<string, unknown>);
+  } catch {
+    return null;
   }
 }

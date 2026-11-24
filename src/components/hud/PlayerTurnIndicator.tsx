@@ -19,6 +19,7 @@ import {
   Dices,
   Scale
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Character, GamePhase } from '../../types/game';
 import { formatSignedScore, getReputationProfile } from '../../utils/reputation';
 
@@ -156,42 +157,51 @@ const CharacterAvatar: React.FC<{
   );
 };
 
-function getPhaseLabel(phase: GamePhase, player: Character, roll: number | null): string {
-  if (player.isDetained) return `Detenida (${player.detentionRoundsLeft} r.)`;
-  if (player.inAgora) return 'En el Ágora Central';
-  switch (phase) {
-    case 'PLAYER_TURN_READY':
-      return player.controller === 'BOT' ? 'IA preparando jugada...' : 'Lista para tirar dado';
-    case 'DICE_ROLLING':
-      return roll ? `Dado: ${roll}` : 'Lanzando dado...';
-    case 'MOVE_ANIMATING':
-      return 'Desplazándose...';
-    case 'TILE_ACTION_DECISION':
-      return 'Decidiendo acción en casilla';
-    case 'SPECULATOR_TURN':
-      return 'Turno de Especuladores';
-    case 'GLOBAL_CARD':
-      return 'Leyendo Carta Global';
-    default:
-      return 'En turno';
-  }
-}
-
 export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
   players,
   activePlayerIndex,
   phase,
   currentDiceRoll
 }) => {
+  const { t } = useTranslation();
   const activePlayer = players[activePlayerIndex];
   if (!activePlayer) return null;
 
-  const phaseText = getPhaseLabel(phase, activePlayer, currentDiceRoll);
+  const getPhaseText = (): string => {
+    if (activePlayer.isDetained) {
+      return t('turnHud.phaseDetained', { rounds: activePlayer.detentionRoundsLeft });
+    }
+    if (activePlayer.inAgora) {
+      return t('turnHud.phaseInAgora');
+    }
+    switch (phase) {
+      case 'PLAYER_TURN_READY':
+        return activePlayer.controller === 'BOT'
+          ? t('turnHud.phaseBotThinking')
+          : t('turnHud.phaseReadyToRoll');
+      case 'DICE_ROLLING':
+        return currentDiceRoll
+          ? t('turnHud.phaseDice', { roll: currentDiceRoll })
+          : t('turnHud.phaseRolling');
+      case 'MOVE_ANIMATING':
+        return t('turnHud.phaseMoving');
+      case 'TILE_ACTION_DECISION':
+        return t('turnHud.phaseDecision');
+      case 'SPECULATOR_TURN':
+        return t('turnHud.phaseSpeculators');
+      case 'GLOBAL_CARD':
+        return t('turnHud.phaseGlobalCard');
+      default:
+        return t('turnHud.phaseDefault');
+    }
+  };
+
+  const phaseText = getPhaseText();
   const activeRep = getReputationProfile(activePlayer);
 
   return (
     <div
-      aria-label="Indicador de Turno Actual"
+      aria-label={t('turnHud.ariaLabel')}
       className="pointer-events-auto flex flex-col gap-2 max-w-full"
     >
       {/* Tarjeta destacada del jugador en turno */}
@@ -228,19 +238,19 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
                 style={{ backgroundColor: activePlayer.color }}
               >
                 <Sparkles className="w-2.5 h-2.5" />
-                Turno Actual
+                {t('turnHud.currentTurnBadge')}
               </span>
 
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-700 text-[9px] font-bold text-slate-200">
                 {activePlayer.controller === 'BOT' ? (
                   <>
                     <Bot className="w-2.5 h-2.5 text-indigo-400" />
-                    <span>IA</span>
+                    <span>{t('common.bot')}</span>
                   </>
                 ) : (
                   <>
                     <User className="w-2.5 h-2.5 text-teal-400" />
-                    <span>Humano</span>
+                    <span>{t('common.human')}</span>
                   </>
                 )}
               </span>
@@ -248,13 +258,13 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
               {activePlayer.inAgora && (
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-pink-950 border border-pink-700 text-[9px] font-bold text-pink-300">
                   <Flame className="w-2.5 h-2.5" />
-                  Ágora
+                  {t('turnHud.inAgoraShort')}
                 </span>
               )}
               {activePlayer.isDetained && (
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-950 border border-rose-700 text-[9px] font-bold text-rose-300">
                   <Lock className="w-2.5 h-2.5" />
-                  Detenida
+                  {t('turnHud.detainedShort')}
                 </span>
               )}
             </div>
@@ -272,11 +282,11 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
             <div className="flex items-center gap-3 text-[11px] tabular-nums text-slate-300 flex-wrap">
               <span className="flex items-center gap-1 font-semibold text-rose-300">
                 <Heart className="w-3 h-3 text-rose-400" />
-                {activePlayer.wellness} Bienestar
+                {activePlayer.wellness} {t('common.wellness')}
               </span>
               <span className="flex items-center gap-1 font-semibold text-amber-300">
                 <Award className="w-3 h-3 text-amber-400" />
-                {activePlayer.legitimacy} Legitimidad
+                {activePlayer.legitimacy} {t('common.legitimacy')}
               </span>
               <span
                 className={`flex items-center gap-1 font-semibold ${
@@ -290,7 +300,7 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
               >
                 <Scale className="w-3 h-3 shrink-0" />
                 <span>
-                  {activeRep.label} ({formatSignedScore(activeRep.score)}) · Voto {activeRep.voteWeight}x
+                  {activeRep.label} ({formatSignedScore(activeRep.score)}) · {t('turnHud.votePrefix', { weight: activeRep.voteWeight })}
                 </span>
               </span>
             </div>
@@ -319,7 +329,7 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
                     }
                   : undefined
               }
-              title={`${p.name}: Reputación Vecinal ${pRep.label} (${formatSignedScore(pRep.score)}) · Confianza ${pRep.trustPercent}%`}
+              title={`${p.name}: ${t('turnHud.repTooltip', { label: pRep.label, score: formatSignedScore(pRep.score), pct: pRep.trustPercent })}`}
             >
               <CharacterAvatar character={p} size="sm" isActive={false} />
               <div className="flex flex-col leading-tight">
@@ -342,7 +352,7 @@ export const PlayerTurnIndicator: React.FC<PlayerTurnIndicatorProps> = ({
                         : 'text-slate-400'
                     }
                   >
-                    Rep {formatSignedScore(pRep.score)}
+                    {t('turnHud.repShort')} {formatSignedScore(pRep.score)}
                   </span>
                 </span>
               </div>

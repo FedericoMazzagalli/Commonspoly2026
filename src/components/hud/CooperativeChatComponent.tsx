@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { GameEngineState } from '../../types/game';
 import { playSound } from '../../utils/audio';
+import { useI18n } from '../../i18n';
 
 interface CooperativeChatComponentProps {
   state: GameEngineState;
@@ -36,6 +37,7 @@ export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> =
   onSendMessage,
   isDockCollapsed = false
 }) => {
+  const { t } = useI18n();
   const isVotingModalActive =
     state.activeModal === 'AGORA_INSURRECTION' ||
     state.activeModal === 'TRAGEDY_VOTE' ||
@@ -205,6 +207,9 @@ export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> =
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0 ml-2">
+            <span className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700/80 text-[9px] font-semibold text-emerald-300">
+              {t.hud.recentChatPersisted || 'Guardado local'}
+            </span>
             {!isOpen && unreadCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-full bg-teal-400 text-slate-950 text-[9px] font-black tabular-nums">
                 +{unreadCount}
@@ -215,6 +220,25 @@ export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> =
             </span>
           </div>
         </button>
+
+        {/* Vista previa rápida del último mensaje cuando está colapsado */}
+        {!isOpen && state.chatMessages.length > 0 && (
+          <div className="px-3 py-1.5 bg-slate-950/60 text-[10px] text-slate-300 flex items-center gap-1.5 truncate">
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: state.chatMessages[state.chatMessages.length - 1].senderColor }}
+            />
+            <span
+              className="font-bold shrink-0"
+              style={{ color: state.chatMessages[state.chatMessages.length - 1].senderColor }}
+            >
+              {state.chatMessages[state.chatMessages.length - 1].senderName}:
+            </span>
+            <span className="truncate text-slate-300">
+              {state.chatMessages[state.chatMessages.length - 1].text}
+            </span>
+          </div>
+        )}
 
         {/* Cuerpo desplegable */}
         {isOpen && (

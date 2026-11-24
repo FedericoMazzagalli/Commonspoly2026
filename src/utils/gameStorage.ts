@@ -86,6 +86,7 @@ interface SerializableGameState {
   neighborhoodDecision?: GameEngineState['neighborhoodDecision'];
   speculatorAttackPayload?: GameEngineState['speculatorAttackPayload'];
   logs: GameEngineState['logs'];
+  speculatorActionLogs?: GameEngineState['speculatorActionLogs'];
   chatMessages: GameEngineState['chatMessages'];
   gameResult?: GameEngineState['gameResult'];
   gameResultDetails?: GameEngineState['gameResultDetails'];
@@ -296,6 +297,7 @@ export function saveGameToStorage(
     neighborhoodDecision: state.neighborhoodDecision,
     speculatorAttackPayload: state.speculatorAttackPayload,
     logs: state.logs.slice(0, 600),
+    speculatorActionLogs: (state.speculatorActionLogs ?? []).slice(0, 120),
     chatMessages: state.chatMessages.slice(-40),
     gameResult: state.gameResult,
     gameResultDetails: state.gameResultDetails,
@@ -462,6 +464,7 @@ export function loadSavedGameFromStorage(options?: {
       neighborhoodDecision: saved.neighborhoodDecision ?? null,
       speculatorAttackPayload: saved.speculatorAttackPayload,
       logs: Array.isArray(saved.logs) ? saved.logs : [],
+      speculatorActionLogs: Array.isArray(saved.speculatorActionLogs) ? saved.speculatorActionLogs : [],
       chatMessages: Array.isArray(saved.chatMessages) ? saved.chatMessages : [],
       gameResult: saved.gameResult,
       gameResultDetails: saved.gameResultDetails,

@@ -8,7 +8,8 @@
 5. **Multiplayer Room Host Authority & Terminal State Locking**:
    - Room IDs must match `^room_[A-Z0-9]{4,8}$`.
    - Once a room reaches `status == 'FINISHED'`, all subsequent updates are rejected (`existing().status != 'FINISHED'`).
-   - Only `hostUid` may advance `stateVersion`, `phase`, `round`, `activePlayerIndex`, `tileStates`, `playersSummary`, `speculatorsSummary`, or `gameResult`.
+   - `hostUid`, `roomCode`, `difficulty`, `rulesetMode`, `maxPlayers`, `isPublic`, and `createdAt` are immutable after room creation.
+   - Only `hostUid` may advance `stateVersion`, `phase`, `round`, `activePlayerIndex`, `activeModal`, `currentGlobalCardId`, `currentSituationCardId`, `recentChats` (max 8 entries), `tileStates`, `playersSummary`, `speculatorsSummary`, or `gameResult`.
    - Non-host guests may only join a `WAITING` room with capacity (`memberUids.size() < maxPlayers`), update their own `members` ready/character selection while `WAITING`, or leave a non-finished room.
 6. **Master Gate & Zero-Get List Queries on Room Actions**:
    - Creating or reading an action under `/rooms/{roomId}/actions/{actionId}` verifies `request.auth.uid in room.memberUids` and `incoming().hostUid == room.hostUid` via `get()`.

@@ -4,12 +4,21 @@
  */
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useCommonspolyGame } from './store/gameEngine';
 import { CommonspolyBoard3D } from './components/board3d/CommonspolyBoard3D';
 import { TitleScreen } from './components/TitleScreen';
 import type { CinemaCameraMode } from './components/hud/CinemaReplayHUD';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { SetupInitialRolls, Tile, TutorialBoardFocus } from './types/game';
+import {
+  CooperativeChatMessage,
+  GameEngineState,
+  GoodType,
+  RulesetMode,
+  SetupInitialRolls,
+  Tile,
+  TutorialBoardFocus
+} from './types/game';
 import { playSound } from './utils/audio';
 import { resolveWeather } from './utils/weather';
 import { computeCooperativeEfficiency } from './utils/cooperativeEfficiency';
@@ -67,13 +76,16 @@ import {
 import {
   buildSetupRollsForDifficulty,
   createMultiplayerRoom,
+  fetchMultiplayerRoomById,
   joinMultiplayerRoomByCode,
   joinMultiplayerRoomById,
   launchRoomMatchByHost,
   leaveMultiplayerRoom,
+  loadSavedActiveRoomId,
   markRoomActionProcessed,
   MultiplayerRoom,
   rehydrateCharactersFromRoom,
+  saveActiveRoomId,
   serializePlayersSummary,
   serializeSpeculatorsSummary,
   serializeTilesToArray,
@@ -164,7 +176,30 @@ const CinemaReplayHUD = lazy(() =>
   import('./components/hud/CinemaReplayHUD').then(m => ({ default: m.CinemaReplayHUD }))
 );
 
+function roomChatsToMessages(
+  recentChats: string[],
+  players: GameEngineState['players'],
+  round: number
+): CooperativeChatMessage[] {
+  return recentChats.map((line, idx) => {
+    const colonIdx = line.indexOf(':');
+    const senderName = colonIdx > 0 ? line.slice(0, colonIdx).trim() : 'Comunidad';
+    const text = colonIdx > 0 ? line.slice(colonIdx + 1).trim() : line;
+    const matched = players.find(p => p.name === senderName);
+    return {
+      id: `remote_chat_${round}_${idx}_${senderName}`,
+      senderName,
+      senderColor: matched?.color ?? '#14b8a6',
+      controller: matched?.controller ?? 'HUMAN',
+      text,
+      round,
+      timestamp: ''
+    };
+  });
+}
+
 export default function App() {
+  const { t } = useTranslation();
   const {
     state,
     savedGameMeta,
@@ -270,6 +305,7 @@ export default function App() {
   const lastSyncedFingerprintRef = useRef<string>('');
   const lastHydratedVersionRef = useRef<number>(0);
   const processedActionIdsRef = useRef<Set<string>>(new Set());
+  const hasAttemptedRoomRestoreRef = useRef(false);
 
   useEffect(() => {
     applyAccessibilityDocumentAttributes(accessibilitySettings);
@@ -281,10 +317,17 @@ export default function App() {
       ? (state.tiles.find(t => t.id === inspectedTileId) ?? null)
       : null;
 
+  const closeAllAppPanels = (except?: 'history' | 'evolution' | 'perf' | 'debug') => {
+    if (except !== 'history') setIsGameHistoryOpen(false);
+    if (except !== 'evolution') setIsEvolutionOpen(false);
+    if (except !== 'perf') setShowPerformanceMonitor(false);
+    if (except !== 'debug') setShowEconomyDebug(false);
+  };
+
   const handleToggleGameHistory = () => {
     setIsGameHistoryOpen(prev => {
       const next = !prev;
-      if (next) setIsEvolutionOpen(false);
+      if (next) closeAllAppPanels('history');
       return next;
     });
   };
@@ -292,7 +335,23 @@ export default function App() {
   const handleToggleEvolution = () => {
     setIsEvolutionOpen(prev => {
       const next = !prev;
-      if (next) setIsGameHistoryOpen(false);
+      if (next) closeAllAppPanels('evolution');
+      return next;
+    });
+  };
+
+  const handleTogglePerformanceMonitor = () => {
+    setShowPerformanceMonitor(prev => {
+      const next = !prev;
+      if (next) closeAllAppPanels('perf');
+      return next;
+    });
+  };
+
+  const handleToggleEconomyDebug = () => {
+    setShowEconomyDebug(prev => {
+      const next = !prev;
+      if (next) closeAllAppPanels('debug');
       return next;
     });
   };
@@ -396,14 +455,14 @@ export default function App() {
   const remoteTurnOwnerName = activePlayerOwnerMember
     ? activePlayerOwnerMember.displayAlias
     : isInMultiplayerMatch && !isRoomHost
-    ? 'Bot (Anfitrión)'
+    ? t('errors.botHostSuffix', 'Bot (Anfitrión)')
     : null;
 
   const emitGuestAction = useCallback(
     (actionType: Parameters<typeof submitRoomActionIntent>[4], payloadText = '') => {
       if (!activeRoom || !authUser) return;
       const myMember = activeRoom.members.find(m => m.uid === authUser.uid);
-      const alias = myMember?.displayAlias || authUser.displayName || 'Activista';
+      const alias = myMember?.displayAlias || authUser.displayName || t('errors.activistDefault', 'Activista');
       void submitRoomActionIntent(
         activeRoom.roomId,
         activeRoom.hostUid,
@@ -481,6 +540,111 @@ export default function App() {
     [isInMultiplayerMatch, isRoomHost, emitGuestAction, sendCooperativeChat]
   );
 
+  const handleActionAcknowledgeGlobalCard = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('ACK_GLOBAL_CARD');
+      return;
+    }
+    acknowledgeGlobalCard();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, acknowledgeGlobalCard]);
+
+  const handleActionAgoraInsurrection = useCallback(
+    (category: GoodType) => {
+      if (isRemoteMultiplayerTurn) return;
+      if (isInMultiplayerMatch && !isRoomHost) {
+        emitGuestAction('AGORA_INSURRECTION', category);
+        return;
+      }
+      executeInsurrectionForCategory(category);
+    },
+    [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, executeInsurrectionForCategory]
+  );
+
+  const handleActionOpenDetentionRescue = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('OPEN_DETENTION_RESCUE');
+      return;
+    }
+    openDetentionRescue();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, openDetentionRescue]);
+
+  const handleActionDetentionRescue = useCallback(
+    (rescuerId: string, victimId: string) => {
+      if (isRemoteMultiplayerTurn) return;
+      if (isInMultiplayerMatch && !isRoomHost) {
+        emitGuestAction('DETENTION_RESCUE', JSON.stringify({ rescuerId, victimId }));
+        return;
+      }
+      rescueDetainedPlayer(rescuerId, victimId);
+    },
+    [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, rescueDetainedPlayer]
+  );
+
+  const handleActionTragedySelect = useCallback(
+    (tileIds: number[]) => {
+      if (isRemoteMultiplayerTurn) return;
+      if (isInMultiplayerMatch && !isRoomHost) {
+        emitGuestAction('TRAGEDY_SELECT', JSON.stringify(tileIds));
+        return;
+      }
+      resolveTragedyOfCommons(tileIds);
+    },
+    [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, resolveTragedyOfCommons]
+  );
+
+  const handleActionBureaucracy = useCallback(
+    (tileId: number) => {
+      if (isRemoteMultiplayerTurn) return;
+      if (isInMultiplayerMatch && !isRoomHost) {
+        emitGuestAction('BUREAUCRACY_TRANSFORM', String(tileId));
+        return;
+      }
+      executeBureaucracy(tileId);
+    },
+    [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, executeBureaucracy]
+  );
+
+  const handleActionCrowdfunding = useCallback(
+    (targetPlayerId: string, amount: number) => {
+      if (isRemoteMultiplayerTurn) return;
+      if (isInMultiplayerMatch && !isRoomHost) {
+        emitGuestAction('CROWDFUND_DONATE', JSON.stringify({ targetPlayerId, amount }));
+        return;
+      }
+      executeCrowdfunding(targetPlayerId, amount);
+    },
+    [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, executeCrowdfunding]
+  );
+
+  const handleActionTriggerNeighborhoodDecision = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('OPEN_NEIGHBORHOOD_DECISION');
+      return;
+    }
+    triggerNeighborhoodDecision();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, triggerNeighborhoodDecision]);
+
+  const handleActionCastNeighborhoodVote = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('NEIGHBORHOOD_VOTE');
+      return;
+    }
+    castNeighborhoodVote();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, castNeighborhoodVote]);
+
+  const handleActionCloseModal = useCallback(() => {
+    if (isRemoteMultiplayerTurn) return;
+    if (isInMultiplayerMatch && !isRoomHost) {
+      emitGuestAction('CLOSE_MODAL');
+      return;
+    }
+    closeModal();
+  }, [isRemoteMultiplayerTurn, isInMultiplayerMatch, isRoomHost, emitGuestAction, closeModal]);
+
   // Gestor global de atajos de teclado ('R', 'D', 'P', 'A', '1-3', 'M', 'H', 'G', 'V', 'C', 'L', 'B', '?', 'Esc')
   useKeyboardShortcuts({
     state,
@@ -505,9 +669,9 @@ export default function App() {
     onUnlockTile: handleActionUnlockTile,
     onPassTile: handleActionPassTile,
     onTryEnterAgora: handleActionTryEnterAgora,
-    onAcknowledgeGlobalCard: acknowledgeGlobalCard,
+    onAcknowledgeGlobalCard: handleActionAcknowledgeGlobalCard,
     onResolveSituationCard: handleActionResolveSituationCard,
-    onCloseActiveModal: closeModal,
+    onCloseActiveModal: handleActionCloseModal,
     onSetCameraMode: setCameraMode,
     onToggleSound: toggleSound,
     onToggleDock: () => setIsDockCollapsed(prev => !prev),
@@ -515,9 +679,9 @@ export default function App() {
     onCloseGameHistory: () => setIsGameHistoryOpen(false),
     onToggleEvolution: handleToggleEvolution,
     onCloseEvolution: () => setIsEvolutionOpen(false),
-    onTogglePerformanceMonitor: () => setShowPerformanceMonitor(prev => !prev),
+    onTogglePerformanceMonitor: handleTogglePerformanceMonitor,
     onClosePerformanceMonitor: () => setShowPerformanceMonitor(false),
-    onToggleEconomyDebug: () => setShowEconomyDebug(prev => !prev),
+    onToggleEconomyDebug: handleToggleEconomyDebug,
     onCloseEconomyDebug: () => setShowEconomyDebug(false),
     onCloseTileInspector: () => setInspectedTileId(null),
     onToggleRules: () => setShowRules(prev => !prev),
@@ -544,7 +708,7 @@ export default function App() {
       const rows = await fetchGlobalLeaderboardOnce(25);
       setLeaderboardEntries(rows);
     } catch (err) {
-      setLeaderboardError(err instanceof Error ? err.message : 'Error al consultar la clasificación.');
+      setLeaderboardError(err instanceof Error ? err.message : t('errors.appLoadLeaderboard', 'Error al consultar la clasificación.'));
     } finally {
       setLeaderboardLoading(false);
     }
@@ -629,11 +793,11 @@ export default function App() {
       } catch (err) {
         setSubmissionStatus({
           state: 'ERROR',
-          message: err instanceof Error ? err.message : 'No se pudo publicar el récord.'
+          message: err instanceof Error ? err.message : t('errors.publishRecord', 'No se pudo publicar el récord.')
         });
       }
     },
-    [refreshLeaderboard]
+    [refreshLeaderboard, t]
   );
 
   // Al iniciar sesión con Google, sincronizar cualquier récord local pendiente
@@ -656,12 +820,12 @@ export default function App() {
       }
     } catch (err) {
       setLeaderboardError(
-        err instanceof Error ? err.message : 'No se pudo iniciar sesión con Google.'
+        err instanceof Error ? err.message : t('errors.googleSignIn', 'No se pudo iniciar sesión con Google.')
       );
     } finally {
       setIsAuthBusy(false);
     }
-  }, [syncPendingLocalRecord]);
+  }, [syncPendingLocalRecord, t]);
 
   const handleSignOutGoogle = useCallback(async () => {
     setIsAuthBusy(true);
@@ -669,7 +833,7 @@ export default function App() {
       await signOut(auth);
       await refreshLeaderboard();
     } catch (err) {
-      setLeaderboardError(err instanceof Error ? err.message : 'Error al cerrar sesión.');
+      setLeaderboardError(err instanceof Error ? err.message : t('errors.googleSignOut', 'Error al cerrar sesión.'));
     } finally {
       setIsAuthBusy(false);
     }
@@ -703,6 +867,24 @@ export default function App() {
     }
   }, [state.phase]);
 
+  // Restauración automática de sala multijugador activa tras recargar página
+  useEffect(() => {
+    if (!authReady || !authUser || activeRoomId || hasAttemptedRoomRestoreRef.current) return;
+    hasAttemptedRoomRestoreRef.current = true;
+    const savedRoomId = loadSavedActiveRoomId();
+    if (!savedRoomId) return;
+    void fetchMultiplayerRoomById(savedRoomId).then(room => {
+      if (room && room.status !== 'FINISHED' && room.memberUids.includes(authUser.uid)) {
+        lastHydratedVersionRef.current = 0;
+        hostStateVersionRef.current = room.stateVersion;
+        setActiveRoomId(room.roomId);
+        setActiveRoom(room);
+      } else {
+        saveActiveRoomId(null);
+      }
+    });
+  }, [authReady, authUser, activeRoomId]);
+
   // Suscripción a Sala Multijugador activa en tiempo real
   useEffect(() => {
     if (!authUser || !activeRoomId) return;
@@ -710,25 +892,41 @@ export default function App() {
       activeRoomId,
       room => {
         setActiveRoom(room);
+        if (room.status === 'FINISHED') {
+          saveActiveRoomId(null);
+        }
       },
       () => {}
     );
     return () => unsub();
   }, [authUser, activeRoomId]);
 
-  // Auto-lanzamiento y rehidratación para invitados cuando el Anfitrión inicia o actualiza la sala
+  // Auto-lanzamiento y rehidratación para invitados (y anfitrión tras recarga)
   useEffect(() => {
     if (!activeRoom || !authUser) return;
     const amHost = activeRoom.hostUid === authUser.uid;
-    if (amHost || activeRoom.status === 'WAITING') return;
+    if (activeRoom.status === 'WAITING') return;
+
+    const hydratedPlayers = rehydrateCharactersFromRoom(activeRoom.playersSummary);
+    const hydratedModal =
+      activeRoom.activeModal && activeRoom.activeModal !== 'NONE'
+        ? (activeRoom.activeModal as GameEngineState['activeModal'])
+        : null;
+    const hydratedChats =
+      activeRoom.recentChats.length > 0
+        ? roomChatsToMessages(activeRoom.recentChats, hydratedPlayers, activeRoom.round)
+        : undefined;
 
     if (state.phase === 'TITLE' || state.phase === 'SETUP') {
       const roster = activeRoom.playersSummary.map(ps => ({
         baseCharId: ps.id,
         controller: ps.controller
       }));
-      const rolls = buildSetupRollsForDifficulty(activeRoom.difficulty);
+      const rolls = buildSetupRollsForDifficulty(activeRoom.difficulty, activeRoom.rulesetMode);
       lastHydratedVersionRef.current = activeRoom.stateVersion;
+      if (amHost) {
+        hostStateVersionRef.current = activeRoom.stateVersion;
+      }
       finalizeSetup(roster, rolls, {
         multiplayerRoomId: activeRoom.roomId,
         multiplayerRoomCode: activeRoom.roomCode
@@ -738,18 +936,25 @@ export default function App() {
         round: activeRoom.round,
         activePlayerIndex: activeRoom.activePlayerIndex,
         currentDiceRoll: activeRoom.currentDiceRoll || null,
-        players: rehydrateCharactersFromRoom(activeRoom.playersSummary),
+        players: hydratedPlayers,
         speculators: activeRoom.speculatorsSummary,
         tileStates: tileArrayToStateMap(activeRoom.tileStates),
         gameResult: activeRoom.gameResult === 'NONE' ? undefined : activeRoom.gameResult,
         gameResultDetails: activeRoom.gameResultDetails,
         multiplayerRoomId: activeRoom.roomId,
         multiplayerRoomCode: activeRoom.roomCode,
-        difficulty: activeRoom.difficulty
+        difficulty: activeRoom.difficulty,
+        rulesetMode: activeRoom.rulesetMode,
+        activeModal: hydratedModal,
+        currentGlobalCardId: activeRoom.currentGlobalCardId || null,
+        currentSituationCardId: activeRoom.currentSituationCardId || null,
+        recentChats: hydratedChats
       });
       setShowMultiplayerLobby(false);
       return;
     }
+
+    if (amHost) return;
 
     if (
       state.multiplayerRoomId === activeRoom.roomId &&
@@ -761,14 +966,19 @@ export default function App() {
         round: activeRoom.round,
         activePlayerIndex: activeRoom.activePlayerIndex,
         currentDiceRoll: activeRoom.currentDiceRoll || null,
-        players: rehydrateCharactersFromRoom(activeRoom.playersSummary),
+        players: hydratedPlayers,
         speculators: activeRoom.speculatorsSummary,
         tileStates: tileArrayToStateMap(activeRoom.tileStates),
         gameResult: activeRoom.gameResult === 'NONE' ? undefined : activeRoom.gameResult,
         gameResultDetails: activeRoom.gameResultDetails,
         multiplayerRoomId: activeRoom.roomId,
         multiplayerRoomCode: activeRoom.roomCode,
-        difficulty: activeRoom.difficulty
+        difficulty: activeRoom.difficulty,
+        rulesetMode: activeRoom.rulesetMode,
+        activeModal: hydratedModal,
+        currentGlobalCardId: activeRoom.currentGlobalCardId || null,
+        currentSituationCardId: activeRoom.currentSituationCardId || null,
+        recentChats: hydratedChats
       });
     }
   }, [activeRoom, authUser, state.phase, state.multiplayerRoomId, finalizeSetup, hydrateMultiplayerState]);
@@ -791,6 +1001,10 @@ export default function App() {
       r: state.round,
       a: state.activePlayerIndex,
       d: state.currentDiceRoll ?? 0,
+      m: state.activeModal ?? 'NONE',
+      gc: state.currentGlobalCard?.id ?? '',
+      sc: state.currentSituationCard?.id ?? '',
+      ch: (state.chatMessages ?? []).slice(-8).map(c => `${c.senderName}:${c.text}`),
       pl: serializePlayersSummary(state.players),
       sp: serializeSpeculatorsSummary(state.speculators),
       t: serializeTilesToArray(state.tiles),
@@ -862,6 +1076,85 @@ export default function App() {
             case 'RESOLVE_CARD':
               resolveSituationCard();
               break;
+            case 'ACK_GLOBAL_CARD':
+              acknowledgeGlobalCard();
+              break;
+            case 'AGORA_INSURRECTION': {
+              if (
+                action.payloadText === 'HEALTH' ||
+                action.payloadText === 'URBAN' ||
+                action.payloadText === 'KNOWLEDGE' ||
+                action.payloadText === 'ENVIRONMENT'
+              ) {
+                executeInsurrectionForCategory(action.payloadText);
+              }
+              break;
+            }
+            case 'OPEN_DETENTION_RESCUE':
+              openDetentionRescue();
+              break;
+            case 'DETENTION_RESCUE':
+            case 'RESCUE_PLAYER': {
+              try {
+                const parsed = JSON.parse(action.payloadText) as {
+                  rescuerId?: string;
+                  victimId?: string;
+                };
+                if (typeof parsed.rescuerId === 'string' && typeof parsed.victimId === 'string') {
+                  rescueDetainedPlayer(parsed.rescuerId, parsed.victimId);
+                }
+              } catch {
+                // Ignorar payload inválido
+              }
+              break;
+            }
+            case 'TRAGEDY_SELECT': {
+              try {
+                const parsed = JSON.parse(action.payloadText) as unknown;
+                if (Array.isArray(parsed)) {
+                  const tileIds = parsed.filter(
+                    (id): id is number => typeof id === 'number' && Number.isInteger(id) && id >= 0 && id < 40
+                  );
+                  resolveTragedyOfCommons(tileIds);
+                }
+              } catch {
+                // Ignorar payload inválido
+              }
+              break;
+            }
+            case 'BUREAUCRACY_TRANSFORM': {
+              const tileId = Number(action.payloadText);
+              if (Number.isInteger(tileId) && tileId >= 0 && tileId < 40) {
+                executeBureaucracy(tileId);
+              }
+              break;
+            }
+            case 'CROWDFUND_DONATE': {
+              try {
+                const parsed = JSON.parse(action.payloadText) as {
+                  targetPlayerId?: string;
+                  amount?: number;
+                };
+                if (
+                  typeof parsed.targetPlayerId === 'string' &&
+                  typeof parsed.amount === 'number' &&
+                  Number.isInteger(parsed.amount) &&
+                  parsed.amount >= 1 &&
+                  parsed.amount <= 3
+                ) {
+                  executeCrowdfunding(parsed.targetPlayerId, parsed.amount);
+                }
+              } catch {
+                // Ignorar payload inválido
+              }
+              break;
+            }
+            case 'OPEN_NEIGHBORHOOD_DECISION':
+              triggerNeighborhoodDecision();
+              break;
+            case 'NEIGHBORHOOD_VOTE':
+              castNeighborhoodVote();
+              break;
             case 'CLOSE_MODAL':
               closeModal();
               break;
@@ -886,6 +1179,15 @@ export default function App() {
     tryEnterAgora,
     stayInAgora,
     resolveSituationCard,
+    acknowledgeGlobalCard,
+    executeInsurrectionForCategory,
+    openDetentionRescue,
+    rescueDetainedPlayer,
+    resolveTragedyOfCommons,
+    executeBureaucracy,
+    executeCrowdfunding,
+    triggerNeighborhoodDecision,
+    castNeighborhoodVote,
     closeModal
   ]);
 
@@ -941,42 +1243,54 @@ export default function App() {
       characterId: string,
       difficulty: 'COMUNLANDIA' | 'EN_TRANSICION' | 'MAD_MAX',
       maxPlayers: number,
-      isPublic: boolean
+      isPublic: boolean,
+      rulesetMode: RulesetMode = 'EXPANDED'
     ) => {
-      if (!authUser) throw new Error('Inicia sesión con Google primero.');
-      const room = await createMultiplayerRoom(authUser, alias, characterId, difficulty, maxPlayers, isPublic);
+      if (!authUser) throw new Error(t('errors.signInFirst', 'Inicia sesión con Google primero.'));
+      const room = await createMultiplayerRoom(
+        authUser,
+        alias,
+        characterId,
+        difficulty,
+        maxPlayers,
+        isPublic,
+        rulesetMode
+      );
       processedActionIdsRef.current.clear();
       hostStateVersionRef.current = 1;
       lastSyncedFingerprintRef.current = '';
       lastHydratedVersionRef.current = 1;
+      saveActiveRoomId(room.roomId);
       setActiveRoomId(room.roomId);
       setActiveRoom(room);
     },
-    [authUser]
+    [authUser, t]
   );
 
   const handleJoinRoomByCode = useCallback(
     async (code: string, alias: string, characterId: string) => {
-      if (!authUser) throw new Error('Inicia sesión con Google primero.');
+      if (!authUser) throw new Error(t('errors.signInFirst', 'Inicia sesión con Google primero.'));
       const room = await joinMultiplayerRoomByCode(authUser, code, alias, characterId);
       processedActionIdsRef.current.clear();
       lastHydratedVersionRef.current = 0;
+      saveActiveRoomId(room.roomId);
       setActiveRoomId(room.roomId);
       setActiveRoom(room);
     },
-    [authUser]
+    [authUser, t]
   );
 
   const handleJoinRoomById = useCallback(
     async (roomId: string, alias: string, characterId: string) => {
-      if (!authUser) throw new Error('Inicia sesión con Google primero.');
+      if (!authUser) throw new Error(t('errors.signInFirst', 'Inicia sesión con Google primero.'));
       const room = await joinMultiplayerRoomById(authUser, roomId, alias, characterId);
       processedActionIdsRef.current.clear();
       lastHydratedVersionRef.current = 0;
+      saveActiveRoomId(room.roomId);
       setActiveRoomId(room.roomId);
       setActiveRoom(room);
     },
-    [authUser]
+    [authUser, t]
   );
 
   const handleUpdateRoomMember = useCallback(
@@ -991,6 +1305,7 @@ export default function App() {
     if (activeRoom && authUser) {
       await leaveMultiplayerRoom(activeRoom, authUser.uid);
     }
+    saveActiveRoomId(null);
     setActiveRoomId(null);
     setActiveRoom(null);
   }, [activeRoom, authUser]);
@@ -1010,7 +1325,7 @@ export default function App() {
       ...humanRoster,
       ...botChars.map(c => ({ baseCharId: c.id, controller: 'BOT' as const }))
     ];
-    const rolls = buildSetupRollsForDifficulty(activeRoom.difficulty);
+    const rolls = buildSetupRollsForDifficulty(activeRoom.difficulty, activeRoom.rulesetMode);
     hostStateVersionRef.current = activeRoom.stateVersion + 1;
     await launchRoomMatchByHost(activeRoom, fullRoster, rolls);
     finalizeSetup(fullRoster, rolls, {
@@ -1021,6 +1336,7 @@ export default function App() {
   }, [activeRoom, finalizeSetup]);
 
   const handleExitToTitle = useCallback(() => {
+    saveActiveRoomId(null);
     setActiveRoomId(null);
     setActiveRoom(null);
     resetToTitle();
@@ -1118,7 +1434,7 @@ export default function App() {
         .catch(err => {
           setSubmissionStatus({
             state: 'ERROR',
-            message: err instanceof Error ? err.message : 'Error al sincronizar.'
+            message: err instanceof Error ? err.message : t('errors.syncError', 'Error al sincronizar.')
           });
         });
     } else {
@@ -1266,8 +1582,8 @@ export default function App() {
             onTurnTimeout={passTurnOnTimeout}
             onTryEnterAgora={handleActionTryEnterAgora}
             onStayInAgora={handleActionStayInAgora}
-            onOpenDetentionRescue={openDetentionRescue}
-            onTriggerNeighborhoodDecision={triggerNeighborhoodDecision}
+            onOpenDetentionRescue={handleActionOpenDetentionRescue}
+            onTriggerNeighborhoodDecision={handleActionTriggerNeighborhoodDecision}
             onOpenRules={() => setShowRules(true)}
             onOpenShortcuts={() => setShowShortcuts(true)}
             onOpenAchievements={() => setShowAchievements(true)}
@@ -1301,10 +1617,10 @@ export default function App() {
             onOpenWeatherSettings={() => setShowWeatherSettings(true)}
             boardTelemetryRef={boardTelemetryRef}
             isPerformanceMonitorOpen={showPerformanceMonitor}
-            onTogglePerformanceMonitor={() => setShowPerformanceMonitor(prev => !prev)}
+            onTogglePerformanceMonitor={handleTogglePerformanceMonitor}
             onClosePerformanceMonitor={() => setShowPerformanceMonitor(false)}
             isEconomyDebugOpen={showEconomyDebug}
-            onToggleEconomyDebug={() => setShowEconomyDebug(prev => !prev)}
+            onToggleEconomyDebug={handleToggleEconomyDebug}
             onCloseEconomyDebug={() => setShowEconomyDebug(false)}
             isSpeculatorHeatmapEnabled={isSpeculatorHeatmapEnabled}
             onToggleSpeculatorHeatmap={() => setIsSpeculatorHeatmapEnabled(prev => !prev)}
@@ -1346,7 +1662,7 @@ export default function App() {
         <GlobalCardModal
           card={state.currentGlobalCard}
           round={state.round}
-          onConfirm={acknowledgeGlobalCard}
+          onConfirm={handleActionAcknowledgeGlobalCard}
         />
       )}
 
@@ -1371,7 +1687,7 @@ export default function App() {
       {state.activeModal === 'AGORA_INSURRECTION' && (
         <AgoraInsurrectionModal
           tiles={state.tiles}
-          onSelectCategory={executeInsurrectionForCategory}
+          onSelectCategory={handleActionAgoraInsurrection}
         />
       )}
 
@@ -1380,8 +1696,8 @@ export default function App() {
         <DetentionRescueModal
           detainedPlayer={detainedPlayer}
           allPlayers={state.players}
-          onRescue={rescueDetainedPlayer}
-          onDismiss={closeModal}
+          onRescue={handleActionDetentionRescue}
+          onDismiss={handleActionCloseModal}
         />
       )}
 
@@ -1389,7 +1705,7 @@ export default function App() {
       {state.activeModal === 'TRAGEDY_VOTE' && (
         <TragedyVoteModal
           tiles={state.tiles}
-          onConfirmPrivatization={resolveTragedyOfCommons}
+          onConfirmPrivatization={handleActionTragedySelect}
         />
       )}
 
@@ -1398,8 +1714,8 @@ export default function App() {
         <BureaucracyModal
           player={activePlayer}
           tiles={state.tiles}
-          onConfirm={executeBureaucracy}
-          onPass={closeModal}
+          onConfirm={handleActionBureaucracy}
+          onPass={handleActionCloseModal}
         />
       )}
 
@@ -1408,8 +1724,8 @@ export default function App() {
         <CrowdfundingModal
           donor={activePlayer}
           players={state.players}
-          onDonate={executeCrowdfunding}
-          onPass={closeModal}
+          onDonate={handleActionCrowdfunding}
+          onPass={handleActionCloseModal}
         />
       )}
 
@@ -1420,8 +1736,8 @@ export default function App() {
           activePlayer={activePlayer}
           players={state.players}
           tiles={state.tiles}
-          onCastVote={castNeighborhoodVote}
-          onClose={closeModal}
+          onCastVote={handleActionCastNeighborhoodVote}
+          onClose={handleActionCloseModal}
         />
       )}
 

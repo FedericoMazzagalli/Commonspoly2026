@@ -16,7 +16,7 @@ import type { DailyChallengeConfig } from '../utils/dailyChallenge';
 import { OfflineIndicator } from './hud/OfflineIndicator';
 import { PWAInstallButton } from './hud/PWAInstallButton';
 import { LanguageSelector } from './hud/LanguageSelector';
-import { useI18n } from '../i18n';
+import { useTranslation } from 'react-i18next';
 
 interface TitleScreenProps {
   onStartSetup: () => void;
@@ -77,7 +77,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onOpenAccessibility,
   accessibilityModeLabel
 }) => {
-  const { t } = useI18n();
+  const { t } = useTranslation();
 
   // Atajo de teclado: Barra espaciadora o Enter para comenzar
   useEffect(() => {
@@ -106,7 +106,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
         <div className="flex items-center gap-2 text-[11px] sm:text-xs font-bold tracking-widest text-teal-400 uppercase">
           <Sparkles className="w-4 h-4 shrink-0" />
-          <span>{t.title.tagline}</span>
+          <span>{t('title.tagline')}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <LanguageSelector variant="pill" />
@@ -118,14 +118,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 onOpenAccessibility();
               }}
               className="min-h-[44px] px-3 flex items-center justify-center gap-1.5 rounded-xl bg-slate-900/90 border border-slate-700 hover:border-teal-500/70 text-slate-200 hover:text-white text-xs font-semibold transition-colors whitespace-nowrap"
-              title={t.title.accessibilityTooltip}
-              aria-label={t.title.accessibilityTooltip}
+              title={t('title.accessibilityTooltip')}
+              aria-label={t('title.accessibilityTooltip')}
             >
               <Accessibility className="w-4 h-4 text-teal-300 shrink-0" />
               <span className="hidden sm:inline">
-                {accessibilityModeLabel && accessibilityModeLabel !== 'Estándar'
+                {accessibilityModeLabel && accessibilityModeLabel !== t('accessibility.modeStandard')
                   ? accessibilityModeLabel
-                  : t.title.accessibilityBtn}
+                  : t('title.accessibilityBtn')}
               </span>
             </button>
           )}
@@ -136,8 +136,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 ? 'bg-slate-900/90 border-teal-800/70 text-teal-300 hover:text-white'
                 : 'bg-rose-950/60 border-rose-800 text-rose-300 hover:text-white'
             }`}
-            title={soundEnabled ? t.title.muteAudio : t.title.enableAudio}
-            aria-label={soundEnabled ? t.title.muteAudio : t.title.enableAudio}
+            title={soundEnabled ? t('title.muteAudio') : t('title.enableAudio')}
+            aria-label={soundEnabled ? t('title.muteAudio') : t('title.enableAudio')}
           >
             {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
@@ -160,13 +160,13 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             </h1>
           </div>
           <div className="text-xs font-semibold tracking-wider text-teal-300 uppercase">
-            {t.title.subtitle}
+            {t('title.subtitle')}
           </div>
         </div>
 
         {/* Narrative Description */}
         <p className="text-sm md:text-base text-slate-300 leading-relaxed max-w-lg mx-auto">
-          {t.title.narrative}
+          {t('title.narrative')}
         </p>
 
         {/* Saved Match Resume Block */}
@@ -179,7 +179,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-teal-400 hover:from-amber-300 hover:to-teal-300 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all whitespace-nowrap shrink-0"
               >
                 <RotateCcw className="w-4 h-4 shrink-0" />
-                <span>{t.title.continueSaved}</span>
+                <span>{t('title.continueSaved')}</span>
               </button>
 
               {onDeleteSavedGame && (
@@ -187,8 +187,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   type="button"
                   onClick={onDeleteSavedGame}
                   className="p-3 rounded-xl bg-slate-950 hover:bg-rose-950/70 border border-slate-800 hover:border-rose-700/70 text-slate-400 hover:text-rose-300 transition-colors shrink-0"
-                  title={t.title.deleteSaved}
-                  aria-label={t.title.deleteSaved}
+                  title={t('title.deleteSaved')}
+                  aria-label={t('title.deleteSaved')}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -196,7 +196,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             </div>
 
             <div className="text-[11px] text-slate-300 flex items-center justify-center gap-1.5 flex-wrap tabular-nums">
-              <span className="font-bold text-teal-300">{t.common.round} {savedGameMeta.round}/20</span>
+              <span className="font-bold text-teal-300">{t('common.round')} {savedGameMeta.round}/20</span>
               <span className="text-slate-600" aria-hidden="true">·</span>
               <span>{formatSavedPhaseLabel(savedGameMeta.phase)}</span>
               <span className="text-slate-600" aria-hidden="true">·</span>
@@ -209,12 +209,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </span>
               <span className="text-slate-600" aria-hidden="true">·</span>
               <span className="text-emerald-300 font-semibold">
-                {savedGameMeta.commonCount}/{savedGameMeta.totalResourceTiles} {t.title.commonsCount}
+                {savedGameMeta.commonCount}/{savedGameMeta.totalResourceTiles} {t('title.commonsCount')}
               </span>
               {savedGameMeta.lastEndedTurnBy && (
                 <>
                   <span className="text-slate-600" aria-hidden="true">·</span>
-                  <span className="text-slate-400">{t.title.lastTurn}: {savedGameMeta.lastEndedTurnBy}</span>
+                  <span className="text-slate-400">{t('title.lastTurn')}: {savedGameMeta.lastEndedTurnBy}</span>
                 </>
               )}
               {savedTimeText && (
@@ -237,7 +237,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             className="w-full sm:w-auto min-h-[48px] px-7 py-3.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-xl active:scale-95 transition-all whitespace-nowrap shrink-0"
           >
             <Play className="w-5 h-5 fill-current" />
-            <span>{t.title.newMatch}</span>
+            <span>{t('title.newMatch')}</span>
           </button>
 
           <button
@@ -248,7 +248,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             className="w-full sm:w-auto min-h-[48px] px-5 py-3.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-colors whitespace-nowrap shrink-0"
           >
             <Users className="w-4 h-4 text-teal-400" />
-            <span>{t.title.quickMatch}</span>
+            <span>{t('title.quickMatch')}</span>
           </button>
 
           {onOpenMultiplayer && (
@@ -259,10 +259,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 onOpenMultiplayer();
               }}
               className="w-full sm:w-auto min-h-[48px] px-5 py-3.5 rounded-xl bg-sky-950/80 hover:bg-sky-900/80 border border-sky-500/50 text-sky-100 font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-colors whitespace-nowrap shrink-0"
-              title={!isOnline ? t.title.onlineRoomsOfflineHint : t.title.onlineRoomsHint}
+              title={!isOnline ? t('title.onlineRoomsOfflineHint') : t('title.onlineRoomsHint')}
             >
               <Wifi className="w-4 h-4 text-sky-300 shrink-0" />
-              <span>{t.title.onlineRooms}</span>
+              <span>{t('title.onlineRooms')}</span>
             </button>
           )}
         </div>
@@ -273,10 +273,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <div className="min-w-0 space-y-0.5">
               <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-emerald-300">
                 <Calendar className="w-3.5 h-3.5 shrink-0" />
-                <span>{t.title.dailyChallenge} · {dailyConfig.challengeDate}</span>
+                <span>{t('title.dailyChallenge')} · {dailyConfig.challengeDate}</span>
                 {localDailyBest && (
                   <span className="text-amber-300 tabular-nums">
-                    · {t.title.todayBest}: {localDailyBest.efficiencyPct}%
+                    · {t('title.todayBest')}: {localDailyBest.efficiencyPct}%
                   </span>
                 )}
               </div>
@@ -284,7 +284,22 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 {dailyConfig.title}
               </div>
               <div className="text-[11px] text-slate-400 truncate tabular-nums">
-                {dailyConfig.rolls.difficulty} · {dailyConfig.rolls.speculatorsCount} {t.title.speculatorsLabel} · {t.title.weatherLabel} {dailyConfig.weatherMode}
+                {dailyConfig.rolls.difficulty === 'MAD_MAX'
+                  ? t('setup.diffMadMax')
+                  : dailyConfig.rolls.difficulty === 'COMUNLANDIA'
+                  ? t('setup.diffComunlandia')
+                  : t('setup.diffTransition')}{' '}
+                · {dailyConfig.rolls.speculatorsCount} {t('title.speculatorsLabel')} ·{' '}
+                {t('title.weatherLabel')}{' '}
+                {dailyConfig.weatherMode === 'RAIN'
+                  ? t('weatherSettings.modeRain')
+                  : dailyConfig.weatherMode === 'SNOW'
+                  ? t('weatherSettings.modeSnow')
+                  : dailyConfig.weatherMode === 'DROUGHT'
+                  ? t('weatherSettings.modeDrought')
+                  : dailyConfig.weatherMode === 'SUNNY'
+                  ? t('weatherSettings.modeSunny')
+                  : t('weatherSettings.todAuto')}
               </div>
             </div>
             <button
@@ -296,7 +311,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>{t.title.playDaily}</span>
+              <span>{t('title.playDaily')}</span>
             </button>
           </div>
         )}
@@ -310,7 +325,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             className="min-h-[44px] px-2.5 py-2 rounded-lg text-xs font-semibold text-teal-400 hover:text-teal-300 flex items-center gap-1.5 transition-colors"
           >
             <BookOpen className="w-3.5 h-3.5 shrink-0" />
-            <span>{t.title.rulesGlossary}</span>
+            <span>{t('title.rulesGlossary')}</span>
           </button>
 
           {onOpenCareerStats && (
@@ -324,9 +339,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             >
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>
-                {t.title.careerStats}
+                {t('title.careerStats')}
                 {careerMatchesCount > 0
-                  ? ` (${careerMatchesCount}${careerBestPct !== null ? ` · ${t.title.careerMax} ${careerBestPct}%` : ''})`
+                  ? ` (${careerMatchesCount}${careerBestPct !== null ? ` · ${t('title.careerMax')} ${careerBestPct}%` : ''})`
                   : ''}
               </span>
             </button>
@@ -343,13 +358,13 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             >
               <Globe className="w-3.5 h-3.5 shrink-0" />
               <span>
-                {t.title.globalLeaderboard}
+                {t('title.globalLeaderboard')}
                 {leaderboardTopPct !== null
-                  ? ` (${t.title.topLabel} ${leaderboardTopPct}%${localBestPct !== null ? ` · ${t.title.youLabel} ${localBestPct}%` : ''})`
+                  ? ` (${t('title.topLabel')} ${leaderboardTopPct}%${localBestPct !== null ? ` · ${t('title.youLabel')} ${localBestPct}%` : ''})`
                   : leaderboardCount > 0
                   ? ` (${leaderboardCount})`
                   : localBestPct !== null
-                  ? ` (${t.title.yourRecord} ${localBestPct}%)`
+                  ? ` (${t('title.yourRecord')} ${localBestPct}%)`
                   : ''}
               </span>
             </button>
@@ -365,7 +380,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               className="min-h-[44px] px-2.5 py-2 rounded-lg text-xs font-semibold text-amber-300 hover:text-amber-200 flex items-center gap-1.5 transition-colors tabular-nums"
             >
               <Trophy className="w-3.5 h-3.5 shrink-0" />
-              <span>{t.title.localAchievements} ({achievementsUnlockedCount}/{achievementsTotalCount})</span>
+              <span>{t('title.localAchievements')} ({achievementsUnlockedCount}/{achievementsTotalCount})</span>
             </button>
           )}
           {onOpenWeatherSettings && (
@@ -378,7 +393,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               className="min-h-[44px] px-2.5 py-2 rounded-lg text-xs font-semibold text-sky-300 hover:text-sky-200 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             >
               <CloudSun className="w-3.5 h-3.5 shrink-0" />
-              <span>{t.title.configWeather3d}</span>
+              <span>{t('title.configWeather3d')}</span>
             </button>
           )}
         </div>
@@ -387,7 +402,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
       {/* Control Hint Line */}
       <div className="pb-2 text-[11px] text-slate-500 font-mono tracking-wide">
-        {t.title.hintBar}
+        {t('title.hintBar')}
       </div>
 
       </div>

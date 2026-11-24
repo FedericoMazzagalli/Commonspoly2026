@@ -28,6 +28,7 @@ import { getReputationProfile } from './reputation';
 import { doesWeatherEventAffectTile } from './weatherEvents';
 import {
   getPlayerDiceDistribution,
+  getSpeculatorTilePressureChance,
   resolveSpeculatorStepDistribution
 } from './probabilitySandbox';
 
@@ -86,6 +87,14 @@ export interface SpeculatorThreatDetail {
   hitChancePct: number;
   intendedTarget: SpeculatorIntendedTarget;
   candidateSteps: SpeculatorPathStep[];
+  predictedTileRisks: Array<{
+    tileId: number;
+    tileName: string;
+    distance: number;
+    currentState: GoodState;
+    riskAction: 'BUY' | 'VANDALIZE';
+    actionChancePct: number;
+  }>;
 }
 
 export interface DangerZoneHotspot {
@@ -404,11 +413,19 @@ function analyzeSpeculatorRouting(state: GameEngineState): SpeculatorRoutingAnal
     const stepDist = resolveSpeculatorStepDistribution(
       spec.position,
       state.players,
-      state.probabilitySandbox
+      state.probabilitySandbox,
+      spec.id
     );
     const isFrozen = stepDist.deterministicStep === 0;
+    const difficulty: DifficultyLevel = state.setupConfig?.difficulty ?? 'EN_TRANSICION';
+    const tilePressureProb = getSpeculatorTilePressureChance(
+      difficulty,
+      state.probabilitySandbox,
+      spec.id
+    );
     const vulnerableTargets: SpeculatorThreatDetail['vulnerableTargets'] = [];
     const candidateSteps: SpeculatorPathStep[] = [];
+    const predictedTileRisks: SpeculatorThreatDetail['predictedTileRisks'] = [];
     let protectedTilesCount = 0;
     let specHitChance = 0;
     let firstProtectedTarget: {
@@ -484,6 +501,27 @@ function analyzeSpeculatorRouting(state: GameEngineState): SpeculatorRoutingAnal
               prob: stepProb
             };
           }
+        }
+      }
+
+      if (
+        stepProb > 0 &&
+        playersOnTile.length === 0 &&
+        tile &&
+        (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY') &&
+        (tile.state === 'COMMON' || tile.state === 'PUBLIC')
+      ) {
+        const riskAction: 'BUY' | 'VANDALIZE' = tile.state === 'PUBLIC' ? 'BUY' : 'VANDALIZE';
+        const actionChancePct = Math.round(stepProb * tilePressureProb * 1000) / 10;
+        if (actionChancePct > 0) {
+          predictedTileRisks.push({
+            tileId: targetPos,
+            tileName,
+            distance: step,
+            currentState: tile.state,
+            riskAction,
+            actionChancePct
+          });
         }
       }
 
@@ -621,7 +659,8 @@ function analyzeSpeculatorRouting(state: GameEngineState): SpeculatorRoutingAnal
       protectedTilesCount,
       hitChancePct: Math.round(hitChance * 1000) / 10,
       intendedTarget,
-      candidateSteps
+      candidateSteps,
+      predictedTileRisks
     };
   });
 
@@ -785,7 +824,8 @@ export function computeEconomyDebugSnapshot(state: GameEngineState): EconomyDebu
       tile,
       activePlayer,
       state.activeCrisis,
-      state.activeWeatherEvent
+      state.activeWeatherEvent,
+      state.rulesetMode
     );
 
     const commonReward = getEffectiveResourceReward(
@@ -794,7 +834,8 @@ export function computeEconomyDebugSnapshot(state: GameEngineState): EconomyDebu
       2,
       state.activeCrisis,
       activePlayer,
-      state.activeWeatherEvent
+      state.activeWeatherEvent,
+      state.rulesetMode
     );
     const publicPassReward = getEffectiveResourceReward(
       tile,
@@ -802,7 +843,8 @@ export function computeEconomyDebugSnapshot(state: GameEngineState): EconomyDebu
       1,
       state.activeCrisis,
       activePlayer,
-      state.activeWeatherEvent
+      state.activeWeatherEvent,
+      state.rulesetMode
     );
 
     const affectedByCrisis = doesCrisisAffectTile(tile, state.activeCrisis);
@@ -896,7 +938,8 @@ export function computeEconomyDebugSnapshot(state: GameEngineState): EconomyDebu
             1,
             state.activeCrisis,
             activePlayer,
-            state.activeWeatherEvent
+            state.activeWeatherEvent,
+            state.rulesetMode
           );
           return sum + pub.wellness + pub.legitimacy;
         }, 0) / total

@@ -17,6 +17,7 @@ import {
   SituationCard,
   NeighborhoodDecision,
   GameLogEntry,
+  SpeculatorActionLogEntry,
   CooperativeChatMessage,
   AmbientMode,
   WeatherMode,
@@ -27,11 +28,22 @@ import {
   CooperativeAchievement,
   DynamicWeatherEventKind,
   WeatherAdvancedConfig,
-  ProbabilitySandboxConfig
+  ProbabilitySandboxConfig,
+  RulesetMode
 } from '../types/game';
 import { OFFICIAL_CHARACTERS, createInitialCharacter } from '../data/characters';
-import { INITIAL_TILES, applyInitialDifficultyToTiles } from '../data/tiles';
-import { GLOBAL_CARDS, SITUATION_CARDS } from '../data/cards';
+import {
+  INITIAL_TILES,
+  applyInitialDifficultyToTiles,
+  computeAgoraColumnMove,
+  isAgoraEntryOrColumnTile
+} from '../data/tiles';
+import {
+  GLOBAL_CARDS,
+  SITUATION_CARDS,
+  createShuffledCardIds,
+  drawCardFromQueue
+} from '../data/cards';
 import { playSound, audioManager } from '../utils/audio';
 import { resolveWeather } from '../utils/weather';
 import { hapticsManager, triggerHaptic } from '../utils/haptics';
@@ -76,12 +88,19 @@ import {
 } from '../utils/reputation';
 import {
   appendTurnReplayFrame,
-  buildTurnReplayFrame
+  buildTurnReplayFrame,
+  hydrateBoardFromReplayFrame
 } from '../utils/replay';
+import {
+  clearCooperativeChatHistory,
+  loadCooperativeChatHistory,
+  saveCooperativeChatHistory
+} from '../utils/cooperativeChatStorage';
 import { createMulberry32 } from '../utils/prng';
 import {
   DEFAULT_PROBABILITY_SANDBOX_CONFIG,
   clampDiceFace,
+  getSpeculatorTilePressureChance,
   samplePlayerDiceFromSandbox,
   sampleSpeculatorStepFromSandbox
 } from '../utils/probabilitySandbox';
@@ -91,6 +110,7 @@ export interface SetupMatchOptions {
   dailyChallengeDate?: string | null;
   multiplayerRoomId?: string | null;
   multiplayerRoomCode?: string | null;
+  rulesetMode?: RulesetMode;
 }
 
 export type SandboxMutation =
@@ -105,7 +125,8 @@ export type SandboxMutation =
   | { type: 'SET_DIFFICULTY'; difficulty: DifficultyLevel }
   | { type: 'TOGGLE_PROBABILITY_SANDBOX'; enabled: boolean }
   | { type: 'UPDATE_PROBABILITY_SANDBOX'; patch: Partial<ProbabilitySandboxConfig> }
-  | { type: 'MOVE_SPECULATOR'; speculatorId: number; deltaSteps: number };
+  | { type: 'MOVE_SPECULATOR'; speculatorId: number; deltaSteps: number }
+  | { type: 'LOAD_REPLAY_FRAME'; frameIndex: number };
 
 function createInitialPlayerStats(players: Character[]): Record<string, PlayerContributionStats> {
   const stats: Record<string, PlayerContributionStats> = {};
@@ -274,7 +295,8 @@ function buildDefaultTitleState(): GameEngineState {
         type: 'INFO'
       }
     ],
-    chatMessages: [],
+    speculatorActionLogs: [],
+    chatMessages: loadCooperativeChatHistory(),
     cameraMode: 'ISOMETRIC',
     soundEnabled: true,
     hapticsEnabled: hapticsManager.isEnabled(),
@@ -288,6 +310,11 @@ function buildDefaultTitleState(): GameEngineState {
     turnsSinceLastCrisis: 0,
     activeWeatherEvent: null,
     turnsSinceLastWeatherEvent: 0,
+    rulesetMode: 'EXPANDED',
+    globalDeckIds: createShuffledCardIds(GLOBAL_CARDS, Math.random),
+    globalDeckCursor: 0,
+    situationDeckIds: createShuffledCardIds(SITUATION_CARDS, Math.random),
+    situationDeckCursor: 0,
     achievements: loadLocalAchievements(),
     recentAchievement: null,
     playerStats: initialStats,
@@ -625,7 +652,11 @@ export function useCommonspolyGame() {
     const initialSnapshot = buildRoundSnapshot(1, players, tiles, freshStats);
 
     const activeSeed = options?.seedNumber ?? null;
-    seededRngRef.current = activeSeed !== null ? createMulberry32(activeSeed) : null;
+    const matchRng = activeSeed !== null ? createMulberry32(activeSeed) : null;
+    seededRngRef.current = matchRng;
+    const deckRand = matchRng ?? Math.random;
+    const resolvedRuleset: RulesetMode = options?.rulesetMode ?? rolls.rulesetMode ?? 'EXPANDED';
+    const resolvedRolls: SetupInitialRolls = { ...rolls, rulesetMode: resolvedRuleset };
     preSandboxSnapshotRef.current = null;
     setCanRestoreSandbox(false);
 
@@ -640,7 +671,7 @@ export function useCommonspolyGame() {
       round: 1,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       actor: 'Máster de Juego',
-      message: `Partida iniciada en dificultad ${rolls.difficulty} (${rolls.speculatorsCount} Especuladores en juego${modeSuffix}). ¡Ronda 1!`,
+      message: `Partida iniciada en dificultad ${rolls.difficulty} (${rolls.speculatorsCount} Especuladores en juego · ${resolvedRuleset === 'OFFICIAL' ? 'Edición Verde Oficial' : 'Edición Digital Expandida'}${modeSuffix}). ¡Ronda 1!`,
       type: 'INFO'
     };
 
@@ -670,7 +701,12 @@ export function useCommonspolyGame() {
       players,
       speculators,
       tiles,
-      setupConfig: rolls,
+      setupConfig: resolvedRolls,
+      rulesetMode: resolvedRuleset,
+      globalDeckIds: createShuffledCardIds(GLOBAL_CARDS, deckRand),
+      globalDeckCursor: 0,
+      situationDeckIds: createShuffledCardIds(SITUATION_CARDS, deckRand),
+      situationDeckCursor: 0,
       currentDiceRoll: null,
       currentGlobalCard: null,
       currentSituationCard: null,
@@ -704,18 +740,23 @@ export function useCommonspolyGame() {
       multiplayerRoomId: options?.multiplayerRoomId ?? null,
       multiplayerRoomCode: options?.multiplayerRoomCode ?? null,
       logs: [initLog],
-      chatMessages: [
-        {
-          id: `chat_init_${Date.now()}`,
-          senderName: players[0]?.name || 'Comunidad',
-          senderColor: players[0]?.color || '#14b8a6',
-          controller: players[0]?.controller || 'HUMAN',
-          text: '¡Lista para coordinar el bien común! Usad el chat rápido en las votaciones.',
-          round: 1,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          votingContext: 'Inicio'
-        }
-      ]
+      speculatorActionLogs: [],
+      chatMessages: (() => {
+        const initChat: CooperativeChatMessage[] = [
+          {
+            id: `chat_init_${Date.now()}`,
+            senderName: players[0]?.name || 'Comunidad',
+            senderColor: players[0]?.color || '#14b8a6',
+            controller: players[0]?.controller || 'HUMAN',
+            text: '¡Lista para coordinar el bien común! Usad el chat rápido en las votaciones.',
+            round: 1,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            votingContext: 'Inicio'
+          }
+        ];
+        saveCooperativeChatHistory(initChat);
+        return initChat;
+      })()
     }));
   }, []);
 
@@ -1014,21 +1055,28 @@ export function useCommonspolyGame() {
       // 2. Si hay una compañera detenida y el Bot tiene holgura, rescatarla solidariamente
       const detainedTeammate = currentState.players.find(p => p.isDetained && p.id !== activePlayer.id);
       if (detainedTeammate) {
-        const bailInfo = getEffectiveBailCostPerRound(detainedTeammate, activePlayer);
+        const bailInfo = getEffectiveBailCostPerRound(
+          detainedTeammate,
+          activePlayer,
+          currentState.rulesetMode
+        );
         const totalCost = detainedTeammate.detentionRoundsLeft * bailInfo.effectivePerRound;
         if (activePlayer.wellness > totalCost + 2) {
           rescueDetainedPlayer(activePlayer.id, detainedTeammate.id);
         }
       }
 
-      // 3. Si el grupo alcanzó Legitimidad Colectiva para el Ágora, el Bot entra para impulsar Insurrección
+      // 3. Si el grupo alcanzó Legitimidad Colectiva para el Ágora, el Bot entra (en OFFICIAL solo desde columna de acceso; en EXPANDED desde cualquier casilla)
       const totalLegitimacy = currentState.players.reduce((sum, p) => sum + p.legitimacy, 0);
       const requiredLegitimacy = currentState.players.length * 10;
       const nonCommonRemaining = currentState.tiles.some(
         t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state !== 'COMMON'
       );
       const someoneAlreadyInAgora = currentState.players.some(p => p.inAgora);
+      const canShortcutAgora =
+        currentState.rulesetMode !== 'OFFICIAL' || isAgoraEntryOrColumnTile(activePlayer.position);
       if (
+        canShortcutAgora &&
         !activePlayer.inAgora &&
         !activePlayer.isDetained &&
         nonCommonRemaining &&
@@ -1090,12 +1138,18 @@ export function useCommonspolyGame() {
       }
     }
 
-    // Cálculo de destino en el perímetro (0 a 39)
+    // Cálculo de destino en el perímetro (0..39) o columnas radiales al Ágora (41..53 -> 100)
     const currentPos = activePlayer.position;
     const wasInAgora = activePlayer.inAgora;
+    const totalLegitimacy = currentState.players.reduce((sum, p) => sum + p.legitimacy, 0);
+    const requiredLegitimacy = currentState.players.length * 10;
+    const collectiveLegitimacyMet = totalLegitimacy >= requiredLegitimacy;
+
     let targetPos = currentPos;
     let passedStart = false;
     let isRebound = false;
+    let enteredAgoraViaColumn = false;
+    let columnPathIds: number[] | null = null;
 
     // Si está en el Ágora (ID 100) y decide salir
     if (wasInAgora) {
@@ -1105,33 +1159,65 @@ export function useCommonspolyGame() {
       activePlayer.roundsInAgora = 0;
       addLog(activePlayer.name, `Sale del Ágora Central hacia la casilla ${targetPos}.`, 'ACTION');
     } else {
-      // Movimiento estándar en el perímetro de 40 casillas
-      const rawSum = currentPos + roll;
-      if (rawSum >= 40) {
-        passedStart = true;
-      }
-      const rawTarget = rawSum % 40;
-
-      // Comprobar regla: máximo 2 fichas por casilla (bloqueo / rebote)
-      const occupantsOnTarget = currentState.players.filter(p => p.position === rawTarget && p.id !== activePlayer.id).length +
-        currentState.speculators.filter(s => s.position === rawTarget).length;
-
-      if (occupantsOnTarget >= 2) {
-        isRebound = true;
-        targetPos = (currentPos + roll - 2 + 40) % 40;
-        addLog(activePlayer.name, `¡Casilla bloqueada por 2 fichas! Rebota hacia la casilla ${targetPos}.`, 'INFO');
+      const agoraMove = computeAgoraColumnMove(currentPos, roll, collectiveLegitimacyMet);
+      if (agoraMove) {
+        columnPathIds = agoraMove.pathTileIds;
+        if (agoraMove.enteredAgora) {
+          targetPos = 100;
+          enteredAgoraViaColumn = true;
+        } else {
+          const occupantsOnColumn =
+            currentState.players.filter(p => p.position === agoraMove.targetPos && p.id !== activePlayer.id).length +
+            currentState.speculators.filter(s => s.position === agoraMove.targetPos).length;
+          if (occupantsOnColumn >= 2 && agoraMove.pathTileIds.length >= 2) {
+            isRebound = true;
+            targetPos = agoraMove.pathTileIds[agoraMove.pathTileIds.length - 2];
+            addLog(
+              activePlayer.name,
+              `¡Casilla de columna ocupada por 2 fichas! Retrocede a la casilla ${targetPos}.`,
+              'INFO'
+            );
+          } else {
+            targetPos = agoraMove.targetPos;
+            if (agoraMove.reboundedInColumn) {
+              isRebound = true;
+              addLog(
+                activePlayer.name,
+                `Tirada excesiva para entrar al Ágora Central: rebota en la columna hasta "${currentState.tiles.find(t => t.id === targetPos)?.name ?? targetPos}".`,
+                'INFO'
+              );
+            }
+          }
+        }
       } else {
-        targetPos = rawTarget;
+        // Movimiento estándar en el perímetro de 40 casillas
+        const rawSum = currentPos + roll;
+        if (rawSum >= 40) {
+          passedStart = true;
+        }
+        const rawTarget = rawSum % 40;
+
+        // Comprobar regla: máximo 2 fichas por casilla (bloqueo / rebote)
+        const occupantsOnTarget = currentState.players.filter(p => p.position === rawTarget && p.id !== activePlayer.id).length +
+          currentState.speculators.filter(s => s.position === rawTarget).length;
+
+        if (occupantsOnTarget >= 2) {
+          isRebound = true;
+          targetPos = (currentPos + roll - 2 + 40) % 40;
+          addLog(activePlayer.name, `¡Casilla bloqueada por 2 fichas! Rebota hacia la casilla ${targetPos}.`, 'INFO');
+        } else {
+          targetPos = rawTarget;
+        }
       }
     }
 
     if (passedStart && targetPos !== 0) {
-      const startWellnessBonus = activePlayer.id === 'moha' ? 2 : 1;
+      const startWellnessBonus = currentState.rulesetMode !== 'OFFICIAL' && activePlayer.id === 'moha' ? 2 : 1;
       activePlayer.wellness += startWellnessBonus;
       recordPlayerMetric(activePlayer.id, { totalResourcesEarned: startWellnessBonus });
       addLog(
         activePlayer.name,
-        `Completó una vuelta al tablero pasando por SALIDA (+${startWellnessBonus} Bienestar${activePlayer.id === 'moha' ? ' · Derecho a la Ciudad' : ''}).`,
+        `Completó una vuelta al tablero pasando por SALIDA (+${startWellnessBonus} Bienestar${currentState.rulesetMode !== 'OFFICIAL' && activePlayer.id === 'moha' ? ' · Derecho a la Ciudad' : ''}).`,
         'SUCCESS'
       );
     }
@@ -1140,6 +1226,10 @@ export function useCommonspolyGame() {
     const stepCoords: { x: number; y: number; z: number }[] = [];
     if (wasInAgora) {
       stepCoords.push(getTileCoords3D(100), getTileCoords3D(targetPos));
+    } else if (columnPathIds && columnPathIds.length > 1) {
+      for (let i = 1; i < columnPathIds.length; i++) {
+        stepCoords.push(getTileCoords3D(columnPathIds[i]));
+      }
     } else {
       for (let s = 1; s <= roll; s++) {
         stepCoords.push(getTileCoords3D((currentPos + s) % 40));
@@ -1150,7 +1240,18 @@ export function useCommonspolyGame() {
     }
 
     activePlayer.position = targetPos;
-    playSound.pawnMoveSequence(stepCoords, { isRebound, isAgora: wasInAgora });
+    playSound.pawnMoveSequence(stepCoords, { isRebound, isAgora: wasInAgora || enteredAgoraViaColumn });
+
+    if (enteredAgoraViaColumn) {
+      activePlayer.inAgora = true;
+      activePlayer.roundsInAgora = 1;
+      setState(prev => ({
+        ...prev,
+        players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? { ...activePlayer } : p)
+      }));
+      tryEnterAgora();
+      return;
+    }
 
     // Actualizar estado del jugador
     const targetTile = currentState.tiles.find(t => t.id === targetPos);
@@ -1175,17 +1276,25 @@ export function useCommonspolyGame() {
 
     // A. Casilla de Situación 'S'
     if (tile.category === 'SITUATION') {
-      const randomCard = SITUATION_CARDS[Math.floor(nextRand() * SITUATION_CARDS.length)];
+      const currentState = stateRef.current;
+      const drawn = drawCardFromQueue(
+        SITUATION_CARDS,
+        currentState.situationDeckIds,
+        currentState.situationDeckCursor,
+        nextRand
+      );
+      const randomCard = drawn.card;
       playSound.cardFlip();
 
       if (player.controller === 'BOT') {
-        const currentState = stateRef.current;
         const result = randomCard.apply(player, currentState);
         const updatedPlayer: Character = { ...player, ...result.charUpdates };
         const wellDelta = Math.max(0, (updatedPlayer.wellness - player.wellness)) + Math.max(0, (updatedPlayer.legitimacy - player.legitimacy));
 
         setState(prev => ({
           ...prev,
+          situationDeckIds: drawn.nextQueueIds,
+          situationDeckCursor: drawn.nextCursor,
           players: prev.players.map(p => p.id === player.id ? updatedPlayer : p)
         }));
         if (wellDelta > 0) {
@@ -1202,6 +1311,8 @@ export function useCommonspolyGame() {
 
       setState(prev => ({
         ...prev,
+        situationDeckIds: drawn.nextQueueIds,
+        situationDeckCursor: drawn.nextCursor,
         currentSituationCard: randomCard,
         activeModal: 'SITUATION_CARD'
       }));
@@ -1211,14 +1322,14 @@ export function useCommonspolyGame() {
     // B. Casillas Especiales
     if (tile.category === 'CORNER' || tile.category === 'SPECIAL') {
       if (tile.specialType === 'START') {
-        const startWellness = player.id === 'moha' ? 2 : 1;
+        const startWellness = stateRef.current.rulesetMode !== 'OFFICIAL' && player.id === 'moha' ? 2 : 1;
         player.wellness += startWellness;
         player.legitimacy += 1;
         playSound.unlockPublic(getTileCoords3D(tile.id));
         recordPlayerMetric(player.id, { totalResourcesEarned: startWellness + 1 });
         addLog(
           player.name,
-          `Descansa en SALIDA (+${startWellness} Bienestar, +1 Legitimidad${player.id === 'moha' ? ' · Derecho a la Ciudad' : ''}).`,
+          `Descansa en SALIDA (+${startWellness} Bienestar, +1 Legitimidad${stateRef.current.rulesetMode !== 'OFFICIAL' && player.id === 'moha' ? ' · Derecho a la Ciudad' : ''}).`,
           'SUCCESS'
         );
         setState(prev => ({
@@ -1232,7 +1343,7 @@ export function useCommonspolyGame() {
         const privateTiles = stateRef.current.tiles.filter(
           t => (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') && t.state === 'PRIVATE'
         );
-        const burCost = getEffectiveBureaucracyCost(player).effectiveCost;
+        const burCost = getEffectiveBureaucracyCost(player, stateRef.current.rulesetMode).effectiveCost;
         if (player.controller === 'BOT') {
           if (player.wellness > burCost + 1 && privateTiles.length > 0) {
             executeBureaucracy(privateTiles[0].id);
@@ -1502,7 +1613,8 @@ export function useCommonspolyGame() {
           2,
           stateRef.current.activeCrisis,
           player,
-          stateRef.current.activeWeatherEvent
+          stateRef.current.activeWeatherEvent,
+          stateRef.current.rulesetMode
         );
         player.wellness += reward.wellness;
         player.legitimacy += reward.legitimacy;
@@ -1543,7 +1655,8 @@ export function useCommonspolyGame() {
       tile,
       bot,
       stateRef.current.activeCrisis,
-      stateRef.current.activeWeatherEvent
+      stateRef.current.activeWeatherEvent,
+      stateRef.current.rulesetMode
     );
     const neededWellness = costInfo.effectiveCost;
 
@@ -1642,7 +1755,8 @@ export function useCommonspolyGame() {
           1,
           stateRef.current.activeCrisis,
           bot,
-          stateRef.current.activeWeatherEvent
+          stateRef.current.activeWeatherEvent,
+          stateRef.current.rulesetMode
         );
         bot.wellness += reward.wellness;
         bot.legitimacy += reward.legitimacy;
@@ -1681,7 +1795,8 @@ export function useCommonspolyGame() {
       tile,
       player,
       currentState.activeCrisis,
-      currentState.activeWeatherEvent
+      currentState.activeWeatherEvent,
+      currentState.rulesetMode
     );
     const neededWellness = costInfo.effectiveCost;
     const skill = costInfo.skillPoints;
@@ -1805,7 +1920,13 @@ export function useCommonspolyGame() {
       (tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY') &&
       (tile.state === 'PRIVATE' || tile.state === 'PUBLIC');
     const unlockCost = canTransform
-      ? getEffectiveUnlockCost(tile, player, currentState.activeCrisis, currentState.activeWeatherEvent).effectiveCost
+      ? getEffectiveUnlockCost(
+          tile,
+          player,
+          currentState.activeCrisis,
+          currentState.activeWeatherEvent,
+          currentState.rulesetMode
+        ).effectiveCost
       : Infinity;
     const passedDespiteFunds = Boolean(canTransform && player.wellness >= unlockCost);
 
@@ -1816,7 +1937,8 @@ export function useCommonspolyGame() {
         1,
         currentState.activeCrisis,
         player,
-        currentState.activeWeatherEvent
+        currentState.activeWeatherEvent,
+        currentState.rulesetMode
       );
       player.wellness += reward.wellness;
       player.legitimacy += reward.legitimacy;
@@ -1941,9 +2063,28 @@ export function useCommonspolyGame() {
     }
 
     const player = currentState.players[currentState.activePlayerIndex];
+    if (!player) return;
+
+    if (
+      currentState.rulesetMode === 'OFFICIAL' &&
+      player.position !== 100 &&
+      !isAgoraEntryOrColumnTile(player.position)
+    ) {
+      addLog(
+        'Ágora Central',
+        `${player.name} debe alcanzar una casilla de acceso al Ágora (Tranvía, Sala de Conciertos, Skate Park o Salud Mental) para subir por su columna radial.`,
+        'INFO'
+      );
+      return;
+    }
+
     player.position = 100; // Ágora Central
     player.inAgora = true;
     player.roundsInAgora = 1;
+    setState(prev => ({
+      ...prev,
+      players: prev.players.map((p, idx) => idx === prev.activePlayerIndex ? { ...player } : p)
+    }));
     playSound.agoraInsurrection({ x: 0, y: 0.5, z: 0 });
     recordPlayerMetric(player.id, { cooperativeActions: 1 });
     addLog(
@@ -2118,14 +2259,23 @@ export function useCommonspolyGame() {
 
     let attackTriggered = false;
     let detentionModalOpened = false;
+    const difficulty = currentState.setupConfig?.difficulty ?? 'EN_TRANSICION';
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const nextPlayers = currentState.players.map(p => ({ ...p }));
+    const nextTiles = currentState.tiles.map(t => ({ ...t }));
+    const newSpecActionLogs: SpeculatorActionLogEntry[] = [];
+
     const nextSpeculators = currentState.speculators.map((speculator, sIdx) => {
       // Lanzar dado para el especulador (o aplicar lógica de movimiento Probability Sandbox)
       const prevPos = speculator.position;
       const roll = activeSandbox
-        ? sampleSpeculatorStepFromSandbox(prevPos, nextPlayers, nextRand, activeSandbox)
+        ? sampleSpeculatorStepFromSandbox(prevPos, nextPlayers, nextRand, activeSandbox, speculator.id)
         : Math.floor(nextRand() * 6) + 1;
       const targetPos = (prevPos + roll) % 40;
+      const landedTileIdx = nextTiles.findIndex(t => t.id === targetPos);
+      const landedTile = landedTileIdx >= 0 ? nextTiles[landedTileIdx] : undefined;
+      const landedTileName = landedTile?.name ?? `Casilla ${targetPos}`;
+      const logIdBase = `spec_act_${Date.now()}_${sIdx}_${Math.random().toString(36).slice(2, 6)}`;
 
       if (roll === 0) {
         addLog(
@@ -2133,6 +2283,20 @@ export function useCommonspolyGame() {
           `[Sandbox] Congelado en la casilla ${targetPos} (0 pasos).`,
           'INFO'
         );
+        newSpecActionLogs.unshift({
+          id: logIdBase,
+          round: currentState.round,
+          timestamp: nowTime,
+          speculatorId: speculator.id,
+          speculatorName: speculator.name,
+          speculatorColor: speculator.color,
+          kind: 'MOVE',
+          fromTileId: prevPos,
+          toTileId: targetPos,
+          tileName: landedTileName,
+          diceRoll: 0,
+          details: `[Sandbox] Congelado en #${targetPos} (${landedTileName}).`
+        });
         return { ...speculator, position: targetPos };
       }
 
@@ -2150,11 +2314,13 @@ export function useCommonspolyGame() {
 
       // Comprobar si aterriza en una casilla con un personaje
       const victims = nextPlayers.filter(p => p.position === targetPos && !p.inAgora);
+      let recordedActionForThisSpec = false;
 
       // Si hay 2 o más personajes juntos, se protegen mutuamente del especulador
       if (victims.length >= 2) {
+        const defenderNames = victims.map(v => v.name).join(' y ');
         addLog(
-          victims.map(v => v.name).join(' y '),
+          defenderNames,
           `¡Protección Mutua! Al compartir casilla, bloquearon el ataque de ${speculator.name}.`,
           'SUCCESS',
           {
@@ -2165,6 +2331,22 @@ export function useCommonspolyGame() {
             highlight: true
           }
         );
+        newSpecActionLogs.unshift({
+          id: logIdBase,
+          round: currentState.round,
+          timestamp: nowTime,
+          speculatorId: speculator.id,
+          speculatorName: speculator.name,
+          speculatorColor: speculator.color,
+          kind: 'BLOCKED',
+          fromTileId: prevPos,
+          toTileId: targetPos,
+          tileName: landedTileName,
+          diceRoll: roll,
+          targetPlayerName: defenderNames,
+          details: `Ataque bloqueado por Protección Mutua (${defenderNames}) en #${targetPos} (${landedTileName}).`
+        });
+        recordedActionForThisSpec = true;
       }
 
       // Si hay exactamente 1 personaje (sin protección de un segundo personaje en la casilla)
@@ -2174,7 +2356,6 @@ export function useCommonspolyGame() {
 
         // Decidir acción del especulador equilibrada según dificultad o anulación Sandbox
         const actionDice = Math.floor(nextRand() * 6) + 1;
-        const difficulty = currentState.setupConfig?.difficulty ?? 'EN_TRANSICION';
         const detentionChance =
           activeSandbox && activeSandbox.detentionChanceOverridePct !== null
             ? Math.max(0, Math.min(1, activeSandbox.detentionChanceOverridePct / 100))
@@ -2197,8 +2378,25 @@ export function useCommonspolyGame() {
             `¡Atrapó a ${victim.name} y lo encerró en el Centro de Detención por ${cappedRounds} ${cappedRounds === 1 ? 'ronda' : 'rondas'}!`,
             'HAZARD'
           );
+          newSpecActionLogs.unshift({
+            id: logIdBase,
+            round: currentState.round,
+            timestamp: nowTime,
+            speculatorId: speculator.id,
+            speculatorName: speculator.name,
+            speculatorColor: speculator.color,
+            kind: 'DETAIN_PLAYER',
+            fromTileId: prevPos,
+            toTileId: targetPos,
+            tileName: landedTileName,
+            diceRoll: roll,
+            targetPlayerName: victim.name,
+            detentionRounds: cappedRounds,
+            details: `Detuvo a ${victim.name} en #${targetPos} (${landedTileName}) por ${cappedRounds} ${cappedRounds === 1 ? 'ronda' : 'rondas'}.`
+          });
           detentionModalOpened = true;
           pendingRoundAdvanceRef.current = !sandboxTestMode;
+          recordedActionForThisSpec = true;
         } else {
           // Quitar puntos de Bienestar o Legitimidad (tope equilibrado de 1 a 4 puntos)
           playSound.speculatorAlert(getTileCoords3D(targetPos));
@@ -2209,12 +2407,144 @@ export function useCommonspolyGame() {
             const stolen = Math.min(victim.wellness - 1, maxSteal);
             victim.wellness = Math.max(1, victim.wellness - stolen);
             addLog(speculator.name, `Explotó a ${victim.name} quitándole ${stolen} Puntos de Bienestar.`, 'HAZARD');
+            newSpecActionLogs.unshift({
+              id: logIdBase,
+              round: currentState.round,
+              timestamp: nowTime,
+              speculatorId: speculator.id,
+              speculatorName: speculator.name,
+              speculatorColor: speculator.color,
+              kind: 'ATTACK_PLAYER',
+              fromTileId: prevPos,
+              toTileId: targetPos,
+              tileName: landedTileName,
+              diceRoll: roll,
+              targetPlayerName: victim.name,
+              deltaPoints: stolen,
+              details: `Explotó a ${victim.name} en #${targetPos} (${landedTileName}): -${stolen} Bienestar.`
+            });
           } else {
             const stolen = Math.min(victim.legitimacy, maxSteal);
             victim.legitimacy = Math.max(0, victim.legitimacy - stolen);
             addLog(speculator.name, `Desprestigiaron a ${victim.name} quitándole ${stolen} Puntos de Legitimidad.`, 'HAZARD');
+            newSpecActionLogs.unshift({
+              id: logIdBase,
+              round: currentState.round,
+              timestamp: nowTime,
+              speculatorId: speculator.id,
+              speculatorName: speculator.name,
+              speculatorColor: speculator.color,
+              kind: 'ATTACK_PLAYER',
+              fromTileId: prevPos,
+              toTileId: targetPos,
+              tileName: landedTileName,
+              diceRoll: roll,
+              targetPlayerName: victim.name,
+              deltaPoints: stolen,
+              details: `Desprestigió a ${victim.name} en #${targetPos} (${landedTileName}): -${stolen} Legitimidad.`
+            });
+          }
+          recordedActionForThisSpec = true;
+        }
+      }
+
+      // Si no hay jugadoras defendiendo la casilla, el especulador puede comprar (Público -> Privado) o vandalizar (Común -> Público)
+      if (
+        !recordedActionForThisSpec &&
+        victims.length === 0 &&
+        landedTile &&
+        (landedTile.category === 'RESOURCE' || landedTile.category === 'AGORA_ENTRY') &&
+        (landedTile.state === 'COMMON' || landedTile.state === 'PUBLIC')
+      ) {
+        const pressureChance = getSpeculatorTilePressureChance(
+          difficulty,
+          activeSandbox,
+          speculator.id
+        );
+        if (nextRand() < pressureChance) {
+          const prevTileState = landedTile.state;
+          if (prevTileState === 'PUBLIC') {
+            nextTiles[landedTileIdx] = {
+              ...landedTile,
+              state: 'PRIVATE',
+              transformedById: `speculator_${speculator.id}`,
+              transformedByName: speculator.name,
+              transformedAtRound: currentState.round
+            };
+            playSound.speculatorAlert(getTileCoords3D(targetPos));
+            addLog(
+              speculator.name,
+              `¡Compra especulativa! Privatizó "${landedTileName}" (Público → Privado).`,
+              'HAZARD'
+            );
+            newSpecActionLogs.unshift({
+              id: logIdBase,
+              round: currentState.round,
+              timestamp: nowTime,
+              speculatorId: speculator.id,
+              speculatorName: speculator.name,
+              speculatorColor: speculator.color,
+              kind: 'BUY_TILE',
+              fromTileId: prevPos,
+              toTileId: targetPos,
+              tileName: landedTileName,
+              diceRoll: roll,
+              previousTileState: 'PUBLIC',
+              nextTileState: 'PRIVATE',
+              details: `Compró y privatizó #${targetPos} (${landedTileName}) de Público a Privado.`
+            });
+            recordedActionForThisSpec = true;
+          } else if (prevTileState === 'COMMON') {
+            nextTiles[landedTileIdx] = {
+              ...landedTile,
+              state: 'PUBLIC',
+              transformedById: `speculator_${speculator.id}`,
+              transformedByName: speculator.name,
+              transformedAtRound: currentState.round
+            };
+            playSound.speculatorAlert(getTileCoords3D(targetPos));
+            addLog(
+              speculator.name,
+              `¡Vandalismo especulador! Degradó "${landedTileName}" (Común → Público).`,
+              'HAZARD'
+            );
+            newSpecActionLogs.unshift({
+              id: logIdBase,
+              round: currentState.round,
+              timestamp: nowTime,
+              speculatorId: speculator.id,
+              speculatorName: speculator.name,
+              speculatorColor: speculator.color,
+              kind: 'VANDALIZE_TILE',
+              fromTileId: prevPos,
+              toTileId: targetPos,
+              tileName: landedTileName,
+              diceRoll: roll,
+              previousTileState: 'COMMON',
+              nextTileState: 'PUBLIC',
+              details: `Vandalizó #${targetPos} (${landedTileName}) degradándolo de Común a Público.`
+            });
+            recordedActionForThisSpec = true;
           }
         }
+      }
+
+      if (!recordedActionForThisSpec) {
+        newSpecActionLogs.unshift({
+          id: logIdBase,
+          round: currentState.round,
+          timestamp: nowTime,
+          speculatorId: speculator.id,
+          speculatorName: speculator.name,
+          speculatorColor: speculator.color,
+          kind: 'MOVE',
+          fromTileId: prevPos,
+          toTileId: targetPos,
+          tileName: landedTileName,
+          diceRoll: roll,
+          previousTileState: landedTile?.state,
+          details: `Avanzó +${roll} hasta #${targetPos} (${landedTileName}) sin compra ni vandalismo.`
+        });
       }
 
       return { ...speculator, position: targetPos };
@@ -2233,7 +2563,7 @@ export function useCommonspolyGame() {
         diceRoll: null,
         players: nextPlayers,
         speculators: nextSpeculators,
-        tiles: prev.tiles,
+        tiles: nextTiles,
         fallbackSummary: sandboxTestMode
           ? 'Simulación Sandbox de Especuladores en vivo'
           : 'Desplazamiento de los Especuladores al cierre de ronda',
@@ -2245,6 +2575,8 @@ export function useCommonspolyGame() {
         phase: 'SPECULATOR_TURN',
         speculators: nextSpeculators,
         players: nextPlayers,
+        tiles: nextTiles,
+        speculatorActionLogs: [...newSpecActionLogs, ...(prev.speculatorActionLogs ?? [])].slice(0, 120),
         activeModal: detentionModalOpened ? 'DETENTION_RESCUE' : prev.activeModal,
         replayFrames: appendTurnReplayFrame(prev.replayFrames, specFrame)
       };
@@ -2279,8 +2611,14 @@ export function useCommonspolyGame() {
 
     addLog('Máster de Juego', `--- COMIENZO DE LA RONDA ${nextRound} DE 20 ---`, 'INFO');
 
-    // A partir de la ronda 2, se lee una Carta Global
-    const globalCard = GLOBAL_CARDS[(nextRound - 2) % GLOBAL_CARDS.length];
+    // A partir de la ronda 2, se lee una Carta Global sin repetir mazo
+    const drawnGlobal = drawCardFromQueue(
+      GLOBAL_CARDS,
+      currentState.globalDeckIds,
+      currentState.globalDeckCursor,
+      nextRand
+    );
+    const globalCard = drawnGlobal.card;
     playSound.cardFlip();
     triggerHaptic.globalCard();
 
@@ -2297,6 +2635,8 @@ export function useCommonspolyGame() {
         round: nextRound,
         activePlayerIndex: 0,
         currentDiceRoll: null,
+        globalDeckIds: drawnGlobal.nextQueueIds,
+        globalDeckCursor: drawnGlobal.nextCursor,
         currentGlobalCard: globalCard,
         activeModal: 'GLOBAL_CARD',
         phase: 'GLOBAL_CARD',
@@ -2308,19 +2648,26 @@ export function useCommonspolyGame() {
   // Aplicar Carta Global y comenzar turnos
   const acknowledgeGlobalCard = useCallback(() => {
     const currentState = stateRef.current;
+    let updatedPlayers = currentState.players.map(p => ({ ...p }));
     if (currentState.currentGlobalCard) {
-      const result = currentState.currentGlobalCard.effect(currentState);
+      const workingState: GameEngineState = {
+        ...currentState,
+        players: updatedPlayers
+      };
+      const result = currentState.currentGlobalCard.effect(workingState);
+      updatedPlayers = workingState.players;
       addLog('Carta Global', result.message, 'CARD');
     }
 
     setState(prev => ({
       ...prev,
+      players: updatedPlayers,
       activeModal: null,
       phase: 'PLAYER_TURN_READY'
     }));
 
     // Si el primer jugador de la ronda es BOT, ejecutar turno automáticamente
-    const firstPlayer = currentState.players[0];
+    const firstPlayer = updatedPlayers[0];
     if (firstPlayer?.controller === 'BOT') {
       setTimeout(() => {
         rollDiceForCurrentPlayer();
@@ -2333,13 +2680,21 @@ export function useCommonspolyGame() {
     const currentState = stateRef.current;
     if (currentState.phase === 'GAME_OVER') return;
     const nextIndex = currentState.activePlayerIndex + 1;
+    const isOfficialRules = currentState.rulesetMode === 'OFFICIAL';
 
-    const crisisEval = evaluateUnexpectedCrisisTurn(
-      currentState.activeCrisis,
-      currentState.turnsSinceLastCrisis,
-      currentState.round,
-      lastCrisisIdRef.current
-    );
+    const crisisEval = isOfficialRules
+      ? {
+          nextCrisis: null,
+          newlyTriggeredCrisis: null,
+          expiredCrisis: null,
+          nextTurnsSinceLastCrisis: 0
+        }
+      : evaluateUnexpectedCrisisTurn(
+          currentState.activeCrisis,
+          currentState.turnsSinceLastCrisis,
+          currentState.round,
+          lastCrisisIdRef.current
+        );
 
     if (crisisEval.newlyTriggeredCrisis) {
       const triggered = crisisEval.newlyTriggeredCrisis;
@@ -2367,14 +2722,21 @@ export function useCommonspolyGame() {
       );
     }
 
-    const weatherEval = evaluateDynamicWeatherTurn(
-      currentState.activeWeatherEvent,
-      currentState.turnsSinceLastWeatherEvent,
-      currentState.tiles,
-      currentState.round,
-      lastWeatherKindRef.current,
-      currentState.weatherAdvancedConfig
-    );
+    const weatherEval = isOfficialRules
+      ? {
+          nextWeatherEvent: null,
+          newlyTriggeredWeatherEvent: null,
+          expiredWeatherEvent: null,
+          nextTurnsSinceLastWeatherEvent: 0
+        }
+      : evaluateDynamicWeatherTurn(
+          currentState.activeWeatherEvent,
+          currentState.turnsSinceLastWeatherEvent,
+          currentState.tiles,
+          currentState.round,
+          lastWeatherKindRef.current,
+          currentState.weatherAdvancedConfig
+        );
 
     if (weatherEval.newlyTriggeredWeatherEvent) {
       const wEvent = weatherEval.newlyTriggeredWeatherEvent;
@@ -2481,7 +2843,7 @@ export function useCommonspolyGame() {
     const rescuer = currentState.players.find(p => p.id === rescuerId);
     if (!victim || !rescuer) return;
 
-    const bailInfo = getEffectiveBailCostPerRound(victim, rescuer);
+    const bailInfo = getEffectiveBailCostPerRound(victim, rescuer, currentState.rulesetMode);
     const totalCost = victim.detentionRoundsLeft * bailInfo.effectivePerRound;
 
     if (rescuer.wellness > totalCost) {
@@ -2594,33 +2956,35 @@ export function useCommonspolyGame() {
     const player = currentState.players[currentState.activePlayerIndex];
 
     if (card && player) {
-      const weather = resolveWeather(
-        currentState.tiles,
-        currentState.weatherMode,
-        currentState.weatherIntensity ?? 0.85,
-        currentState.round,
-        currentState.activePlayerIndex,
-        currentState.activeWeatherEvent
-      );
-
-      const isFavorable = weather.type === 'RAIN' || weather.type === 'SUNNY' || weather.type === 'TEMPERATE';
-      const successRoll = nextRand();
-      const successThreshold = isFavorable ? 0.08 : 0.32;
-
       let result = card.apply(player, currentState);
 
-      if (isFavorable) {
-        const wellDelta = (result.charUpdates.wellness ?? player.wellness) - player.wellness;
-        const legDelta = (result.charUpdates.legitimacy ?? player.legitimacy) - player.legitimacy;
-        if (wellDelta > 0) result.charUpdates.wellness = (result.charUpdates.wellness ?? player.wellness) + 1;
-        if (legDelta > 0) result.charUpdates.legitimacy = (result.charUpdates.legitimacy ?? player.legitimacy) + 1;
-        result.message += ` [Clima óptimo (${weather.label}): ¡Bonus de éxito +1 recurso!].`;
-      } else if (successRoll < successThreshold) {
-        result.message += ` [Clima adverso (${weather.label}): Superado con resiliencia vecinal].`;
-      } else {
-        result.message += ` [Clima adverso (${weather.label}): Desafío superado con mitigación parcial].`;
-        if (result.charUpdates.wellness && result.charUpdates.wellness > player.wellness) {
-          result.charUpdates.wellness = Math.max(player.wellness, result.charUpdates.wellness - 1);
+      if (currentState.rulesetMode !== 'OFFICIAL') {
+        const weather = resolveWeather(
+          currentState.tiles,
+          currentState.weatherMode,
+          currentState.weatherIntensity ?? 0.85,
+          currentState.round,
+          currentState.activePlayerIndex,
+          currentState.activeWeatherEvent
+        );
+
+        const isFavorable = weather.type === 'RAIN' || weather.type === 'SUNNY' || weather.type === 'TEMPERATE';
+        const successRoll = nextRand();
+        const successThreshold = isFavorable ? 0.08 : 0.32;
+
+        if (isFavorable) {
+          const wellDelta = (result.charUpdates.wellness ?? player.wellness) - player.wellness;
+          const legDelta = (result.charUpdates.legitimacy ?? player.legitimacy) - player.legitimacy;
+          if (wellDelta > 0) result.charUpdates.wellness = (result.charUpdates.wellness ?? player.wellness) + 1;
+          if (legDelta > 0) result.charUpdates.legitimacy = (result.charUpdates.legitimacy ?? player.legitimacy) + 1;
+          result.message += ` [Clima óptimo (${weather.label}): ¡Bonus de éxito +1 recurso!].`;
+        } else if (successRoll < successThreshold) {
+          result.message += ` [Clima adverso (${weather.label}): Superado con resiliencia vecinal].`;
+        } else {
+          result.message += ` [Clima adverso (${weather.label}): Desafío superado con mitigación parcial].`;
+          if (result.charUpdates.wellness && result.charUpdates.wellness > player.wellness) {
+            result.charUpdates.wellness = Math.max(player.wellness, result.charUpdates.wellness - 1);
+          }
         }
       }
 
@@ -2768,7 +3132,7 @@ export function useCommonspolyGame() {
   const executeBureaucracy = useCallback((tileId: number) => {
     const currentState = stateRef.current;
     const player = currentState.players[currentState.activePlayerIndex];
-    const costInfo = getEffectiveBureaucracyCost(player);
+    const costInfo = getEffectiveBureaucracyCost(player, currentState.rulesetMode);
     if (!player || player.wellness <= costInfo.effectiveCost) {
       setState(prev => ({ ...prev, activeModal: null }));
       advanceToNextTurn();
@@ -2946,10 +3310,14 @@ export function useCommonspolyGame() {
       votingContext
     };
 
-    setState(prev => ({
-      ...prev,
-      chatMessages: [...prev.chatMessages.slice(-39), msg]
-    }));
+    setState(prev => {
+      const nextMessages = [...prev.chatMessages.slice(-39), msg];
+      saveCooperativeChatHistory(nextMessages);
+      return {
+        ...prev,
+        chatMessages: nextMessages
+      };
+    });
 
     // Respuesta cooperativa contextual de una compañera BOT si existen bots en la mesa
     const bots = currentState.players.filter(p => p.controller === 'BOT' && p.id !== sender.id);
@@ -2982,10 +3350,14 @@ export function useCommonspolyGame() {
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           votingContext
         };
-        setState(prev => ({
-          ...prev,
-          chatMessages: [...prev.chatMessages.slice(-39), botMsg]
-        }));
+        setState(prev => {
+          const nextMessages = [...prev.chatMessages.slice(-39), botMsg];
+          saveCooperativeChatHistory(nextMessages);
+          return {
+            ...prev,
+            chatMessages: nextMessages
+          };
+        });
       }, 700);
     }
   }, []);
@@ -3163,8 +3535,15 @@ export function useCommonspolyGame() {
     achievementQueueRef.current = [];
     pendingRoundAdvanceRef.current = loaded.pendingRoundAdvance;
     needsRecoveryRef.current = true;
+    const storedChat = loadCooperativeChatHistory();
+    const resolvedChat =
+      loaded.state.chatMessages.length > 0 ? loaded.state.chatMessages : storedChat;
+    saveCooperativeChatHistory(resolvedChat);
     setSavedGameMeta(loaded.meta);
-    setState(loaded.state);
+    setState({
+      ...loaded.state,
+      chatMessages: resolvedChat
+    });
     setResumeNonce(n => n + 1);
     return true;
   }, []);
@@ -3191,6 +3570,7 @@ export function useCommonspolyGame() {
   const clearSavedGame = useCallback(() => {
     playSound.uiClick();
     clearSavedGameFromStorage();
+    clearCooperativeChatHistory();
     setSavedGameMeta(null);
   }, []);
 
@@ -3424,6 +3804,92 @@ export function useCommonspolyGame() {
           nextState = { ...nextState, speculators: nextSpecs };
           break;
         }
+        case 'LOAD_REPLAY_FRAME': {
+          const targetFrame = (prev.replayFrames ?? []).find(
+            f => f.frameIndex === mutation.frameIndex
+          );
+          if (!targetFrame) return prev;
+          const hydrated = hydrateBoardFromReplayFrame(prev, targetFrame);
+          const matchedCrisis = targetFrame.activeCrisisTitle
+            ? UNEXPECTED_CRISIS_TEMPLATES.find(c => c.title === targetFrame.activeCrisisTitle)
+            : undefined;
+          const nextCrisis = matchedCrisis
+            ? {
+                ...matchedCrisis,
+                turnsRemaining: matchedCrisis.totalTurns,
+                triggeredAtRound: targetFrame.round
+              }
+            : null;
+          const matchedWeather = targetFrame.activeWeatherTitle
+            ? DYNAMIC_WEATHER_TEMPLATES.find(w => w.title === targetFrame.activeWeatherTitle)
+            : undefined;
+          const nextWeather = matchedWeather
+            ? (() => {
+                const candidateTiles = hydrated.tiles.filter(
+                  t =>
+                    (t.category === 'RESOURCE' || t.category === 'AGORA_ENTRY') &&
+                    (matchedWeather.preferredGoodTypes.length === 0 ||
+                      (t.goodType && matchedWeather.preferredGoodTypes.includes(t.goodType)))
+                );
+                const picked = candidateTiles.slice(0, matchedWeather.tileCountMax);
+                return {
+                  id: `sandbox_replay_weather_${matchedWeather.kind}_${Date.now()}`,
+                  kind: matchedWeather.kind,
+                  weatherType: matchedWeather.weatherType,
+                  title: matchedWeather.title,
+                  description: matchedWeather.description,
+                  alertMessage: `[Sandbox Replay] ${matchedWeather.title} restaurada.`,
+                  affectedTileIds: picked.map(t => t.id),
+                  affectedTileNames: picked.map(t => t.name),
+                  affectedGoodTypes: [...matchedWeather.preferredGoodTypes],
+                  unlockCostDelta: matchedWeather.unlockCostDelta,
+                  resourceYieldDelta: matchedWeather.resourceYieldDelta,
+                  turnsRemaining: matchedWeather.totalTurns,
+                  totalTurns: matchedWeather.totalTurns,
+                  severity: matchedWeather.severity,
+                  triggeredAtRound: targetFrame.round
+                };
+              })()
+            : null;
+
+          const currentCfg = prev.probabilitySandbox ?? DEFAULT_PROBABILITY_SANDBOX_CONFIG;
+          const replayLoadLog: GameLogEntry = {
+            id: `log_sandbox_replay_${Date.now()}_${Math.random()}`,
+            round: hydrated.round,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            actor: 'Probability Sandbox',
+            message: `Escenario histórico cargado desde Frame #${targetFrame.frameIndex} (Ronda ${targetFrame.round}: ${targetFrame.eventSummary}).`,
+            type: 'INFO'
+          };
+
+          nextState = {
+            ...nextState,
+            phase: 'PLAYER_TURN_READY',
+            round: hydrated.round,
+            activePlayerIndex: hydrated.activePlayerIndex,
+            players: hydrated.players,
+            speculators: hydrated.speculators,
+            tiles: hydrated.tiles,
+            currentDiceRoll: null,
+            activeModal: null,
+            currentGlobalCard: null,
+            currentSituationCard: null,
+            neighborhoodDecision: null,
+            gameResult: undefined,
+            gameResultDetails: undefined,
+            activeCrisis: nextCrisis,
+            activeWeatherEvent: nextWeather,
+            setupConfig: prev.setupConfig
+              ? { ...prev.setupConfig, speculatorsCount: hydrated.speculators.length }
+              : undefined,
+            probabilitySandbox: {
+              ...currentCfg,
+              enabled: true
+            },
+            logs: [replayLoadLog, ...prev.logs.slice(0, 1999)]
+          };
+          break;
+        }
       }
 
       return nextState;
@@ -3533,7 +3999,13 @@ export function useCommonspolyGame() {
       multiplayerRoomId: string;
       multiplayerRoomCode: string;
       difficulty?: DifficultyLevel;
+      rulesetMode?: RulesetMode;
+      activeModal?: GameEngineState['activeModal'];
+      currentGlobalCardId?: string | null;
+      currentSituationCardId?: string | null;
+      neighborhoodDecision?: NeighborhoodDecision | null;
       recentLogs?: GameLogEntry[];
+      recentChats?: CooperativeChatMessage[];
     }) => {
       setState(prev => {
         const nextTiles = prev.tiles.map(tile => {
@@ -3546,6 +4018,16 @@ export function useCommonspolyGame() {
 
         const nextStats = prev.playerStats || createInitialPlayerStats(remote.players);
         const snap = buildRoundSnapshot(remote.round, remote.players, nextTiles, nextStats);
+        const matchedGlobal = remote.currentGlobalCardId
+          ? GLOBAL_CARDS.find(c => c.id === remote.currentGlobalCardId) ?? prev.currentGlobalCard
+          : remote.currentGlobalCardId === null
+          ? null
+          : prev.currentGlobalCard;
+        const matchedSituation = remote.currentSituationCardId
+          ? SITUATION_CARDS.find(c => c.id === remote.currentSituationCardId) ?? prev.currentSituationCard
+          : remote.currentSituationCardId === null
+          ? null
+          : prev.currentSituationCard;
 
         return {
           ...prev,
@@ -3560,14 +4042,27 @@ export function useCommonspolyGame() {
           gameResultDetails: remote.gameResultDetails,
           multiplayerRoomId: remote.multiplayerRoomId,
           multiplayerRoomCode: remote.multiplayerRoomCode,
+          rulesetMode: remote.rulesetMode ?? prev.rulesetMode,
+          activeModal: remote.activeModal !== undefined ? remote.activeModal : prev.activeModal,
+          currentGlobalCard: matchedGlobal,
+          currentSituationCard: matchedSituation,
+          neighborhoodDecision:
+            remote.neighborhoodDecision !== undefined
+              ? remote.neighborhoodDecision
+              : prev.neighborhoodDecision,
           setupConfig: prev.setupConfig
             ? {
                 ...prev.setupConfig,
                 difficulty: remote.difficulty ?? prev.setupConfig.difficulty,
-                speculatorsCount: remote.speculators.length
+                speculatorsCount: remote.speculators.length,
+                rulesetMode: remote.rulesetMode ?? prev.setupConfig.rulesetMode
               }
             : prev.setupConfig,
           logs: remote.recentLogs && remote.recentLogs.length > 0 ? remote.recentLogs : prev.logs,
+          chatMessages:
+            remote.recentChats && remote.recentChats.length > 0
+              ? remote.recentChats
+              : prev.chatMessages,
           performanceHistory: upsertRoundSnapshot(prev.performanceHistory, snap)
         };
       });
@@ -3585,6 +4080,7 @@ export function useCommonspolyGame() {
     preSandboxSnapshotRef.current = null;
     setCanRestoreSandbox(false);
     clearSavedGameFromStorage();
+    clearCooperativeChatHistory();
     setSavedGameMeta(null);
     setState(prev => ({
       ...prev,
@@ -3594,6 +4090,7 @@ export function useCommonspolyGame() {
       activeModal: null,
       currentDiceRoll: null,
       recentAchievement: null,
+      speculatorActionLogs: [],
       chatMessages: [],
       weatherMode: 'AUTO',
       weatherIntensity: 0.85,

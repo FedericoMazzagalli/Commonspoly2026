@@ -169,7 +169,8 @@ export function runEconomyMonteCarlo(
                   2,
                   activeCrisis,
                   player,
-                  activeWeather
+                  activeWeather,
+                  state.rulesetMode
                 );
                 pWellness[pi] += reward.wellness;
                 pLegitimacy[pi] += reward.legitimacy;
@@ -181,7 +182,8 @@ export function runEconomyMonteCarlo(
                     1,
                     activeCrisis,
                     player,
-                    activeWeather
+                    activeWeather,
+                    state.rulesetMode
                   );
                   pWellness[pi] += reward.wellness;
                 }
@@ -189,7 +191,8 @@ export function runEconomyMonteCarlo(
                   tile,
                   player,
                   activeCrisis,
-                  activeWeather
+                  activeWeather,
+                  state.rulesetMode
                 );
                 if (pWellness[pi] >= effectiveCost + 2) {
                   pWellness[pi] -= effectiveCost;

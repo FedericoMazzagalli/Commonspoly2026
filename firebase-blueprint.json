@@ -252,6 +252,11 @@
           "description": "Board difficulty preset.",
           "enum": ["COMUNLANDIA", "EN_TRANSICION", "MAD_MAX"]
         },
+        "rulesetMode": {
+          "type": "string",
+          "description": "Official ZEMOS98 strict mode or Expanded digital edition.",
+          "enum": ["OFFICIAL", "EXPANDED"]
+        },
         "maxPlayers": {
           "type": "integer",
           "description": "Maximum human participants in the room (2-4)."
@@ -285,6 +290,26 @@
         "currentDiceRoll": {
           "type": "integer",
           "description": "Latest dice roll (0-6)."
+        },
+        "activeModal": {
+          "type": "string",
+          "description": "Currently open game modal or NONE.",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "currentGlobalCardId": {
+          "type": "string",
+          "description": "Active Global Card identifier or empty string.",
+          "maxLength": 64
+        },
+        "currentSituationCardId": {
+          "type": "string",
+          "description": "Active Situation Card identifier or empty string.",
+          "maxLength": 64
+        },
+        "recentChats": {
+          "type": "array",
+          "description": "Bounded list of up to 8 recent cooperative chat messages."
         },
         "playersSummary": {
           "type": "array",
@@ -325,6 +350,7 @@
         "status",
         "isPublic",
         "difficulty",
+        "rulesetMode",
         "maxPlayers",
         "memberUids",
         "members",
@@ -333,6 +359,10 @@
         "round",
         "activePlayerIndex",
         "currentDiceRoll",
+        "activeModal",
+        "currentGlobalCardId",
+        "currentSituationCardId",
+        "recentChats",
         "playersSummary",
         "speculatorsSummary",
         "tileStates",
@@ -377,6 +407,15 @@
             "TRY_AGORA",
             "STAY_AGORA",
             "RESOLVE_CARD",
+            "ACK_GLOBAL_CARD",
+            "AGORA_INSURRECTION",
+            "OPEN_DETENTION_RESCUE",
+            "DETENTION_RESCUE",
+            "TRAGEDY_SELECT",
+            "BUREAUCRACY_TRANSFORM",
+            "CROWDFUND_DONATE",
+            "OPEN_NEIGHBORHOOD_DECISION",
+            "NEIGHBORHOOD_VOTE",
             "CLOSE_MODAL",
             "RESCUE_PLAYER",
             "CHAT"

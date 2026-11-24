@@ -9,6 +9,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Clock, Pause, Play, AlertTriangle, Bot } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Character, GamePhase } from '../../types/game';
 import { playSound } from '../../utils/audio';
 
@@ -31,6 +32,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
   durationSeconds = 60,
   onTimeout
 }) => {
+  const { t } = useTranslation();
   const [secondsLeft, setSecondsLeft] = useState(durationSeconds);
   const [isManualPaused, setIsManualPaused] = useState(false);
   const timeoutFiredRef = useRef(false);
@@ -101,22 +103,22 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
 
   const badgeText =
     activePlayer.controller === 'BOT'
-      ? 'Turno IA'
+      ? t('turnTimer.botTurn')
       : isPausedByOverlay
-      ? 'Pausado (Modal)'
+      ? t('turnTimer.pausedModal')
       : isManualPaused
-      ? 'En pausa'
+      ? t('turnTimer.paused')
       : isCritical
-      ? '¡Paso automático!'
+      ? t('turnTimer.autoPass')
       : isWarning
-      ? 'Poco tiempo'
+      ? t('turnTimer.lowTime')
       : phase === 'TILE_ACTION_DECISION'
-      ? 'Decisión (60s)'
-      : 'Tu jugada (60s)';
+      ? t('turnTimer.decision60')
+      : t('turnTimer.move60');
 
   return (
     <motion.div
-      aria-label={`Temporizador de Turno: ${secondsLeft} segundos restantes`}
+      aria-label={t('turnTimer.ariaSecondsLeft', { seconds: secondsLeft })}
       animate={
         shouldReduceMotion
           ? undefined
@@ -225,7 +227,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
           </div>
         ) : (
           <div className="text-[9px] text-indigo-300/90 font-medium leading-none">
-            IA calculando...
+            {t('turnTimer.botCalculating')}
           </div>
         )}
       </div>
@@ -239,8 +241,8 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
             setIsManualPaused(p => !p);
           }}
           className="p-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors shrink-0"
-          title={isManualPaused ? 'Reanudar temporizador' : 'Pausar para deliberar'}
-          aria-label={isManualPaused ? 'Reanudar temporizador' : 'Pausar temporizador'}
+          title={isManualPaused ? t('turnTimer.resumeTimer') : t('turnTimer.pauseTimer')}
+          aria-label={isManualPaused ? t('turnTimer.resumeAria') : t('turnTimer.pauseAria')}
         >
           {isManualPaused ? <Play className="w-3 h-3 text-emerald-400" /> : <Pause className="w-3 h-3" />}
         </button>

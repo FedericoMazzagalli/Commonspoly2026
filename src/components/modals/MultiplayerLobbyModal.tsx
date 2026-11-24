@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { type User } from '../../firebase';
 import { OFFICIAL_CHARACTERS } from '../../data/characters';
-import { DifficultyLevel } from '../../types/game';
+import { DifficultyLevel, RulesetMode } from '../../types/game';
 import { playSound } from '../../utils/audio';
 import { loadSavedLeaderboardAlias } from '../../utils/leaderboard';
 import {
@@ -44,7 +44,8 @@ interface MultiplayerLobbyModalProps {
     characterId: string,
     difficulty: DifficultyLevel,
     maxPlayers: number,
-    isPublic: boolean
+    isPublic: boolean,
+    rulesetMode: RulesetMode
   ) => Promise<void>;
   onJoinByCode: (code: string, alias: string, characterId: string) => Promise<void>;
   onJoinById: (roomId: string, alias: string, characterId: string) => Promise<void>;
@@ -72,6 +73,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
   const [alias, setAlias] = useState(() => loadSavedLeaderboardAlias() || 'Activista');
   const [selectedCharId, setSelectedCharId] = useState(OFFICIAL_CHARACTERS[0].id);
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('EN_TRANSICION');
+  const [rulesetMode, setRulesetMode] = useState<RulesetMode>('EXPANDED');
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [isPublic, setIsPublic] = useState(true);
   const [joinCode, setJoinCode] = useState('');
@@ -130,7 +132,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
     setErrorMsg(null);
     setIsSubmitting(true);
     try {
-      await onCreateRoom(alias, selectedCharId, difficulty, maxPlayers, isPublic);
+      await onCreateRoom(alias, selectedCharId, difficulty, maxPlayers, isPublic, rulesetMode);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'No se pudo crear la sala.');
     } finally {
@@ -249,7 +251,7 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
             <div className="p-4 rounded-xl bg-slate-950 border border-teal-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="text-[11px] uppercase tracking-wider text-teal-300 font-bold">
-                  {t.multiplayer.activeRoom} · {activeRoom.isPublic ? t.multiplayer.publicRoom : t.multiplayer.privateRoom} · {activeRoom.difficulty}
+                  {t.multiplayer.activeRoom} · {activeRoom.isPublic ? t.multiplayer.publicRoom : t.multiplayer.privateRoom} · {activeRoom.difficulty} · {activeRoom.rulesetMode === 'OFFICIAL' ? (t.setup.rulesetOfficialLabel || 'Official') : (t.setup.rulesetExpandedLabel || 'Expanded')}
                 </div>
                 <div className="flex items-center gap-2.5 mt-1">
                   <span className="text-2xl font-black font-mono tracking-widest text-white tabular-nums">
@@ -480,6 +482,21 @@ export const MultiplayerLobbyModal: React.FC<MultiplayerLobbyModalProps> = ({
                       <option value={4}>4 {t.multiplayer.playersCount}</option>
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label htmlFor="mp-ruleset" className="block text-[10px] text-slate-400 mb-1">
+                    {t.setup.rulesetTitle || 'Reglamento'}
+                  </label>
+                  <select
+                    id="mp-ruleset"
+                    value={rulesetMode}
+                    onChange={e => setRulesetMode(e.target.value as RulesetMode)}
+                    className="w-full min-h-[36px] px-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                  >
+                    <option value="EXPANDED">{t.setup.rulesetExpandedLabel || 'Edición Digital Expandida'}</option>
+                    <option value="OFFICIAL">{t.setup.rulesetOfficialLabel || 'Edición Verde Oficial (ZEMOS98)'}</option>
+                  </select>
                 </div>
 
                 <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">

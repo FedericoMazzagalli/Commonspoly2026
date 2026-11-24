@@ -8,10 +8,29 @@
 
 import {
   Character,
+  DifficultyLevel,
   ProbabilitySandboxConfig,
   SandboxDiceProfile,
   SandboxSpeculatorMovementLogic
 } from '../types/game';
+
+export function getSpeculatorTilePressureChance(
+  difficulty: DifficultyLevel,
+  sandbox?: ProbabilitySandboxConfig | null,
+  speculatorId?: number
+): number {
+  if (sandbox?.enabled) {
+    if (sandbox.speculatorMovementLogic === 'FROZEN') return 0;
+    const behavior = speculatorId !== undefined ? sandbox.speculatorBehaviors?.[speculatorId] : undefined;
+    if (behavior) {
+      return Math.max(0.05, Math.min(0.85, (behavior.aggressivenessPct / 100) * 0.75));
+    }
+    if (sandbox.speculatorMovementLogic === 'AGGRESSIVE_MAX') return 0.45;
+  }
+  if (difficulty === 'MAD_MAX') return 0.32;
+  if (difficulty === 'COMUNLANDIA') return 0.14;
+  return 0.22;
+}
 
 export const DEFAULT_PROBABILITY_SANDBOX_CONFIG: ProbabilitySandboxConfig = {
   enabled: false,
@@ -120,8 +139,14 @@ export interface SpeculatorStepDistribution {
 export function resolveSpeculatorStepDistribution(
   specPos: number,
   players: Character[],
-  sandbox?: ProbabilitySandboxConfig | null
+  sandbox?: ProbabilitySandboxConfig | null,
+  speculatorId?: number
 ): SpeculatorStepDistribution {
+  const behavior = (speculatorId !== undefined && sandbox?.speculatorBehaviors?.[speculatorId]) || null;
+  const influenceRadius = behavior ? behavior.influenceRadius : 12;
+  const aggressiveness = behavior ? behavior.aggressivenessPct / 100 : 0.5;
+  const decisionThreshold = behavior ? behavior.decisionThreshold : 3;
+
   if (!sandbox?.enabled) {
     return {
       stepProbs: {
@@ -156,9 +181,9 @@ export function resolveSpeculatorStepDistribution(
     };
   }
 
-  // Buscar distancia (1..39) hasta la primera jugadora vulnerable (aislada, no en Ágora)
+  // Buscar distancia (1..influenceRadius) hasta la primera jugadora vulnerable (aislada, no en Ágora)
   let nearestVulnerableDist: number | null = null;
-  for (let dist = 1; dist < 40; dist++) {
+  for (let dist = 1; dist <= influenceRadius; dist++) {
     const checkPos = (specPos + dist) % 40;
     const here = players.filter(p => !p.inAgora && p.position === checkPos);
     if (here.length === 1) {
@@ -167,21 +192,16 @@ export function resolveSpeculatorStepDistribution(
     }
   }
 
-  if (sandbox.speculatorMovementLogic === 'CHASE_NEAREST') {
+  if (sandbox.speculatorMovementLogic === 'CHASE_NEAREST' || aggressiveness > 0.7) {
     const chosenStep =
       nearestVulnerableDist !== null
         ? Math.min(6, nearestVulnerableDist)
-        : 3;
+        : decisionThreshold;
     const probs: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
     probs[chosenStep] = 1;
     return {
       stepProbs: probs,
-      logicLabel:
-        nearestVulnerableDist !== null && nearestVulnerableDist <= 6
-          ? `Sandbox · Persecución directa (+${chosenStep} impacto)`
-          : nearestVulnerableDist !== null
-          ? `Sandbox · Persecución máxima (+6 hacia objetivo a +${nearestVulnerableDist})`
-          : 'Sandbox · Persecución (sin jugadoras aisladas, avance +3)',
+      logicLabel: `Sandbox · Bot Custom (Agres.: ${Math.round(aggressiveness * 100)}%, Radio: ${influenceRadius}, Umbral: ${decisionThreshold})`,
       deterministicStep: chosenStep
     };
   }
@@ -221,9 +241,10 @@ export function sampleSpeculatorStepFromSandbox(
   specPos: number,
   players: Character[],
   rngFn: () => number,
-  sandbox?: ProbabilitySandboxConfig | null
+  sandbox?: ProbabilitySandboxConfig | null,
+  speculatorId?: number
 ): number {
-  const dist = resolveSpeculatorStepDistribution(specPos, players, sandbox);
+  const dist = resolveSpeculatorStepDistribution(specPos, players, sandbox, speculatorId);
   if (dist.deterministicStep !== null) {
     return dist.deterministicStep;
   }

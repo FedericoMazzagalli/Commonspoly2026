@@ -4,8 +4,21 @@
  * Alto Contraste), marcadores simbólicos por forma, tamaño tipográfico HUD y reducción de movimiento.
  */
 
-import React from 'react';
-import { Accessibility, Check, Eye, Globe, RotateCcw, Sparkles, Type, X } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Accessibility,
+  BookOpen,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Contrast,
+  Eye,
+  Globe,
+  RotateCcw,
+  Sparkles,
+  Type,
+  X
+} from 'lucide-react';
 import {
   AccessibilitySettings,
   COLOR_VISION_OPTIONS,
@@ -31,9 +44,15 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
   onClose
 }) => {
   const { t, languageMeta } = useI18n();
+  const [showVisualGuide, setShowVisualGuide] = useState(true);
   if (!isOpen) return null;
 
   const activePalette = getAccessibilityPalette(settings.colorVisionMode);
+  const standardPalette = getAccessibilityPalette('STANDARD');
+  const comparisonPalette =
+    settings.colorVisionMode === 'STANDARD'
+      ? getAccessibilityPalette('HIGH_CONTRAST')
+      : activePalette;
 
   const getModeText = (mode: ColorVisionMode) => {
     switch (mode) {
@@ -86,6 +105,30 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
   const handleReset = () => {
     playSound.uiClick();
     onUpdateSettings(DEFAULT_ACCESSIBILITY_SETTINGS);
+  };
+
+  const handleApplyHighContrastKit = () => {
+    playSound.uiClick();
+    onUpdateSettings({
+      ...settings,
+      colorVisionMode: 'HIGH_CONTRAST',
+      showSymbolicShapes: true,
+      hudTextScale: 'LARGE'
+    });
+  };
+
+  const handleApplyColorblindKit = () => {
+    playSound.uiClick();
+    onUpdateSettings({
+      ...settings,
+      colorVisionMode:
+        settings.colorVisionMode === 'PROTANOPIA' ||
+        settings.colorVisionMode === 'DEUTERANOPIA' ||
+        settings.colorVisionMode === 'TRITANOPIA'
+          ? settings.colorVisionMode
+          : 'DEUTERANOPIA',
+      showSymbolicShapes: true
+    });
   };
 
   return (
@@ -208,6 +251,243 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
               );
             })}
           </div>
+        </section>
+
+        {/* Guía Visual Interactiva: Modos Daltónicos y Alto Contraste */}
+        <section
+          aria-label={t.accessibility.guideTitle ?? 'Guía Visual: Modos Daltónicos y Alto Contraste'}
+          className="bg-slate-950/90 border border-teal-500/40 rounded-xl p-3.5 space-y-3"
+        >
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div className="flex items-start gap-2 min-w-0">
+              <div className="p-1.5 rounded-lg bg-teal-500/15 border border-teal-500/40 text-teal-300 shrink-0 mt-0.5">
+                <BookOpen className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-xs font-extrabold text-white">
+                  {t.accessibility.guideTitle ?? 'Guía Visual: Modos Daltónicos y Alto Contraste'}
+                </h3>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  {t.accessibility.guideSubtitle ??
+                    'Configura en 3 pasos una experiencia visual sin ambigüedades sobre el tablero 3D y el HUD.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleApplyHighContrastKit}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-[10px] font-bold flex items-center gap-1 transition-colors"
+              >
+                <Contrast className="w-3 h-3" />
+                <span>{t.accessibility.guidePresetContrast ?? 'Kit Alto Contraste'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyColorblindKit}
+                className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/50 text-sky-200 text-[10px] font-bold flex items-center gap-1 transition-colors"
+              >
+                <Eye className="w-3 h-3" />
+                <span>{t.accessibility.guidePresetColorblind ?? 'Kit Daltónico + Formas'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowVisualGuide(prev => !prev)}
+                className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300"
+                title={
+                  showVisualGuide
+                    ? t.accessibility.guideToggleHide ?? 'Ocultar guía'
+                    : t.accessibility.guideToggleShow ?? 'Ver guía'
+                }
+                aria-expanded={showVisualGuide}
+              >
+                {showVisualGuide ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {showVisualGuide && (
+            <div className="space-y-3 pt-2 border-t border-slate-800">
+              {/* Paso 1: Comparativa visual Estándar vs Modo Activo / Alto Contraste */}
+              <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3 space-y-2.5">
+                <div className="space-y-0.5">
+                  <div className="text-[11px] font-bold text-teal-300">
+                    {t.accessibility.guideStep1Title ?? '1. Adapta la Paleta Cromática'}
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    {t.accessibility.guideStep1Body ??
+                      'Sustituye los pares de color problemáticos tanto en casillas 3D como en el mapa de calor de especuladores.'}
+                  </p>
+                </div>
+
+                {/* Diagrama comparativo lado a lado */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {[
+                    {
+                      title: t.accessibility.guideCompareStandard ?? 'Estándar',
+                      pal: standardPalette,
+                      showShapes: false
+                    },
+                    {
+                      title: `${
+                        settings.colorVisionMode === 'STANDARD'
+                          ? t.accessibility.modeHighContrast
+                          : activeModeLabel
+                      } (${t.accessibility.guideCompareActive ?? 'Vista Activa'})`,
+                      pal: comparisonPalette,
+                      showShapes: true
+                    }
+                  ].map(col => (
+                    <div
+                      key={col.title}
+                      className="rounded-lg bg-slate-950 border border-slate-800 p-2.5 space-y-2"
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {col.title}
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[
+                          {
+                            label: t.accessibility.tileCommon,
+                            color: col.pal.tileStateBadgeCss.COMMON,
+                            shape: col.pal.tileStateShapes.COMMON
+                          },
+                          {
+                            label: t.accessibility.tilePublic,
+                            color: col.pal.tileStateBadgeCss.PUBLIC,
+                            shape: col.pal.tileStateShapes.PUBLIC
+                          },
+                          {
+                            label: t.accessibility.tilePrivate,
+                            color: col.pal.tileStateBadgeCss.PRIVATE,
+                            shape: col.pal.tileStateShapes.PRIVATE
+                          },
+                          {
+                            label: t.debug.critical,
+                            color: col.pal.heatmapTiers.CRITICAL.cssHex,
+                            shape: col.pal.heatmapTiers.CRITICAL.shape
+                          }
+                        ].map(item => (
+                          <div
+                            key={item.label}
+                            className="rounded-md bg-slate-900 border px-1.5 py-1.5 flex flex-col items-center gap-1 text-center"
+                            style={{ borderColor: item.color }}
+                          >
+                            <span
+                              className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-black text-slate-950"
+                              style={{ backgroundColor: item.color }}
+                            >
+                              {col.showShapes ? item.shape : ''}
+                            </span>
+                            <span className="text-[9px] font-semibold text-slate-200 truncate w-full">
+                              {item.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Referencia rápida por perfil visual */}
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px] text-slate-300">
+                  <li className="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                    {t.accessibility.guideTipProtanopia ??
+                      'Protanopía: reemplaza rojo/verde por Azul Cobalto, Cian y Ámbar.'}
+                  </li>
+                  <li className="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                    {t.accessibility.guideTipDeuteranopia ??
+                      'Deuteranopía: paleta Okabe-Ito en Azul profundo, Naranja y Magenta.'}
+                  </li>
+                  <li className="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                    {t.accessibility.guideTipTritanopia ??
+                      'Tritanopía: separa azul/amarillo con Turquesa, Carmesí y Blanco Hueso.'}
+                  </li>
+                  <li className="px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800/80">
+                    {t.accessibility.guideTipHighContrast ??
+                      'Alto Contraste: luminancia máxima (#00ff88, #00d9ff, #ff3366) y bordes marcados.'}
+                  </li>
+                </ul>
+              </div>
+
+              {/* Pasos 2 y 3 en paralelo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3 flex flex-col justify-between gap-2.5">
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-bold text-emerald-300">
+                      {t.accessibility.guideStep2Title ?? '2. Refuerza con Formas Simbólicas'}
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      {t.accessibility.guideStep2Body ??
+                        'Combina cada estado con un símbolo geométrico (★ Común, ▲ Público, ■ Privado, ◆ Crítico) para no depender solo del color.'}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-200">
+                      <span style={{ color: activePalette.tileStateBadgeCss.COMMON }}>★</span>
+                      <span style={{ color: activePalette.tileStateBadgeCss.PUBLIC }}>▲</span>
+                      <span style={{ color: activePalette.tileStateBadgeCss.PRIVATE }}>■</span>
+                      <span style={{ color: activePalette.heatmapTiers.CRITICAL.cssHex }}>◆</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleShapes}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                        settings.showSymbolicShapes
+                          ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200'
+                          : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                      }`}
+                    >
+                      {settings.showSymbolicShapes
+                        ? t.accessibility.guideShapesActive ?? 'Formas Activas'
+                        : t.accessibility.guideEnableShapes ?? 'Activar Formas ★▲■◆'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3 flex flex-col justify-between gap-2.5">
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-bold text-sky-300">
+                      {t.accessibility.guideStep3Title ?? '3. Escala de Lectura y Movimiento'}
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      {t.accessibility.guideStep3Body ??
+                        'Amplía la tipografía del HUD al 115% y activa Reducir Movimiento para suprimir destellos climáticos.'}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-300">
+                      <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
+                        100%
+                      </span>
+                      <span aria-hidden="true">→</span>
+                      <span className="px-1.5 py-0.5 rounded bg-sky-950 border border-sky-700 text-sky-200 font-bold">
+                        115%
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleTextScale}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                        settings.hudTextScale === 'LARGE'
+                          ? 'bg-sky-500/20 border-sky-400/60 text-sky-200'
+                          : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                      }`}
+                    >
+                      {settings.hudTextScale === 'LARGE'
+                        ? t.accessibility.guideLargeTextActive ?? 'Texto 115% Activo'
+                        : t.accessibility.guideEnableLargeText ?? 'Activar Texto 115%'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Vista previa de señales */}

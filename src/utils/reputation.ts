@@ -169,12 +169,22 @@ export function applyReputationDelta(
   };
 }
 
-export function getEffectiveBureaucracyCost(player: Character | undefined): {
+export function getEffectiveBureaucracyCost(
+  player: Character | undefined,
+  rulesetMode?: 'OFFICIAL' | 'EXPANDED'
+): {
   baseCost: number;
   reputationDelta: number;
   effectiveCost: number;
 } {
   const baseCost = 6;
+  if (rulesetMode === 'OFFICIAL') {
+    return {
+      baseCost,
+      reputationDelta: 0,
+      effectiveCost: baseCost
+    };
+  }
   const reputationDelta = getReputationProfile(player).transactionCostDelta;
   const effectiveCost = Math.max(4, Math.min(8, baseCost + reputationDelta));
   return {
@@ -186,14 +196,20 @@ export function getEffectiveBureaucracyCost(player: Character | undefined): {
 
 export function getEffectiveBailCostPerRound(
   victim: Character,
-  rescuer?: Character
+  rescuer?: Character,
+  rulesetMode?: 'OFFICIAL' | 'EXPANDED'
 ): {
   basePerRound: number;
   reputationDelta: number;
   effectivePerRound: number;
 } {
-  const basePerRound = victim.hasCitizenship && victim.socialClass !== 'BAJA' ? 1 : 2;
-  if (!rescuer) {
+  const basePerRound =
+    rulesetMode === 'OFFICIAL'
+      ? 2
+      : victim.hasCitizenship && victim.socialClass !== 'BAJA'
+      ? 1
+      : 2;
+  if (!rescuer || rulesetMode === 'OFFICIAL') {
     return {
       basePerRound,
       reputationDelta: 0,

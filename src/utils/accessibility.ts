@@ -56,6 +56,7 @@ export interface AccessibilityPalette {
   tileGoodHex: Record<GoodType, number> & {
     INALIENABLE: number;
     SPECIAL: number;
+    CASINO: number;
     SITUATION: number;
     CORNER: number;
     AGORA_ENTRY: number;
@@ -120,6 +121,7 @@ const PALETTES: Record<ColorVisionMode, AccessibilityPalette> = {
       ENVIRONMENT: 0x16a34a,
       INALIENABLE: 0xec4899,
       SPECIAL: 0x334155,
+      CASINO: 0x881337,
       SITUATION: 0x0284c7,
       CORNER: 0x1e293b,
       AGORA_ENTRY: 0x0d9488,
@@ -205,6 +207,7 @@ const PALETTES: Record<ColorVisionMode, AccessibilityPalette> = {
       ENVIRONMENT: 0x06b6d4,
       INALIENABLE: 0x818cf8,
       SPECIAL: 0x334155,
+      CASINO: 0x92400e,
       SITUATION: 0x0284c7,
       CORNER: 0x1e293b,
       AGORA_ENTRY: 0x2dd4bf,
@@ -290,6 +293,7 @@ const PALETTES: Record<ColorVisionMode, AccessibilityPalette> = {
       ENVIRONMENT: 0x0ea5e9,
       INALIENABLE: 0xc084fc,
       SPECIAL: 0x334155,
+      CASINO: 0x9d174d,
       SITUATION: 0x0369a1,
       CORNER: 0x1e293b,
       AGORA_ENTRY: 0x38bdf8,
@@ -375,6 +379,7 @@ const PALETTES: Record<ColorVisionMode, AccessibilityPalette> = {
       ENVIRONMENT: 0x0d9488,
       INALIENABLE: 0xf43f5e,
       SPECIAL: 0x334155,
+      CASINO: 0x9f1239,
       SITUATION: 0x0f766e,
       CORNER: 0x1e293b,
       AGORA_ENTRY: 0x14b8a6,
@@ -460,6 +465,7 @@ const PALETTES: Record<ColorVisionMode, AccessibilityPalette> = {
       ENVIRONMENT: 0x00ff88,
       INALIENABLE: 0xff44cc,
       SPECIAL: 0x475569,
+      CASINO: 0xff1a53,
       SITUATION: 0x00d9ff,
       CORNER: 0x0f172a,
       AGORA_ENTRY: 0x00ffcc,

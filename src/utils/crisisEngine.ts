@@ -128,7 +128,8 @@ export function getEffectiveUnlockCost(
   tile: Tile | undefined,
   player: Character | undefined,
   crisis: UnexpectedCrisisEvent | null | undefined,
-  weatherEvent?: DynamicWeatherEvent | null
+  weatherEvent?: DynamicWeatherEvent | null,
+  rulesetMode?: 'OFFICIAL' | 'EXPANDED'
 ): {
   baseCost: number;
   crisisDelta: number;
@@ -140,6 +141,17 @@ export function getEffectiveUnlockCost(
 } {
   const skillPoints = getSkillForGoodType(player, tile?.goodType);
   const baseCost = Math.max(0, 10 - skillPoints);
+  if (rulesetMode === 'OFFICIAL') {
+    return {
+      baseCost,
+      crisisDelta: 0,
+      weatherDelta: 0,
+      reputationDelta: 0,
+      characterBonusDelta: 0,
+      effectiveCost: baseCost,
+      skillPoints
+    };
+  }
   const affected = doesCrisisAffectTile(tile, crisis);
   let rawDelta = affected && crisis ? crisis.unlockCostDelta : 0;
 
@@ -189,13 +201,22 @@ export function getEffectiveResourceReward(
   baseLegitimacy: number,
   crisis: UnexpectedCrisisEvent | null | undefined,
   player?: Character,
-  weatherEvent?: DynamicWeatherEvent | null
+  weatherEvent?: DynamicWeatherEvent | null,
+  rulesetMode?: 'OFFICIAL' | 'EXPANDED'
 ): {
   wellness: number;
   legitimacy: number;
   crisisDelta: number;
   weatherDelta: number;
 } {
+  if (rulesetMode === 'OFFICIAL') {
+    return {
+      wellness: Math.max(1, baseWellness),
+      legitimacy: Math.max(1, baseLegitimacy),
+      crisisDelta: 0,
+      weatherDelta: 0
+    };
+  }
   const affected = doesCrisisAffectTile(tile, crisis);
   const delta = affected && crisis ? crisis.commonYieldDelta : 0;
   const weatherAffected = doesWeatherEventAffectTile(tile, weatherEvent);

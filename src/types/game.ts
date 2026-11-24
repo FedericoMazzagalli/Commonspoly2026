@@ -156,6 +156,8 @@ export interface UnexpectedCrisisEvent {
 
 export type DifficultyLevel = 'MAD_MAX' | 'EN_TRANSICION' | 'COMUNLANDIA';
 
+export type RulesetMode = 'OFFICIAL' | 'EXPANDED';
+
 export interface SetupInitialRolls {
   health: number;        // 1-2 Privado, 3-4 Público, 5-6 Común
   urban: number;
@@ -164,6 +166,7 @@ export interface SetupInitialRolls {
   totalSum: number;
   difficulty: DifficultyLevel;
   speculatorsCount: number;
+  rulesetMode?: RulesetMode;
 }
 
 export type GamePhase = 
@@ -203,6 +206,34 @@ export interface GameLogEntry {
   category?: LogCategory;
   cooperativeAction?: CooperativeActionType;
   highlight?: boolean;
+}
+
+export type SpeculatorActionKind =
+  | 'BUY_TILE'
+  | 'VANDALIZE_TILE'
+  | 'ATTACK_PLAYER'
+  | 'DETAIN_PLAYER'
+  | 'BLOCKED'
+  | 'MOVE';
+
+export interface SpeculatorActionLogEntry {
+  id: string;
+  round: number;
+  timestamp: string;
+  speculatorId: number;
+  speculatorName: string;
+  speculatorColor: string;
+  kind: SpeculatorActionKind;
+  fromTileId: number;
+  toTileId: number;
+  tileName: string;
+  diceRoll: number;
+  previousTileState?: GoodState;
+  nextTileState?: GoodState;
+  targetPlayerName?: string;
+  deltaPoints?: number;
+  detentionRounds?: number;
+  details: string;
 }
 
 export interface CooperativeChatMessage {
@@ -365,6 +396,9 @@ export interface GameEngineState {
   // Historial de la partida
   logs: GameLogEntry[];
 
+  // Log en tiempo real de acciones de especuladores (compras, vandalismo, ataques, bloqueos)
+  speculatorActionLogs?: SpeculatorActionLogEntry[];
+
   // Chat rápido cooperativo
   chatMessages: CooperativeChatMessage[];
 
@@ -391,7 +425,12 @@ export interface GameEngineState {
   activeWeatherEvent?: DynamicWeatherEvent | null;
   turnsSinceLastWeatherEvent?: number;
 
-  // Metadatos de sesión (Sandbox, Reto Diario determinista, Multijugador Online)
+  // Metadatos de sesión (Sandbox, Reto Diario determinista, Multijugador Online, Modo de Reglas)
+  rulesetMode?: RulesetMode;
+  globalDeckIds?: string[];
+  globalDeckCursor?: number;
+  situationDeckIds?: string[];
+  situationDeckCursor?: number;
   isSandboxSession?: boolean;
   probabilitySandbox?: ProbabilitySandboxConfig;
   dailyChallengeDate?: string | null;
@@ -408,6 +447,13 @@ export type SandboxSpeculatorMovementLogic =
   | 'AGGRESSIVE_MAX'
   | 'FROZEN';
 
+export interface SpeculatorBehaviorOverride {
+  speculatorId: number;
+  aggressivenessPct: number;
+  influenceRadius: number;
+  decisionThreshold: number;
+}
+
 export interface ProbabilitySandboxConfig {
   enabled: boolean;
   playerDiceProfile: SandboxDiceProfile;
@@ -415,6 +461,7 @@ export interface ProbabilitySandboxConfig {
   speculatorMovementLogic: SandboxSpeculatorMovementLogic;
   forcedSpeculatorDice: number | null;
   detentionChanceOverridePct: number | null;
+  speculatorBehaviors?: Record<number, SpeculatorBehaviorOverride>;
 }
 
 export interface PlayerContributionStats {

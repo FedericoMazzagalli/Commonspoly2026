@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { AlertTriangle, CloudRain, Flame, MapPin, Snowflake, Sun, Wind, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   Character,
   DynamicWeatherEvent,
@@ -26,13 +27,6 @@ interface TileInspectorHUDProps {
   onClose: () => void;
 }
 
-const GOOD_LABELS: Record<GoodType, string> = {
-  HEALTH: 'Salud',
-  URBAN: 'Urbano',
-  KNOWLEDGE: 'Conocimiento',
-  ENVIRONMENT: 'Medioambiente'
-};
-
 export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
   tile,
   players,
@@ -41,7 +35,16 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
   activeWeatherEvent = null,
   onClose
 }) => {
+  const { t } = useTranslation();
   if (!tile) return null;
+
+  const goodLabels: Record<GoodType, string> = {
+    HEALTH: t('common.health'),
+    URBAN: t('common.urban'),
+    KNOWLEDGE: t('common.knowledge'),
+    ENVIRONMENT: t('common.environment')
+  };
+
   const crisisAffectsTile = doesCrisisAffectTile(tile, activeCrisis);
   const weatherAffectsTile = doesWeatherEventAffectTile(tile, activeWeatherEvent);
 
@@ -50,16 +53,16 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
 
   const stateLabel =
     tile.category === 'INALIENABLE_COMMON'
-      ? 'Común Inalienable'
+      ? t('tileInspector.stateInalienable')
       : tile.state === 'COMMON'
-      ? 'Bien Común'
+      ? t('tileInspector.stateCommon')
       : tile.state === 'PUBLIC'
-      ? 'Gestión Pública'
+      ? t('tileInspector.statePublic')
       : tile.state === 'PRIVATE'
-      ? 'Propiedad Privada'
+      ? t('tileInspector.statePrivate')
       : tile.category === 'AGORA_CENTER'
-      ? 'Asamblea Central'
-      : 'Casilla Especial';
+      ? t('tileInspector.stateAgora')
+      : t('tileInspector.stateSpecial');
 
   const stateColor =
     tile.category === 'INALIENABLE_COMMON'
@@ -75,7 +78,7 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
   return (
     <div
       role="region"
-      aria-label={`Inspector de casilla ${tile.name}`}
+      aria-label={t('tileInspector.ariaPrefix', { name: tile.name })}
       className="pointer-events-auto fixed bottom-28 md:bottom-24 left-1/2 -translate-x-1/2 z-30 w-[90vw] max-w-sm bg-slate-900/95 border border-teal-700/70 rounded-2xl shadow-2xl px-4 py-3 text-slate-100"
     >
       <div className="flex items-start justify-between gap-3">
@@ -88,14 +91,14 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
             {tile.goodType && (
               <>
                 <span aria-hidden="true">·</span>
-                <span>{GOOD_LABELS[tile.goodType]}</span>
+                <span>{goodLabels[tile.goodType]}</span>
               </>
             )}
             {tile.transformedByName && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="text-slate-300">
-                  Por {tile.transformedByName}
+                  {t('tileInspector.byActor', { name: tile.transformedByName })}
                   {tile.transformedAtRound ? ` (R${tile.transformedAtRound})` : ''}
                 </span>
               </>
@@ -114,14 +117,14 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
             <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-slate-950/80 border border-amber-700/60 text-[10px] text-amber-200 flex items-center gap-1.5 tabular-nums">
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>
-                <strong>{activeCrisis.title}:</strong> coste desbloqueo{' '}
-                {activeCrisis.unlockCostDelta >= 0
-                  ? `+${activeCrisis.unlockCostDelta}`
-                  : activeCrisis.unlockCostDelta}
-                , rendimiento{' '}
-                {activeCrisis.commonYieldDelta >= 0
-                  ? `+${activeCrisis.commonYieldDelta}`
-                  : activeCrisis.commonYieldDelta}{' '}
+                <strong>{activeCrisis.title}:</strong>{' '}
+                {t('tileInspector.crisisCost', {
+                  delta: activeCrisis.unlockCostDelta >= 0 ? `+${activeCrisis.unlockCostDelta}` : activeCrisis.unlockCostDelta
+                })}
+                ,{' '}
+                {t('tileInspector.crisisYield', {
+                  delta: activeCrisis.commonYieldDelta >= 0 ? `+${activeCrisis.commonYieldDelta}` : activeCrisis.commonYieldDelta
+                })}{' '}
                 ({activeCrisis.turnsRemaining}t)
               </span>
             </div>
@@ -181,7 +184,7 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
             onClose();
           }}
           className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-          aria-label="Cerrar inspector de casilla"
+          aria-label={t('tileInspector.closeAria')}
         >
           <X className="w-3.5 h-3.5" />
         </button>

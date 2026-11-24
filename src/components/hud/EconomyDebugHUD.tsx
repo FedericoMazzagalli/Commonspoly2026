@@ -16,8 +16,10 @@ import {
   Coins,
   Crosshair,
   Dices,
+  Download,
   Flame,
   FlaskConical,
+  History,
   Maximize2,
   Minimize2,
   Play,
@@ -38,7 +40,10 @@ import {
   GoodState,
   ProbabilitySandboxConfig,
   SandboxDiceProfile,
-  SandboxSpeculatorMovementLogic
+  SandboxSpeculatorMovementLogic,
+  SpeculatorActionKind,
+  SpeculatorActionLogEntry,
+  SpeculatorBehaviorOverride
 } from '../../types/game';
 import {
   CooperativeTileEconomyRow,
@@ -82,7 +87,9 @@ interface EconomyDebugHUDProps {
   canRestoreSandbox?: boolean;
 }
 
-type DebugTab = 'SPECULATION' | 'TILES' | 'BALANCE' | 'SIMULATOR';
+type DebugTab = 'SPECULATION' | 'TILES' | 'BALANCE' | 'SIMULATOR' | 'LOG' | 'BOTS';
+type EventLogFilter = 'ALL' | 'SPECULATOR' | 'TILES' | 'GLOBAL' | 'ACTION';
+type SpecActionFilter = 'ALL' | 'BUY' | 'VANDALIZE' | 'ATTACK' | 'MOVE';
 type TileFilter = 'ALL' | 'COMMON' | 'PUBLIC' | 'PRIVATE' | 'THREATENED';
 type TileSort = 'IMPACT' | 'COST_ASC' | 'THREAT';
 
@@ -192,6 +199,51 @@ function getDangerTierStyle(tier: BoardDangerZoneTier, debug: TranslationDict['d
   return { label: debug.moderate, textClass: 'text-amber-300', swatchClass: 'bg-amber-400' };
 }
 
+function getSpecActionBadgeMeta(
+  kind: SpeculatorActionKind,
+  debug: TranslationDict['debug']
+): { label: string; badgeClass: string; cardClass: string } {
+  switch (kind) {
+    case 'BUY_TILE':
+      return {
+        label: debug.specLogKindBuy ?? 'COMPRA',
+        badgeClass: 'bg-rose-500/25 border-rose-500/60 text-rose-200',
+        cardClass: 'bg-rose-950/35 border-rose-800/60'
+      };
+    case 'VANDALIZE_TILE':
+      return {
+        label: debug.specLogKindVandal ?? 'VANDALISMO',
+        badgeClass: 'bg-amber-500/25 border-amber-500/60 text-amber-200',
+        cardClass: 'bg-amber-950/35 border-amber-800/60'
+      };
+    case 'DETAIN_PLAYER':
+      return {
+        label: debug.specLogKindDetain ?? 'DETENCIÓN',
+        badgeClass: 'bg-red-600/30 border-red-500/70 text-red-200',
+        cardClass: 'bg-red-950/40 border-red-800/60'
+      };
+    case 'ATTACK_PLAYER':
+      return {
+        label: debug.specLogKindAttack ?? 'ATAQUE',
+        badgeClass: 'bg-orange-500/25 border-orange-500/60 text-orange-200',
+        cardClass: 'bg-orange-950/30 border-orange-800/60'
+      };
+    case 'BLOCKED':
+      return {
+        label: debug.specLogKindBlocked ?? 'BLOQUEO',
+        badgeClass: 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200',
+        cardClass: 'bg-emerald-950/25 border-emerald-800/50'
+      };
+    case 'MOVE':
+    default:
+      return {
+        label: debug.specLogKindMove ?? 'AVANCE',
+        badgeClass: 'bg-slate-800 border-slate-700 text-slate-300',
+        cardClass: 'bg-slate-900/90 border-slate-800'
+      };
+  }
+}
+
 export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
   isOpen,
   state,
@@ -218,6 +270,128 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
   const [simIterations, setSimIterations] = useState<number>(200);
   const [simHorizonRounds, setSimHorizonRounds] = useState<number>(20);
   const [simResult, setSimResult] = useState<MonteCarloSimulationResult | null>(null);
+  const [eventLogFilter, setEventLogFilter] = useState<EventLogFilter>('ALL');
+  const [eventLogSearch, setEventLogSearch] = useState('');
+  const [logSubMode, setLogSubMode] = useState<'SPECULATORS' | 'GENERAL'>('SPECULATORS');
+  const [specActionFilter, setSpecActionFilter] = useState<SpecActionFilter>('ALL');
+  const [specBotFilter, setSpecBotFilter] = useState<'ALL' | number>('ALL');
+  const [loadedReplayFrameIndex, setLoadedReplayFrameIndex] = useState<number | null>(null);
+
+  const replayFramesMeta = useMemo(() => {
+    const frames = state.replayFrames ?? [];
+    const items = frames.map((frame, idx) => {
+      const prevFrame = idx > 0 ? frames[idx - 1] : null;
+      const privateDelta = prevFrame ? frame.privateCount - prevFrame.privateCount : 0;
+      const hasHazardLog = frame.turnLogs.some(l => l.type === 'HAZARD');
+      const summaryLower = frame.eventSummary.toLowerCase();
+      const mentionsSpeculator =
+        summaryLower.includes('especulador') ||
+        summaryLower.includes('speculator') ||
+        summaryLower.includes('deten') ||
+        summaryLower.includes('tragedia') ||
+        summaryLower.includes('privatiz') ||
+        frame.actorId === 'speculators';
+      const criticalScore =
+        (hasHazardLog ? 3 : 0) +
+        (mentionsSpeculator ? 3 : 0) +
+        (privateDelta > 0 ? privateDelta * 2 : 0) +
+        (frame.activeCrisisTitle ? 2 : 0);
+
+      return {
+        frame,
+        privateDelta,
+        isCritical: criticalScore >= 3,
+        criticalScore
+      };
+    });
+
+    const mostCritical =
+      [...items].sort(
+        (a, b) => b.criticalScore - a.criticalScore || b.frame.frameIndex - a.frame.frameIndex
+      )[0] ?? null;
+    const latest = items[items.length - 1] ?? null;
+
+    return {
+      orderedNewestFirst: [...items].reverse(),
+      mostCritical: mostCritical && mostCritical.criticalScore > 0 ? mostCritical : latest,
+      latest
+    };
+  }, [state.replayFrames]);
+
+  const filteredLogs = useMemo(() => {
+    const q = eventLogSearch.trim().toLowerCase();
+    return (state.logs || []).filter(log => {
+      if (q && !log.message.toLowerCase().includes(q) && !log.actor.toLowerCase().includes(q)) {
+        return false;
+      }
+      const msg = log.message.toLowerCase();
+      const type = log.type;
+
+      if (eventLogFilter === 'SPECULATOR') {
+        return type === 'HAZARD' || msg.includes('especulador') || msg.includes('speculator') || msg.includes('ataque') || msg.includes('detención') || msg.includes('detencion');
+      }
+      if (eventLogFilter === 'TILES') {
+        return msg.includes('casilla') || msg.includes('tile') || msg.includes('común') || msg.includes('comun') || msg.includes('público') || msg.includes('public') || msg.includes('privado') || msg.includes('privatelock') || msg.includes('desbloqueo');
+      }
+      if (eventLogFilter === 'GLOBAL') {
+        return type === 'CARD' || msg.includes('crisis') || msg.includes('clima') || msg.includes('meteorología') || msg.includes('sequía') || msg.includes('weather') || msg.includes('bureaucracy');
+      }
+      if (eventLogFilter === 'ACTION') {
+        return type === 'ACTION' || type === 'SUCCESS' || type === 'INFO';
+      }
+      return true;
+    });
+  }, [state.logs, eventLogFilter, eventLogSearch]);
+
+  const speculatorActionLogs = state.speculatorActionLogs ?? [];
+
+  const speculatorActionCounts = useMemo(() => {
+    const counts: Record<number, { buys: number; vandals: number; attacks: number; blocked: number }> = {};
+    state.speculators.forEach(s => {
+      counts[s.id] = { buys: 0, vandals: 0, attacks: 0, blocked: 0 };
+    });
+    speculatorActionLogs.forEach(entry => {
+      if (!counts[entry.speculatorId]) {
+        counts[entry.speculatorId] = { buys: 0, vandals: 0, attacks: 0, blocked: 0 };
+      }
+      if (entry.kind === 'BUY_TILE') counts[entry.speculatorId].buys += 1;
+      else if (entry.kind === 'VANDALIZE_TILE') counts[entry.speculatorId].vandals += 1;
+      else if (entry.kind === 'ATTACK_PLAYER' || entry.kind === 'DETAIN_PLAYER') {
+        counts[entry.speculatorId].attacks += 1;
+      } else if (entry.kind === 'BLOCKED') {
+        counts[entry.speculatorId].blocked += 1;
+      }
+    });
+    return counts;
+  }, [speculatorActionLogs, state.speculators]);
+
+  const filteredSpecActionLogs = useMemo(() => {
+    const q = eventLogSearch.trim().toLowerCase();
+    return speculatorActionLogs.filter(entry => {
+      if (specBotFilter !== 'ALL' && entry.speculatorId !== specBotFilter) return false;
+      if (specActionFilter === 'BUY' && entry.kind !== 'BUY_TILE') return false;
+      if (specActionFilter === 'VANDALIZE' && entry.kind !== 'VANDALIZE_TILE') return false;
+      if (
+        specActionFilter === 'ATTACK' &&
+        entry.kind !== 'ATTACK_PLAYER' &&
+        entry.kind !== 'DETAIN_PLAYER'
+      ) {
+        return false;
+      }
+      if (
+        specActionFilter === 'MOVE' &&
+        entry.kind !== 'MOVE' &&
+        entry.kind !== 'BLOCKED'
+      ) {
+        return false;
+      }
+      if (q) {
+        const hay = `${entry.speculatorName} ${entry.tileName} ${entry.details} ${entry.targetPlayerName ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [speculatorActionLogs, specActionFilter, specBotFilter, eventLogSearch]);
 
   const a11yPalette = useMemo(
     () => getAccessibilityPalette(accessibilitySettings.colorVisionMode),
@@ -234,6 +408,76 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
       horizonRounds: simHorizonRounds
     });
     setSimResult(res);
+  };
+
+  const handleExportJson = () => {
+    const exportData = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      round: state.round,
+      difficulty: snapshot.speculation.difficulty,
+      speculators: state.speculators,
+      players: state.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        position: p.position,
+        wellness: p.wellness,
+        legitimacy: p.legitimacy,
+        reputation: p.neighborhoodReputation ?? 0,
+        controller: p.controller
+      })),
+      tiles: state.tiles.map(t => ({
+        id: t.id,
+        name: t.name,
+        category: t.category,
+        state: t.state,
+        goodType: t.goodType,
+        transformedByName: t.transformedByName
+      })),
+      snapshot: {
+        speculation: snapshot.speculation,
+        economySummary: snapshot.economySummary,
+        familySummaries: snapshot.familySummaries,
+        dangerHotspots: snapshot.speculation.dangerHotspots,
+        tileRows: snapshot.tileRows
+      },
+      probabilitySandbox: state.probabilitySandbox ?? null,
+      speculatorActionLogs: state.speculatorActionLogs ?? [],
+      activeCrisis: state.activeCrisis ?? null,
+      activeWeatherEvent: state.activeWeatherEvent ?? null
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `commonspoly_economy_debug_round_${state.round}_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleUpdateBotBehavior = (specId: number, patch: Partial<SpeculatorBehaviorOverride>) => {
+    if (!onApplySandboxMutation) return;
+    const currentBehaviors = state.probabilitySandbox?.speculatorBehaviors ?? {};
+    const existing = currentBehaviors[specId] ?? {
+      speculatorId: specId,
+      aggressivenessPct: 50,
+      influenceRadius: 12,
+      decisionThreshold: 3
+    };
+    const updated = { ...existing, ...patch };
+
+    onApplySandboxMutation({
+      type: 'UPDATE_PROBABILITY_SANDBOX',
+      patch: {
+        speculatorBehaviors: {
+          ...currentBehaviors,
+          [specId]: updated
+        }
+      }
+    });
   };
 
   const snapshot = useMemo(() => computeEconomyDebugSnapshot(state), [state]);
@@ -312,6 +556,16 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
+            onClick={handleExportJson}
+            className="px-2 py-1 min-h-[32px] sm:min-h-[32px] flex items-center gap-1 rounded-lg bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/50 text-amber-200 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+            title={t.debug.exportJson ?? 'Exportar JSON'}
+            aria-label={t.debug.exportJson ?? 'Exportar JSON'}
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">JSON</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setIsCompact(prev => !prev)}
             className="min-w-[40px] min-h-[40px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             title={isCompact ? t.hud.dockExpand : t.hud.dockCollapse}
@@ -364,7 +618,7 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
         <>
           {/* Segmented Tabs */}
           <div className="px-4 pt-2.5 pb-2 border-b border-slate-800 bg-slate-950 shrink-0">
-            <div className="grid grid-cols-4 gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800">
+            <div className="grid grid-cols-6 gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800">
               <button
                 type="button"
                 onClick={() => setActiveTab('SPECULATION')}
@@ -412,6 +666,30 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
               >
                 <FlaskConical className="w-3.5 h-3.5 shrink-0" />
                 <span>{t.debug.tabSandbox}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('LOG')}
+                className={`min-h-[40px] sm:min-h-[34px] px-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                  activeTab === 'LOG'
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <History className="w-3.5 h-3.5 shrink-0" />
+                <span>{t.debug.tabLog ?? 'Event Log'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('BOTS')}
+                className={`min-h-[40px] sm:min-h-[34px] px-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                  activeTab === 'BOTS'
+                    ? 'bg-rose-400 text-slate-950'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5 shrink-0" />
+                <span>{t.debug.tabBots ?? 'Bots'}</span>
               </button>
             </div>
           </div>
@@ -800,9 +1078,102 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
                               })}
                             </div>
                           )}
+
+                          {/* Casillas en riesgo de compra o vandalismo en rango +1..+6 */}
+                          <div className="pt-0.5 space-y-1">
+                            <div className="text-[10px] text-slate-400 font-semibold">
+                              {t.debug.specLogPredictTileRisk ?? 'Casillas en rango +1..+6:'}
+                            </div>
+                            {spec.predictedTileRisks.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {spec.predictedTileRisks.slice(0, 3).map(risk => (
+                                  <button
+                                    key={risk.tileId}
+                                    type="button"
+                                    onClick={() => onSelectTile?.(risk.tileId)}
+                                    className={`px-2 py-0.5 rounded-md border text-[10px] font-semibold transition-colors ${
+                                      risk.riskAction === 'BUY'
+                                        ? 'bg-rose-950/50 hover:bg-rose-900/60 border-rose-700/60 text-rose-200'
+                                        : 'bg-amber-950/50 hover:bg-amber-900/60 border-amber-700/60 text-amber-200'
+                                    }`}
+                                    title={`#${risk.tileId} ${risk.tileName}`}
+                                  >
+                                    +{risk.distance} #{risk.tileId} ·{' '}
+                                    {risk.riskAction === 'BUY'
+                                      ? t.debug.specLogKindBuy ?? 'COMPRA'
+                                      : t.debug.specLogKindVandal ?? 'VANDALISMO'}{' '}
+                                    ({risk.actionChancePct}%)
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-slate-500">
+                                {t.debug.specLogNoTileRisk ?? 'Sin casillas vulnerables en +1..+6'}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
+
+                    {/* Vista rápida en tiempo real del Log de Especuladores */}
+                    <div className="pt-2.5 border-t border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                          <History className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <span>{t.debug.specLogTitle ?? 'Log en Tiempo Real · Especuladores'}</span>
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('LOG');
+                            setLogSubMode('SPECULATORS');
+                          }}
+                          className="text-[10px] font-bold text-amber-300 hover:text-amber-200 underline underline-offset-2 shrink-0"
+                        >
+                          {t.debug.specLogViewAllBtn ?? 'Ver log completo'} ({speculatorActionLogs.length})
+                        </button>
+                      </div>
+
+                      {speculatorActionLogs.length === 0 ? (
+                        <div className="text-[10px] text-slate-400 py-1">
+                          {t.debug.specLogEmpty ?? 'Aún no hay movimientos registrados de especuladores en esta partida.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          {speculatorActionLogs.slice(0, 4).map((entry: SpeculatorActionLogEntry) => {
+                            const badge = getSpecActionBadgeMeta(entry.kind, t.debug);
+                            return (
+                              <button
+                                key={entry.id}
+                                type="button"
+                                onClick={() => onSelectTile?.(entry.toTileId)}
+                                className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-[10px] transition-colors hover:brightness-110 ${badge.cardClass}`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="flex items-center gap-1.5 min-w-0 font-bold text-slate-100">
+                                    <span
+                                      className="w-2 h-2 rounded-full shrink-0"
+                                      style={{ backgroundColor: entry.speculatorColor }}
+                                    />
+                                    <span className="truncate">{entry.speculatorName}</span>
+                                    <span className={`px-1.5 py-0.5 rounded border text-[9px] font-black shrink-0 ${badge.badgeClass}`}>
+                                      {badge.label}
+                                    </span>
+                                  </span>
+                                  <span className="text-slate-400 shrink-0 tabular-nums">
+                                    R{entry.round} · +{entry.diceRoll}
+                                  </span>
+                                </div>
+                                <div className="text-slate-300 truncate mt-0.5">
+                                  {entry.details}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </section>
 
@@ -1184,7 +1555,10 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
                       {canRestoreSandbox && onRestorePreSandbox && (
                         <button
                           type="button"
-                          onClick={onRestorePreSandbox}
+                          onClick={() => {
+                            setLoadedReplayFrameIndex(null);
+                            onRestorePreSandbox();
+                          }}
                           className="min-h-[34px] px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-200 font-bold text-[11px] flex items-center gap-1 shrink-0"
                           title={t.debug.restoreReal}
                         >
@@ -1520,6 +1894,157 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
                   )}
                 </section>
 
+                {/* Cargar Estado Previo desde Historial (ReplayFrames) */}
+                {onApplySandboxMutation && (
+                  <section className="border-t border-slate-800 pt-3 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                          <History className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t.debug.replayLoaderTitle ?? 'Cargar Estado Previo (ReplayFrames)'}</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                          {t.debug.replayLoaderDesc ??
+                            'Restaura un fotograma del historial en el Sandbox para reproducir y balancear momentos críticos de especulación.'}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-slate-400 tabular-nums shrink-0">
+                        {replayFramesMeta.orderedNewestFirst.length} frames
+                      </span>
+                    </div>
+
+                    {replayFramesMeta.orderedNewestFirst.length === 0 ? (
+                      <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-400">
+                        {t.debug.replayLoaderEmpty ??
+                          'Aún no hay fotogramas registrados en el historial de esta partida.'}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Accesos rápidos a escenarios clave */}
+                        <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                          {replayFramesMeta.mostCritical && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const idx = replayFramesMeta.mostCritical!.frame.frameIndex;
+                                setLoadedReplayFrameIndex(idx);
+                                onApplySandboxMutation({
+                                  type: 'LOAD_REPLAY_FRAME',
+                                  frameIndex: idx
+                                });
+                              }}
+                              className="py-1.5 px-2 rounded-lg bg-rose-950/60 hover:bg-rose-900/70 border border-rose-700/60 text-rose-200 font-bold flex items-center justify-between gap-1"
+                            >
+                              <span className="truncate">
+                                {t.debug.replayMostCriticalBtn ?? 'Más Crítico'}
+                              </span>
+                              <span className="font-mono shrink-0">
+                                #{replayFramesMeta.mostCritical.frame.frameIndex} · R
+                                {replayFramesMeta.mostCritical.frame.round}
+                              </span>
+                            </button>
+                          )}
+                          {replayFramesMeta.latest && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const idx = replayFramesMeta.latest!.frame.frameIndex;
+                                setLoadedReplayFrameIndex(idx);
+                                onApplySandboxMutation({
+                                  type: 'LOAD_REPLAY_FRAME',
+                                  frameIndex: idx
+                                });
+                              }}
+                              className="py-1.5 px-2 rounded-lg bg-sky-950/60 hover:bg-sky-900/70 border border-sky-700/60 text-sky-200 font-bold flex items-center justify-between gap-1"
+                            >
+                              <span className="truncate">
+                                {t.debug.replayLatestBtn ?? 'Último Frame'}
+                              </span>
+                              <span className="font-mono shrink-0">
+                                #{replayFramesMeta.latest.frame.frameIndex} · R
+                                {replayFramesMeta.latest.frame.round}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Lista seleccionable de ReplayFrames */}
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {replayFramesMeta.orderedNewestFirst.map(
+                            ({ frame, privateDelta, isCritical }) => {
+                              const isLoaded = loadedReplayFrameIndex === frame.frameIndex;
+                              return (
+                                <div
+                                  key={frame.frameIndex}
+                                  className={`p-2 rounded-xl border text-[10px] space-y-1 transition-colors ${
+                                    isLoaded
+                                      ? 'bg-amber-950/40 border-amber-500/70'
+                                      : isCritical
+                                      ? 'bg-rose-950/25 border-rose-800/50'
+                                      : 'bg-slate-900/80 border-slate-800'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className="px-1.5 py-0.5 rounded bg-slate-950 text-amber-300 font-mono font-bold shrink-0">
+                                        #{frame.frameIndex} · R{frame.round}
+                                      </span>
+                                      <span className="font-bold text-white truncate">
+                                        {frame.actorName}
+                                      </span>
+                                      {isCritical && (
+                                        <span className="px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-200 font-bold shrink-0">
+                                          {t.debug.replayCriticalTag ?? 'Crítico'}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setLoadedReplayFrameIndex(frame.frameIndex);
+                                        onApplySandboxMutation({
+                                          type: 'LOAD_REPLAY_FRAME',
+                                          frameIndex: frame.frameIndex
+                                        });
+                                      }}
+                                      className={`px-2 py-1 rounded-md font-bold shrink-0 transition-colors ${
+                                        isLoaded
+                                          ? 'bg-amber-400 text-slate-950'
+                                          : 'bg-slate-800 hover:bg-sky-500 hover:text-slate-950 text-slate-100'
+                                      }`}
+                                    >
+                                      {isLoaded
+                                        ? t.debug.replayLoadedBadge ?? 'Cargado'
+                                        : t.debug.replayLoadBtn ?? 'Cargar'}
+                                    </button>
+                                  </div>
+
+                                  <p className="text-slate-300 leading-snug line-clamp-2">
+                                    {frame.eventSummary}
+                                  </p>
+
+                                  <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 tabular-nums">
+                                    <span>
+                                      {t.common.common}: {frame.commonCount} · {t.common.public}:{' '}
+                                      {frame.publicCount} · {t.common.private}: {frame.privateCount}
+                                      {privateDelta > 0 ? ` (+${privateDelta})` : ''}
+                                    </span>
+                                    <span>
+                                      {frame.speculators.length} {t.debug.botsCount}
+                                      {frame.activeCrisisTitle ? ` · ${frame.activeCrisisTitle}` : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </section>
+                )}
+
                 {/* Simulador Probabilístico Monte Carlo */}
                 <section className="border-t border-slate-800 pt-3 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
@@ -1852,6 +2377,573 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
                   </section>
                 )}
               </>
+            )}
+
+            {activeTab === 'LOG' && (
+              <section className="space-y-3">
+                {/* Selector entre Log en Tiempo Real de Especuladores y Log General */}
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setLogSubMode('SPECULATORS')}
+                    className={`py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                      logSubMode === 'SPECULATORS'
+                        ? 'bg-rose-500 text-white'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {t.debug.specLogTabSpeculators ?? 'Especuladores'} ({speculatorActionLogs.length})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogSubMode('GENERAL')}
+                    className={`py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                      logSubMode === 'GENERAL'
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <History className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {t.debug.specLogTabGeneral ?? 'Log General'} ({state.logs.length})
+                    </span>
+                  </button>
+                </div>
+
+                {logSubMode === 'SPECULATORS' ? (
+                  <div className="space-y-3">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>{t.debug.specLogTitle ?? 'Log en Tiempo Real · Especuladores'}</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                        {t.debug.specLogSubtitle ??
+                          'Registra compras, vandalismo y ataques de cada bot para anticipar sus próximos objetivos en rango 1d6.'}
+                      </p>
+                    </div>
+
+                    {/* Panel predictivo por especulador basado en historial + rango 1d6 */}
+                    <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                        <Crosshair className="w-3 h-3 shrink-0" />
+                        <span>{t.debug.specLogPredictTitle ?? 'Predicción de Próximos Ataques y Casillas en Riesgo'}</span>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {speculation.speculatorThreats.map(threat => {
+                          const counts = speculatorActionCounts[threat.speculatorId] ?? {
+                            buys: 0,
+                            vandals: 0,
+                            attacks: 0,
+                            blocked: 0
+                          };
+                          const targetMeta = getIntendedTargetLabel(threat.intendedTarget);
+                          const topTileRisk = threat.predictedTileRisks[0];
+                          return (
+                            <div
+                              key={threat.speculatorId}
+                              className="p-2 rounded-lg bg-slate-950 border border-slate-800/90 text-[10px] space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-slate-100 truncate">
+                                  #{threat.orderIndex} · {threat.speculatorName}
+                                </span>
+                                <span className="text-slate-400 tabular-nums shrink-0">
+                                  {counts.buys} {t.debug.specLogStatsBuys ?? 'compras'} · {counts.vandals}{' '}
+                                  {t.debug.specLogStatsVandals ?? 'vandal.'} · {counts.attacks}{' '}
+                                  {t.debug.specLogStatsAttacks ?? 'ataques'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectTile?.(threat.intendedTarget.tileId)}
+                                  className={`font-semibold hover:underline text-left truncate ${targetMeta.toneClass}`}
+                                >
+                                  → #{threat.intendedTarget.tileId} {threat.intendedTarget.tileName}: {targetMeta.tag}
+                                </button>
+                                {topTileRisk && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onSelectTile?.(topTileRisk.tileId)}
+                                    className={`px-1.5 py-0.5 rounded border font-bold shrink-0 ${
+                                      topTileRisk.riskAction === 'BUY'
+                                        ? 'bg-rose-950/60 border-rose-700/60 text-rose-200'
+                                        : 'bg-amber-950/60 border-amber-700/60 text-amber-200'
+                                    }`}
+                                  >
+                                    +{topTileRisk.distance} #{topTileRisk.tileId}{' '}
+                                    {topTileRisk.riskAction === 'BUY'
+                                      ? t.debug.specLogKindBuy ?? 'COMPRA'
+                                      : t.debug.specLogKindVandal ?? 'VANDALISMO'}{' '}
+                                    {topTileRisk.actionChancePct}%
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Filtros por tipo de acción y por bot */}
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-5 gap-1 text-[10px] font-semibold">
+                        {(
+                          [
+                            { id: 'ALL', label: t.debug.specLogFilterAll ?? 'Todo' },
+                            { id: 'BUY', label: t.debug.specLogFilterBuy ?? 'Compras' },
+                            { id: 'VANDALIZE', label: t.debug.specLogFilterVandal ?? 'Vandalismo' },
+                            { id: 'ATTACK', label: t.debug.specLogFilterAttack ?? 'Ataques' },
+                            { id: 'MOVE', label: t.debug.specLogFilterMove ?? 'Mov./Bloq.' }
+                          ] as Array<{ id: SpecActionFilter; label: string }>
+                        ).map(f => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setSpecActionFilter(f.id)}
+                            className={`py-1.5 px-1 rounded-lg border text-center transition-colors truncate ${
+                              specActionFilter === f.id
+                                ? 'bg-rose-500 text-white border-rose-400 font-bold'
+                                : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {state.speculators.length > 1 && (
+                        <div className="flex items-center gap-1 flex-wrap text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => setSpecBotFilter('ALL')}
+                            className={`px-2 py-1 rounded-md border font-bold ${
+                              specBotFilter === 'ALL'
+                                ? 'bg-amber-500 text-slate-950 border-amber-400'
+                                : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
+                            }`}
+                          >
+                            {t.debug.allFilter} ({speculatorActionLogs.length})
+                          </button>
+                          {state.speculators.map((spec, idx) => (
+                            <button
+                              key={spec.id}
+                              type="button"
+                              onClick={() => setSpecBotFilter(spec.id)}
+                              className={`px-2 py-1 rounded-md border font-bold flex items-center gap-1 ${
+                                specBotFilter === spec.id
+                                  ? 'bg-slate-100 text-slate-950 border-white'
+                                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
+                              }`}
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: spec.color }}
+                              />
+                              <span>Bot #{idx + 1}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Buscador */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
+                      <input
+                        type="text"
+                        value={eventLogSearch}
+                        onChange={e => setEventLogSearch(e.target.value)}
+                        placeholder={t.common.searchPlaceholder ?? 'Buscar casilla, bot o acción...'}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                      />
+                      {eventLogSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setEventLogSearch('')}
+                          className="absolute right-2.5 top-2 text-slate-400 hover:text-white"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Feed en tiempo real de acciones de especuladores */}
+                    <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                      {filteredSpecActionLogs.length === 0 ? (
+                        <div className="py-8 text-center text-slate-500 text-xs">
+                          {t.debug.specLogEmpty ?? 'Aún no hay movimientos registrados de especuladores en esta partida.'}
+                        </div>
+                      ) : (
+                        filteredSpecActionLogs.map((entry: SpeculatorActionLogEntry) => {
+                          const badge = getSpecActionBadgeMeta(entry.kind, t.debug);
+                          return (
+                            <button
+                              key={entry.id}
+                              type="button"
+                              onClick={() => onSelectTile?.(entry.toTileId)}
+                              className={`w-full text-left p-2.5 rounded-xl border text-[11px] space-y-1 transition-colors hover:brightness-110 ${badge.cardClass}`}
+                              title={`Inspeccionar casilla #${entry.toTileId} (${entry.tileName}) en el tablero 3D`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0 font-bold">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-950/75 text-[10px] text-amber-300 shrink-0">
+                                    R{entry.round}
+                                  </span>
+                                  <span
+                                    className="w-2 h-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: entry.speculatorColor }}
+                                  />
+                                  <span className="truncate text-white">{entry.speculatorName}</span>
+                                  <span className={`px-1.5 py-0.5 rounded border text-[9px] font-black shrink-0 ${badge.badgeClass}`}>
+                                    {badge.label}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
+                                  +{entry.diceRoll} · {entry.timestamp}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-2 text-[10px] text-slate-300">
+                                <span className="font-mono">
+                                  #{entry.fromTileId} → #{entry.toTileId} · {entry.tileName}
+                                </span>
+                                {entry.previousTileState && entry.nextTileState && (
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-700 text-[9px] font-bold text-slate-200 shrink-0">
+                                    {entry.previousTileState} → {entry.nextTileState}
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="leading-snug text-slate-200 font-normal">
+                                {entry.details}
+                              </p>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <History className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{t.debug.tabLog ?? 'Event Log'} ({filteredLogs.length})</span>
+                      </h3>
+                      <div className="text-[11px] text-slate-400 tabular-nums">
+                        {state.logs.length} total
+                      </div>
+                    </div>
+
+                    {/* Filtros de evento */}
+                    <div className="grid grid-cols-5 gap-1 text-[10px] font-semibold">
+                      {(
+                        [
+                          { id: 'ALL', label: t.debug.filterAll ?? 'Todos' },
+                          { id: 'SPECULATOR', label: t.debug.filterSpeculator ?? 'Especuladores' },
+                          { id: 'TILES', label: t.debug.filterTiles ?? 'Casillas' },
+                          { id: 'GLOBAL', label: t.debug.filterGlobal ?? 'Globales' },
+                          { id: 'ACTION', label: t.debug.filterAction ?? 'Acciones' }
+                        ] as Array<{ id: EventLogFilter; label: string }>
+                      ).map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setEventLogFilter(f.id)}
+                          className={`py-1.5 px-1 rounded-lg border text-center transition-colors truncate ${
+                            eventLogFilter === f.id
+                              ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
+                              : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
+                          }`}
+                          title={f.label}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Buscador de logs */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
+                      <input
+                        type="text"
+                        value={eventLogSearch}
+                        onChange={e => setEventLogSearch(e.target.value)}
+                        placeholder={t.common.searchPlaceholder ?? 'Buscar evento...'}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                      />
+                      {eventLogSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setEventLogSearch('')}
+                          className="absolute right-2.5 top-2 text-slate-400 hover:text-white"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Lista de logs */}
+                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      {filteredLogs.length === 0 ? (
+                        <div className="py-8 text-center text-slate-500 text-xs">
+                          {t.common.error ?? 'No hay eventos coincidentes.'}
+                        </div>
+                      ) : (
+                        filteredLogs.map(log => {
+                          const typeColor =
+                            log.type === 'HAZARD'
+                              ? 'bg-rose-950/60 border-rose-800/60 text-rose-200'
+                              : log.type === 'SUCCESS'
+                              ? 'bg-emerald-950/60 border-emerald-800/60 text-emerald-200'
+                              : log.type === 'CARD'
+                              ? 'bg-purple-950/60 border-purple-800/60 text-purple-200'
+                              : log.type === 'ACTION'
+                              ? 'bg-sky-950/60 border-sky-800/60 text-sky-200'
+                              : 'bg-slate-900 border-slate-800 text-slate-300';
+
+                          return (
+                            <div
+                              key={log.id}
+                              className={`p-2.5 rounded-xl border text-[11px] space-y-1 ${typeColor}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-950/70 text-[10px] text-amber-300">
+                                    R{log.round}
+                                  </span>
+                                  <span className="truncate">{log.actor}</span>
+                                </div>
+                                <span className="text-[10px] opacity-75 shrink-0 tabular-nums">
+                                  {log.timestamp}
+                                </span>
+                              </div>
+                              <p className="leading-snug text-slate-200 font-normal">
+                                {log.message}
+                              </p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === 'BOTS' && (
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-rose-400" />
+                    <span>{t.debug.botControllerTitle ?? 'Controlador de Bots'}</span>
+                  </h3>
+                  <div className="text-[11px] text-slate-400 tabular-nums">
+                    {state.speculators.length} {t.debug.speculatorsLbl}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  {t.debug.botControllerDesc ?? 'Ajusta en tiempo real la agresividad, radio de influencia y umbral de decisión para cada especulador.'}
+                </p>
+
+                {/* Presets rápidos + Restauración Oficial ZEMOS98 */}
+                <div className="space-y-1.5 text-[10px]">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        state.speculators.forEach(spec => {
+                          handleUpdateBotBehavior(spec.id, { aggressivenessPct: 15, influenceRadius: 4, decisionThreshold: 5 });
+                        });
+                      }}
+                      className="py-1.5 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-800/60 text-emerald-200 font-bold"
+                    >
+                      {t.debug.presetPacifist ?? 'Pacifistas (15%)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        state.speculators.forEach(spec => {
+                          handleUpdateBotBehavior(spec.id, { aggressivenessPct: 50, influenceRadius: 8, decisionThreshold: 3 });
+                        });
+                      }}
+                      className="py-1.5 rounded-lg bg-sky-950/50 hover:bg-sky-900/60 border border-sky-800/60 text-sky-200 font-bold"
+                    >
+                      {t.debug.presetBalanced ?? 'Equilibrados (50%)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        state.speculators.forEach(spec => {
+                          handleUpdateBotBehavior(spec.id, { aggressivenessPct: 100, influenceRadius: 12, decisionThreshold: 1 });
+                        });
+                      }}
+                      className="py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/60 border border-rose-800/60 text-rose-200 font-bold"
+                    >
+                      {t.debug.presetPredator ?? 'Depredadores (100%)'}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!onApplySandboxMutation) return;
+                      onApplySandboxMutation({
+                        type: 'UPDATE_PROBABILITY_SANDBOX',
+                        patch: {
+                          playerDiceProfile: 'FAIR',
+                          forcedPlayerDice: 4,
+                          speculatorMovementLogic: 'STANDARD_1D6',
+                          forcedSpeculatorDice: null,
+                          detentionChanceOverridePct: null,
+                          speculatorBehaviors: {}
+                        }
+                      });
+                      onApplySandboxMutation({
+                        type: 'TOGGLE_PROBABILITY_SANDBOX',
+                        enabled: false
+                      });
+                    }}
+                    className="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-teal-700/60 text-teal-200 font-bold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <RotateCcw className="w-3 h-3 shrink-0" />
+                    <span>{t.debug.restoreOfficialValues ?? 'Restaurar Valores Oficiales (ZEMOS98)'}</span>
+                  </button>
+                </div>
+
+                {/* Tarjetas por especulador */}
+                <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                  {state.speculators.map(spec => {
+                    const sandboxConfig = state.probabilitySandbox ?? DEFAULT_PROBABILITY_SANDBOX_CONFIG;
+                    const behavior = sandboxConfig.speculatorBehaviors?.[spec.id] ?? {
+                      speculatorId: spec.id,
+                      aggressivenessPct: 50,
+                      influenceRadius: 12,
+                      decisionThreshold: 3
+                    };
+                    const tile = state.tiles.find(t => t.id === spec.position);
+
+                    return (
+                      <div
+                        key={spec.id}
+                        className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="w-3 h-3 rounded-full shrink-0 shadow"
+                              style={{ backgroundColor: spec.color }}
+                            />
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-white truncate">
+                                #{spec.id} · {spec.name}
+                              </h4>
+                              <p className="text-[10px] text-slate-400 truncate">
+                                Casilla #{spec.position} ({tile?.name ?? 'Casilla'})
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleUpdateBotBehavior(spec.id, {
+                                aggressivenessPct: 50,
+                                influenceRadius: 12,
+                                decisionThreshold: 3
+                              })
+                            }
+                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-semibold"
+                            title={t.common.reset}
+                          >
+                            Reset
+                          </button>
+                        </div>
+
+                        {/* Slider Agresividad */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-slate-300 font-medium">
+                              {t.debug.aggressiveness ?? 'Agresividad'}
+                            </span>
+                            <span className="font-bold text-rose-300 tabular-nums">
+                              {behavior.aggressivenessPct}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="5"
+                            value={behavior.aggressivenessPct}
+                            onChange={e =>
+                              handleUpdateBotBehavior(spec.id, {
+                                aggressivenessPct: Number(e.target.value)
+                              })
+                            }
+                            className="w-full accent-rose-500 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Slider Radio de Influencia */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-slate-300 font-medium">
+                              {t.debug.influenceRadius ?? 'Radio de Influencia'}
+                            </span>
+                            <span className="font-bold text-amber-300 tabular-nums">
+                              {behavior.influenceRadius} casillas
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="12"
+                            step="1"
+                            value={behavior.influenceRadius}
+                            onChange={e =>
+                              handleUpdateBotBehavior(spec.id, {
+                                influenceRadius: Number(e.target.value)
+                              })
+                            }
+                            className="w-full accent-amber-500 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Slider Umbral de Decisión */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-slate-300 font-medium">
+                              {t.debug.decisionThreshold ?? 'Umbral de Decisión'}
+                            </span>
+                            <span className="font-bold text-sky-300 tabular-nums">
+                              +{behavior.decisionThreshold} pasos
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="6"
+                            step="1"
+                            value={behavior.decisionThreshold}
+                            onChange={e =>
+                              handleUpdateBotBehavior(spec.id, {
+                                decisionThreshold: Number(e.target.value)
+                              })
+                            }
+                            className="w-full accent-sky-500 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
             )}
           </div>
         </>

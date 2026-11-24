@@ -23,7 +23,7 @@ import {
   CloudSun
 } from 'lucide-react';
 import { OFFICIAL_CHARACTERS } from '../data/characters';
-import { SetupInitialRolls, DifficultyLevel } from '../types/game';
+import { SetupInitialRolls, DifficultyLevel, RulesetMode } from '../types/game';
 import { playSound } from '../utils/audio';
 import { useVoiceNarrator, NARRATIVE_PROFILES } from '../utils/voiceNarrator';
 import { Avatar3DPreview } from './Avatar3DPreview';
@@ -46,6 +46,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 }) => {
   const { t } = useI18n();
   const [step, setStep] = useState<1 | 2>(1);
+  const [rulesetMode, setRulesetMode] = useState<RulesetMode>('EXPANDED');
   const [enableTutorialOnStart, setEnableTutorialOnStart] = useState<boolean>(true);
   const [expandedCharId, setExpandedCharId] = useState<string | null>('carolina');
   const voice = useVoiceNarrator();
@@ -168,7 +169,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
       environment: rolls.environment,
       totalSum,
       difficulty,
-      speculatorsCount
+      speculatorsCount,
+      rulesetMode
     };
     onComplete(selectedChars, setupData);
   };
@@ -656,6 +658,68 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               <div className="px-5 py-3 rounded-lg bg-slate-900 border border-slate-700 text-center shrink-0">
                 <div className="text-xs text-slate-400">{t.setup.speculatorsTitle}</div>
                 <div className="text-2xl font-black text-rose-400 tabular-nums">{speculatorsCount}</div>
+              </div>
+            </div>
+
+            {/* Selector de Reglamento: Oficial ZEMOS98 vs Digital Expandido */}
+            <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-3">
+              <div className="text-xs font-bold uppercase tracking-wider text-teal-300">
+                {t.setup.rulesetTitle ?? 'Reglamento de Partida'}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound.uiClick();
+                    setRulesetMode('OFFICIAL');
+                  }}
+                  aria-pressed={rulesetMode === 'OFFICIAL'}
+                  className={`p-3.5 rounded-xl border text-left transition-all space-y-1 ${
+                    rulesetMode === 'OFFICIAL'
+                      ? 'bg-emerald-950/60 border-emerald-500 text-white shadow-md'
+                      : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold">
+                      {t.setup.rulesetOfficialLabel ?? 'Edición Verde Oficial (ZEMOS98)'}
+                    </span>
+                    {rulesetMode === 'OFFICIAL' && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    {t.setup.rulesetOfficialDesc ??
+                      'Reglas estrictas del manual físico: columnas radiales exactas al Ágora, sin crisis, clima dinámico, reputación ni descuentos únicos.'}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound.uiClick();
+                    setRulesetMode('EXPANDED');
+                  }}
+                  aria-pressed={rulesetMode === 'EXPANDED'}
+                  className={`p-3.5 rounded-xl border text-left transition-all space-y-1 ${
+                    rulesetMode === 'EXPANDED'
+                      ? 'bg-teal-950/60 border-teal-500 text-white shadow-md'
+                      : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold">
+                      {t.setup.rulesetExpandedLabel ?? 'Edición Digital Expandida'}
+                    </span>
+                    {rulesetMode === 'EXPANDED' && (
+                      <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    {t.setup.rulesetExpandedDesc ??
+                      'Incluye bonificadores únicos de personaje, Crisis Inesperadas, Clima Dinámico 3D y Reputación Vecinal.'}
+                  </p>
+                </button>
               </div>
             </div>
 

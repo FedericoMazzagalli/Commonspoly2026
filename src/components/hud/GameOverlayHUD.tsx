@@ -47,7 +47,10 @@ import {
   Camera,
   Activity,
   Bug,
-  Accessibility
+  Accessibility,
+  MessageSquare,
+  Bot,
+  Landmark
 } from 'lucide-react';
 import { GameEngineState, AmbientMode, WeatherMode, TimeOfDayMode, TutorialBoardFocus } from '../../types/game';
 import { BitacoraHUD } from './BitacoraHUD';
@@ -70,6 +73,8 @@ import { MeteorologicalInsightHUD } from './MeteorologicalInsightHUD';
 import { CollectiveImpactHUD } from './CollectiveImpactHUD';
 import { PerformanceMonitorHUD } from './PerformanceMonitorHUD';
 import { EconomyDebugHUD } from './EconomyDebugHUD';
+import { EventFeedHUD } from './EventFeedHUD';
+import { SpeculatorDashboardHUD } from './SpeculatorDashboardHUD';
 import { OfflineIndicator } from './OfflineIndicator';
 import { LanguageSelector } from './LanguageSelector';
 import { useI18n } from '../../i18n';
@@ -86,6 +91,7 @@ import {
   formatSignedScore,
   getReputationProfile
 } from '../../utils/reputation';
+import { isAgoraEntryOrColumnTile } from '../../data/tiles';
 
 interface GameOverlayHUDProps {
   state: GameEngineState;
@@ -234,12 +240,15 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMeteorologicalInsightOpen, setIsMeteorologicalInsightOpen] = useState(false);
   const [isCollectiveImpactOpen, setIsCollectiveImpactOpen] = useState(false);
+  const [isSpeculatorDashboardOpen, setIsSpeculatorDashboardOpen] = useState(false);
   const [spatialEnabled, setSpatialEnabled] = useState(() => audioManager.isSpatialEnabled());
   const [ambientVol, setAmbientVol] = useState(() => audioManager.getAmbientVolume());
   const [sfxVol, setSfxVol] = useState(() => audioManager.getSfxVolume());
   const [justSaved, setJustSaved] = useState(false);
   const [saveType, setSaveType] = useState<'MANUAL' | 'AUTO'>('MANUAL');
+  const [isRecentChatCollapsed, setIsRecentChatCollapsed] = useState(false);
   const prevAutosaveCountRef = useRef<number>(savedGameMeta?.autosaveCount ?? 0);
+  const recentChatMessages = state.chatMessages.slice(-4);
 
   useEffect(() => {
     const nextCount = savedGameMeta?.autosaveCount ?? 0;
@@ -268,8 +277,20 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     }
   };
 
+  const closeAllOtherPanels = (except?: 'history' | 'evolution' | 'meteorological' | 'impact' | 'speculator') => {
+    if (except !== 'history') handleCloseHistory();
+    if (except !== 'evolution') handleCloseEvolution();
+    if (except !== 'meteorological') setIsMeteorologicalInsightOpen(false);
+    if (except !== 'impact') setIsCollectiveImpactOpen(false);
+    if (except !== 'speculator') setIsSpeculatorDashboardOpen(false);
+    if (isPerformanceMonitorOpen && onClosePerformanceMonitor) onClosePerformanceMonitor();
+    if (isEconomyDebugOpen && onCloseEconomyDebug) onCloseEconomyDebug();
+  };
+
   const handleToggleHistory = () => {
-    playSound.uiToggle(!isGameHistoryOpen);
+    const next = !isGameHistoryOpen;
+    playSound.uiToggle(next);
+    if (next) closeAllOtherPanels('history');
     if (onToggleGameHistory) {
       onToggleGameHistory();
     } else {
@@ -286,8 +307,9 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   };
 
   const handleToggleEvolution = () => {
-    setIsMeteorologicalInsightOpen(false);
-    setIsCollectiveImpactOpen(false);
+    const next = !isEvolutionOpen;
+    playSound.uiToggle(next);
+    if (next) closeAllOtherPanels('evolution');
     if (onToggleEvolution) {
       onToggleEvolution();
     } else {
@@ -307,10 +329,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     setIsMeteorologicalInsightOpen(prev => {
       const next = !prev;
       playSound.uiToggle(next);
-      if (next) {
-        setIsCollectiveImpactOpen(false);
-        if (isEvolutionOpen) handleCloseEvolution();
-      }
+      if (next) closeAllOtherPanels('meteorological');
       return next;
     });
   };
@@ -319,10 +338,16 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     setIsCollectiveImpactOpen(prev => {
       const next = !prev;
       playSound.uiToggle(next);
-      if (next) {
-        setIsMeteorologicalInsightOpen(false);
-        if (isEvolutionOpen) handleCloseEvolution();
-      }
+      if (next) closeAllOtherPanels('impact');
+      return next;
+    });
+  };
+
+  const handleToggleSpeculatorDashboard = () => {
+    setIsSpeculatorDashboardOpen(prev => {
+      const next = !prev;
+      playSound.uiToggle(next);
+      if (next) closeAllOtherPanels('speculator');
       return next;
     });
   };
@@ -360,14 +385,25 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   // Cálculo de legitimidad colectiva
   const totalLegitimacy = state.players.reduce((sum, p) => sum + p.legitimacy, 0);
   const requiredLegitimacyForAgora = state.players.length * 10;
-  const canEnterAgora = totalLegitimacy >= requiredLegitimacyForAgora && !activePlayer?.inAgora;
+  const isOfficialRules = state.rulesetMode === 'OFFICIAL';
+  const meetsAgoraTileRule = !isOfficialRules || (activePlayer ? isAgoraEntryOrColumnTile(activePlayer.position) : false);
+  const canEnterAgora =
+    totalLegitimacy >= requiredLegitimacyForAgora &&
+    !activePlayer?.inAgora &&
+    meetsAgoraTileRule;
+  const showAgoraColumnLockedHint =
+    totalLegitimacy >= requiredLegitimacyForAgora &&
+    !activePlayer?.inAgora &&
+    isOfficialRules &&
+    !meetsAgoraTileRule;
 
-  // Cálculo de coste y recompensa efectivos (incluye Crisis Inesperada, Clima Dinámico y bonificador único)
+  // Cálculo de coste y recompensa efectivos (incluye Crisis Inesperada, Clima Dinámico y bonificador único en Expandido)
   const unlockCostInfo = getEffectiveUnlockCost(
     currentTile,
     activePlayer,
     state.activeCrisis,
-    state.activeWeatherEvent
+    state.activeWeatherEvent,
+    state.rulesetMode
   );
   const neededWellnessToUnlock = unlockCostInfo.effectiveCost;
   const publicPassReward = getEffectiveResourceReward(
@@ -376,7 +412,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     1,
     state.activeCrisis,
     activePlayer,
-    state.activeWeatherEvent
+    state.activeWeatherEvent,
+    state.rulesetMode
   );
   const canUnlockCurrentTile =
     currentTile &&
@@ -836,6 +873,22 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
 
             <button
               type="button"
+              onClick={handleToggleSpeculatorDashboard}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
+                isSpeculatorDashboardOpen
+                  ? 'bg-rose-600 text-white font-bold'
+                  : 'text-rose-300 hover:text-white hover:bg-slate-800'
+              }`}
+              title={t.hud.specDashboardBtn ?? 'Activos Espec.'}
+              aria-label={t.hud.specDashboardBtn ?? 'Activos Espec.'}
+              aria-expanded={isSpeculatorDashboardOpen}
+            >
+              <Landmark className="w-4 h-4 shrink-0" />
+              <span className="hidden xl:inline">{t.hud.specDashboardBtn ?? 'Activos Espec.'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleToggleMeteorologicalInsight}
               className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                 isMeteorologicalInsightOpen
@@ -1174,6 +1227,22 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 type="button"
                 onClick={() => {
                   setIsMobileMenuOpen(false);
+                  handleToggleSpeculatorDashboard();
+                }}
+                className={`min-h-[44px] px-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                  isSpeculatorDashboardOpen
+                    ? 'bg-rose-600 border-rose-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-rose-300'
+                }`}
+              >
+                <Landmark className="w-4 h-4 shrink-0" />
+                <span>{t.hud.specDashboardBtn ?? 'Activos Espec.'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
                   handleToggleMeteorologicalInsight();
                 }}
                 className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-cyan-300 text-xs font-bold flex items-center gap-2"
@@ -1354,6 +1423,89 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               <GameChatLog state={state} />
             </div>
 
+            {/* HISTORIAL RECIENTE PERSISTENTE DEL CHAT COOPERATIVO */}
+            <section
+              aria-label={t.hud.recentChatTitle || 'Decisiones Recientes · Chat'}
+              className="pointer-events-auto max-w-md rounded-xl border border-teal-800/60 bg-slate-900/90 shadow-lg text-slate-100 overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.uiToggle(isRecentChatCollapsed);
+                  setIsRecentChatCollapsed((prev) => !prev);
+                }}
+                aria-expanded={!isRecentChatCollapsed}
+                className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-slate-950/75 border-b border-slate-800/80 text-[11px] font-bold hover:bg-slate-900/90 transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <MessageSquare className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                  <span className="truncate text-teal-200">
+                    {t.hud.recentChatTitle || 'Decisiones Recientes · Chat'}
+                  </span>
+                  {recentChatMessages.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded bg-teal-950/90 border border-teal-700/60 text-teal-300 text-[9px] tabular-nums shrink-0">
+                      {recentChatMessages.length}
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span className="hidden sm:inline px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700/80 text-[9px] font-semibold text-emerald-300">
+                    {t.hud.recentChatPersisted || 'Guardado local'}
+                  </span>
+                  <span className="text-slate-400" title={isRecentChatCollapsed ? (t.hud.recentChatToggleExpand || 'Expandir') : (t.hud.recentChatToggleCollapse || 'Ocultar')}>
+                    {isRecentChatCollapsed ? (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    )}
+                  </span>
+                </span>
+              </button>
+
+              {!isRecentChatCollapsed && (
+                <div className="px-2.5 py-2 space-y-1.5 max-h-36 overflow-y-auto bg-slate-950/40">
+                  {recentChatMessages.length > 0 ? (
+                    recentChatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className="px-2 py-1 rounded-lg bg-slate-900/80 border border-slate-800/70 text-[11px] leading-snug"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="flex items-center gap-1.5 font-bold min-w-0 truncate">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: msg.senderColor }}
+                            />
+                            <span className="truncate" style={{ color: msg.senderColor }}>
+                              {msg.senderName}
+                            </span>
+                            {msg.controller === 'BOT' && (
+                              <Bot className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
+                            )}
+                            {msg.votingContext && (
+                              <span className="px-1 py-0.5 rounded bg-pink-950/70 border border-pink-700/50 text-pink-200 text-[9px] font-semibold truncate">
+                                {msg.votingContext}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[9px] text-slate-500 tabular-nums shrink-0">
+                            {msg.timestamp}
+                          </span>
+                        </div>
+                        <p className="text-slate-200 text-[11px] pl-3.5 break-words">
+                          {msg.text}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[10px] text-slate-400 italic px-1 py-0.5">
+                      {t.hud.recentChatEmpty || 'Sin acuerdos recientes en el chat cooperativo.'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
             {/* BANNER DE CRISIS INESPERADA ACTIVA */}
             {state.activeCrisis && (
               <div
@@ -1433,26 +1585,33 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             )}
           </div>
 
-          {/* Top-Right Cluster: Weather Controller & Global Resource Tracker (Desktop md+) */}
-          <div className="hidden md:flex self-end md:self-start shrink-0 flex-col sm:flex-row items-end sm:items-start gap-2">
-            <WeatherControllerHUD
-              state={state}
-              onSetWeatherMode={onSetWeatherMode}
-              onSetWeatherIntensity={onSetWeatherIntensity}
-              onSetTimeOfDayMode={onSetTimeOfDayMode}
-              isMeteorologicalInsightOpen={isMeteorologicalInsightOpen}
-              onToggleMeteorologicalInsight={handleToggleMeteorologicalInsight}
-              onOpenAdvancedWeatherSettings={onOpenWeatherSettings}
-            />
-            <div data-tutorial-target="resources-tracker">
-              <GlobalResourceTracker
+          {/* Top-Right Cluster: Weather Controller, Global Resource Tracker & Critical Event Feed (Desktop md+) */}
+          <div className="hidden md:flex self-end md:self-start shrink-0 flex-col items-end gap-2">
+            <div className="flex flex-col sm:flex-row items-end sm:items-start gap-2">
+              <WeatherControllerHUD
                 state={state}
-                isEvolutionOpen={isEvolutionOpen}
-                onToggleEvolution={handleToggleEvolution}
-                isCollectiveImpactOpen={isCollectiveImpactOpen}
-                onToggleCollectiveImpact={handleToggleCollectiveImpact}
+                onSetWeatherMode={onSetWeatherMode}
+                onSetWeatherIntensity={onSetWeatherIntensity}
+                onSetTimeOfDayMode={onSetTimeOfDayMode}
+                isMeteorologicalInsightOpen={isMeteorologicalInsightOpen}
+                onToggleMeteorologicalInsight={handleToggleMeteorologicalInsight}
+                onOpenAdvancedWeatherSettings={onOpenWeatherSettings}
               />
+              <div data-tutorial-target="resources-tracker">
+                <GlobalResourceTracker
+                  state={state}
+                  isEvolutionOpen={isEvolutionOpen}
+                  onToggleEvolution={handleToggleEvolution}
+                  isCollectiveImpactOpen={isCollectiveImpactOpen}
+                  onToggleCollectiveImpact={handleToggleCollectiveImpact}
+                />
+              </div>
             </div>
+            <EventFeedHUD
+              state={state}
+              onOpenHistory={handleToggleHistory}
+              onSelectTile={onSelectTileFromDebug}
+            />
           </div>
         </div>
       </div>
@@ -1521,6 +1680,24 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         isOpen={isCollectiveImpactOpen}
         state={state}
         onClose={() => setIsCollectiveImpactOpen(false)}
+      />
+
+      {/* 5E2. DASHBOARD FINANCIERO DE ESPECULADORES (Valor Neto & Capacidad de Vandalismo) */}
+      <SpeculatorDashboardHUD
+        isOpen={isSpeculatorDashboardOpen}
+        state={state}
+        onClose={() => setIsSpeculatorDashboardOpen(false)}
+        onSelectTile={onSelectTileFromDebug}
+        onOpenEconomyDebug={
+          onToggleEconomyDebug
+            ? () => {
+                setIsSpeculatorDashboardOpen(false);
+                if (!isEconomyDebugOpen) {
+                  onToggleEconomyDebug();
+                }
+              }
+            : undefined
+        }
       />
 
       {/* 5F. MONITOR DE RENDIMIENTO 3D (FPS, memoria y frustum culling en vivo) */}
@@ -1766,15 +1943,24 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               )}
 
               {/* Botón Entrar al Ágora Central */}
-              {!isRemoteMultiplayerTurn && canEnterAgora && state.phase === 'PLAYER_TURN_READY' && (
+              {!isRemoteMultiplayerTurn && (canEnterAgora || showAgoraColumnLockedHint) && state.phase === 'PLAYER_TURN_READY' && (
                 <button
                   onClick={onTryEnterAgora}
-                  title={`${t.hud.enterAgora} (A)`}
-                  className="min-h-[44px] px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition-all"
+                  disabled={!canEnterAgora}
+                  title={
+                    canEnterAgora
+                      ? `${t.hud.enterAgora} (A)`
+                      : (t.hud.agoraColumnHint ?? 'En modo Oficial, sitúate en una casilla de acceso o columna radial.')
+                  }
+                  className={`min-h-[44px] px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-lg transition-all ${
+                    canEnterAgora
+                      ? 'bg-pink-600 hover:bg-pink-500 text-white'
+                      : 'bg-slate-800/80 text-slate-400 border border-slate-700 cursor-not-allowed'
+                  }`}
                 >
                   <Flame className="w-4 h-4" />
                   <span>{t.hud.enterAgora}</span>
-                  {activePlayer?.controller === 'HUMAN' && (
+                  {canEnterAgora && activePlayer?.controller === 'HUMAN' && (
                     <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-pink-950/50 border border-pink-400/40 text-[10px] font-mono font-bold text-pink-100">
                       A
                     </kbd>
