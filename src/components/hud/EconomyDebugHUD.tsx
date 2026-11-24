@@ -540,8 +540,8 @@ export const EconomyDebugHUD: React.FC<EconomyDebugHUDProps> = ({
           onSwipeDismiss={onClose}
           role="region"
           ariaLabel={t.debug.title}
-          className={`pointer-events-auto fixed left-3 right-3 sm:left-6 sm:right-auto top-16 sm:top-20 z-40 flex flex-col bg-slate-950 border border-amber-600/70 rounded-2xl shadow-2xl text-slate-100 overflow-hidden ${
-            isCompact ? 'sm:w-96' : 'bottom-20 sm:bottom-auto sm:w-[440px] sm:max-h-[calc(100vh-11rem)]'
+          className={`pointer-events-auto fixed inset-x-0 bottom-0 top-auto md:inset-x-auto md:left-6 md:right-auto md:top-20 md:bottom-auto z-40 w-full flex flex-col bg-slate-950 border border-amber-600/70 rounded-t-3xl md:rounded-2xl shadow-2xl text-slate-100 overflow-hidden pb-safe ${
+            isCompact ? 'max-h-[65dvh] md:w-96' : 'max-h-[84dvh] md:w-[440px] md:max-h-[calc(100dvh-11rem)]'
           }`}
         >
           {/* Header */}

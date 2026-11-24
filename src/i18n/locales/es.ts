@@ -86,7 +86,7 @@ export const es: TranslationDict = {
     localAchievements: 'Logros Locales',
     configWeather3d: 'Configurar Clima 3D',
     hintBar:
-      'Espacio / Enter Iniciar · Cámara 3D · Tutorial con Voz (Tecla T) · 20 Rondas contra el Tiempo',
+      'Espacio / Enter Iniciar · Cámara 3D · Tutorial Interactivo (Tecla T) · 20 Rondas contra el Tiempo',
     muteAudio: 'Silenciar audio',
     enableAudio: 'Activar audio',
     accessibilityBtn: 'Accesibilidad',
@@ -142,10 +142,10 @@ export const es: TranslationDict = {
     diffDescComunlandia:
       'Cerca de la utopía comunitaria, ¡pero 3 Especuladores ferozmente al acecho!',
     speculatorsTitle: 'Especuladores',
-    voiceTutorialTitle: 'Tutorial de Onboarding con Voz Guiada',
+    voiceTutorialTitle: 'Tutorial Interactivo de Onboarding',
     recommended: 'Recomendado',
     voiceTutorialDesc:
-      'Activa la locución por voz interactiva al comenzar para explicar las mecánicas básicas paso a paso.',
+      'Activa la guía visual interactiva al comenzar para aprender las mecánicas básicas paso a paso.',
     narrativeVoiceLabel: 'Voz narrativa del tutorial (8 personajes + Ágora):',
     weatherCardTitle: 'Clima Dinámico e Impacto Visual 3D',
     weatherCardDesc:

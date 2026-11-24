@@ -26,6 +26,7 @@ interface CooperativeChatComponentProps {
   state: GameEngineState;
   onSendMessage: (text: string, votingContext?: string) => void;
   isDockCollapsed?: boolean;
+  variant?: 'floating' | 'sheet';
 }
 
 interface QuickPreset {
@@ -37,7 +38,8 @@ interface QuickPreset {
 export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> = ({
   state,
   onSendMessage,
-  isDockCollapsed = false
+  isDockCollapsed = false,
+  variant = 'floating'
 }) => {
   const { t } = useI18n();
   const isVotingModalActive =
@@ -73,30 +75,33 @@ export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> =
   const prevMsgCountRef = useRef(state.chatMessages.length);
   const prevVotingRef = useRef(isVotingModalActive);
 
+  const isSheet = variant === 'sheet';
+  const effectiveOpen = isSheet || isOpen;
+
   // Abrir automáticamente cuando inicia una votación colectiva crítica
   useEffect(() => {
-    if (isVotingModalActive && !prevVotingRef.current) {
+    if (!isSheet && isVotingModalActive && !prevVotingRef.current) {
       setIsOpen(true);
       setUnreadCount(0);
     }
     prevVotingRef.current = isVotingModalActive;
-  }, [isVotingModalActive]);
+  }, [isVotingModalActive, isSheet]);
 
   // Auto-scroll y contador de mensajes nuevos cuando está colapsado
   useEffect(() => {
     const count = state.chatMessages.length;
-    if (count > prevMsgCountRef.current && !isOpen) {
+    if (count > prevMsgCountRef.current && !effectiveOpen) {
       setUnreadCount(u => u + (count - prevMsgCountRef.current));
     }
     prevMsgCountRef.current = count;
 
-    if (isOpen && listRef.current) {
+    if (effectiveOpen && listRef.current) {
       listRef.current.scrollTo({
         top: listRef.current.scrollHeight,
         behavior: 'smooth'
       });
     }
-  }, [state.chatMessages.length, isOpen]);
+  }, [state.chatMessages.length, effectiveOpen]);
 
   const quickPresets: QuickPreset[] = useMemo(() => {
     if (state.activeModal === 'AGORA_INSURRECTION') {
@@ -152,13 +157,112 @@ export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> =
 
   const { swipeX, swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
     direction: 'down',
-    enabled: isOpen,
+    enabled: !isSheet && isOpen,
     resetOnDismiss: true,
     onDismiss: () => {
       playSound.uiToggle(false);
       setIsOpen(false);
     }
   });
+
+  if (isSheet) {
+    return (
+      <div className="flex flex-col gap-3 text-slate-100">
+        {isCooperativeVotingPhase && (
+          <div className="px-3 py-2 rounded-xl bg-pink-950/60 border border-pink-600/60 flex items-center justify-between gap-2 text-xs">
+            <span className="flex items-center gap-2 font-bold text-pink-200">
+              <Vote className="w-4 h-4 text-pink-300 shrink-0" />
+              <span>Consenso activo: {votingContextLabel}</span>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-pink-600/80 text-white text-[10px] font-black uppercase">
+              Votación
+            </span>
+          </div>
+        )}
+
+        <div
+          ref={listRef}
+          className="p-2.5 max-h-[34dvh] min-h-[140px] overflow-y-auto overscroll-contain-y space-y-2 text-xs scroll-smooth bg-slate-950/60 rounded-2xl border border-slate-800"
+        >
+          {state.chatMessages.length > 0 ? (
+            state.chatMessages.map((msg) => (
+              <div
+                key={msg.id}
+                className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800/90 text-xs leading-snug"
+              >
+                <div className="flex items-center justify-between gap-1.5 mb-0.5 text-[10px]">
+                  <span className="flex items-center gap-1.5 font-bold truncate">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: msg.senderColor }}
+                    />
+                    <span style={{ color: msg.senderColor }}>{msg.senderName}</span>
+                    {msg.controller === 'BOT' && (
+                      <Bot className="w-3 h-3 text-indigo-400 shrink-0" />
+                    )}
+                  </span>
+                  <span className="text-[10px] text-slate-400 tabular-nums shrink-0">
+                    {msg.votingContext ? `${msg.votingContext} · ` : ''}
+                    {msg.timestamp}
+                  </span>
+                </div>
+                <p className="text-slate-200 pl-3.5">{msg.text}</p>
+              </div>
+            ))
+          ) : (
+            <div className="py-6 px-3 text-center text-xs text-slate-400 italic">
+              Envía un mensaje rápido para coordinar la votación con el grupo.
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-300 uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Mensajes Rápidos ({votingContextLabel})</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {quickPresets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handleSendPreset(preset)}
+                className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold text-left truncate transition-all active:scale-95 ${
+                  isCooperativeVotingPhase
+                    ? 'bg-pink-950/45 hover:bg-pink-900/60 border-pink-700/60 text-pink-100'
+                    : 'bg-slate-800/85 hover:bg-teal-900/50 border-slate-700 hover:border-teal-600/70 text-slate-100'
+                }`}
+                title={preset.text}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleSubmitCustom} className="flex items-center gap-2 pt-1">
+            <input
+              type="text"
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              maxLength={90}
+              placeholder="Mensaje breve al grupo..."
+              className="flex-1 min-w-0 min-h-[44px] px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 focus:border-teal-500 outline-none text-sm text-white placeholder:text-slate-400"
+            />
+            <button
+              type="submit"
+              disabled={!customInput.trim()}
+              className="min-w-[44px] min-h-[44px] p-2.5 flex items-center justify-center rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors shrink-0"
+              title="Enviar mensaje"
+              aria-label="Enviar mensaje"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   // Posición en esquina inferior derecha sobre el chip de Bitácora, elevando z-index durante modales de votación
   const zIndexClass = isVotingModalActive ? 'z-[60]' : 'z-20';
@@ -173,7 +277,7 @@ export const CooperativeChatComponent: React.FC<CooperativeChatComponentProps> =
       data-tutorial-target="coop-chat"
       aria-label="Chat Rápido Cooperativo"
       style={{ x: swipeX, y: swipeY }}
-      className={`pointer-events-auto fixed right-3 md:right-6 ${bottomOffsetClass} ${zIndexClass} w-68 sm:w-80 max-w-[82vw] select-none transition-all duration-300 ${touchActionClass}`}
+      className={`pointer-events-auto fixed right-3 md:right-6 ${bottomOffsetClass} ${zIndexClass} w-68 md:w-72 lg:w-80 max-w-[34vw] lg:max-w-[82vw] select-none transition-all duration-300 ${touchActionClass}`}
       {...swipeHandlers}
     >
       <div

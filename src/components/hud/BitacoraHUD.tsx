@@ -28,9 +28,10 @@ import { HudPanelMotion } from '../ui/MotionPrimitives';
 interface BitacoraHUDProps {
   logs: GameLogEntry[];
   round: number;
+  variant?: 'floating' | 'embedded';
 }
 
-export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
+export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs, variant = 'floating' }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<'COOP' | 'ALL' | 'HAZARD'>('COOP');
 
@@ -93,6 +94,140 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
     }
   };
 
+  const renderBitacoraBody = () => (
+    <>
+      {/* Resumen de Hitos Colectivos */}
+      <div className="grid grid-cols-3 gap-2 pb-3 border-b border-slate-800/80 text-center shrink-0">
+        <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
+          <div className="text-[10px] text-slate-400 leading-tight">Rescates</div>
+          <div className="text-base font-extrabold text-rose-400 tabular-nums">{rescuesCount}</div>
+        </div>
+        <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
+          <div className="text-[10px] text-slate-400 leading-tight">Comunizados</div>
+          <div className="text-base font-extrabold text-emerald-400 tabular-nums">{commonsUnlockedCount}</div>
+        </div>
+        <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
+          <div className="text-[10px] text-slate-400 leading-tight">Insurrección</div>
+          <div className="text-base font-extrabold text-pink-400 tabular-nums">{agoraInsurrectionsCount}</div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex items-center gap-1.5 py-2.5 border-b border-slate-800 text-[11px] font-medium shrink-0 overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => {
+            playSound.uiClick();
+            setFilter('COOP');
+          }}
+          className={`min-h-[38px] sm:min-h-[30px] px-3 py-1 rounded-lg transition-colors whitespace-nowrap ${
+            filter === 'COOP' ? 'bg-teal-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Cooperación ({cooperativeLogs.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            playSound.uiClick();
+            setFilter('HAZARD');
+          }}
+          className={`min-h-[38px] sm:min-h-[30px] px-3 py-1 rounded-lg transition-colors whitespace-nowrap ${
+            filter === 'HAZARD' ? 'bg-rose-950 text-rose-300 font-bold border border-rose-800/50' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Amenazas
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            playSound.uiClick();
+            setFilter('ALL');
+          }}
+          className={`min-h-[38px] sm:min-h-[30px] px-3 py-1 rounded-lg transition-colors whitespace-nowrap ${
+            filter === 'ALL' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Todos ({logs.length})
+        </button>
+      </div>
+
+      {/* Timeline Scrollable Feed */}
+      <div className="py-2.5 overflow-y-auto space-y-2.5 flex-1 pr-1">
+        {filteredLogs.length > 0 ? (
+          filteredLogs.map(log => {
+            const badge = getActionBadge(log.cooperativeAction);
+            const isCoop = log.category === 'COOPERATIVE' || log.cooperativeAction;
+
+            return (
+              <div
+                key={log.id}
+                className={`p-3 rounded-2xl border transition-all text-xs ${
+                  isCoop
+                    ? 'bg-slate-950/80 border-teal-900/60 hover:border-teal-700/80'
+                    : log.type === 'HAZARD'
+                    ? 'bg-rose-950/20 border-rose-900/40'
+                    : 'bg-slate-950/40 border-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {log.actorColor && (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: log.actorColor }}
+                      />
+                    )}
+                    <span className="font-bold text-white truncate text-[11px]">
+                      {log.actor}
+                    </span>
+                  </div>
+
+                  {log.cooperativeAction ? (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${badge.color}`}>
+                      {badge.icon}
+                      <span>{badge.label}</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 tabular-nums">
+                      Ronda {log.round}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-slate-200 text-xs leading-relaxed">
+                  {log.message}
+                </p>
+
+                <div className="flex items-center justify-between pt-1.5 text-[10px] text-slate-400">
+                  <span>{log.timestamp}</span>
+                  {log.target && (
+                    <span className="text-teal-400/90 font-medium">
+                      Objetivo: {log.target}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="p-8 text-center text-xs text-slate-400">
+            Aún no hay eventos registrados en esta categoría.
+          </div>
+        )}
+      </div>
+
+      {/* Footer Quote */}
+      <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-400 italic text-center shrink-0">
+        &quot;La cooperación mutua es la base de la felicidad radical.&quot;
+      </div>
+    </>
+  );
+
+  if (variant === 'embedded') {
+    return <div className="flex flex-col text-slate-100">{renderBitacoraBody()}</div>;
+  }
+
   return (
     <>
       {/* 1. CHIP DE ACCESO RÁPIDO A LA BITÁCORA (Superposición lateral derecha sutil) */}
@@ -131,7 +266,7 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
           className="pointer-events-auto fixed top-16 right-4 bottom-24 w-84 md:w-96 max-w-[94vw] bg-slate-900/95 border border-teal-700/60 rounded-3xl shadow-2xl p-4 flex flex-col z-30"
         >
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800 shrink-0">
             <div className="flex items-center gap-2">
               <ScrollText className="w-4 h-4 text-teal-400" />
               <div>
@@ -156,131 +291,7 @@ export const BitacoraHUD: React.FC<BitacoraHUDProps> = ({ logs }) => {
             </button>
           </div>
 
-          {/* Resumen de Hitos Colectivos */}
-          <div className="grid grid-cols-3 gap-2 py-3 border-b border-slate-800/80 text-center shrink-0">
-            <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
-              <div className="text-[10px] text-slate-400 leading-tight">Rescates</div>
-              <div className="text-base font-extrabold text-rose-400 tabular-nums">{rescuesCount}</div>
-            </div>
-            <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
-              <div className="text-[10px] text-slate-400 leading-tight">Comunizados</div>
-              <div className="text-base font-extrabold text-emerald-400 tabular-nums">{commonsUnlockedCount}</div>
-            </div>
-            <div className="p-2 rounded-xl bg-slate-950/70 border border-slate-800">
-              <div className="text-[10px] text-slate-400 leading-tight">Insurrección</div>
-              <div className="text-base font-extrabold text-pink-400 tabular-nums">{agoraInsurrectionsCount}</div>
-            </div>
-          </div>
-
-          {/* Filtros */}
-          <div className="flex items-center gap-1.5 py-2.5 border-b border-slate-800 text-[11px] font-medium shrink-0">
-            <button
-              onClick={() => {
-                playSound.uiClick();
-                setFilter('COOP');
-              }}
-              className={`px-2.5 py-1 rounded-lg transition-colors ${
-                filter === 'COOP' ? 'bg-teal-600 text-white font-bold' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Cooperación ({cooperativeLogs.length})
-            </button>
-            <button
-              onClick={() => {
-                playSound.uiClick();
-                setFilter('HAZARD');
-              }}
-              className={`px-2.5 py-1 rounded-lg transition-colors ${
-                filter === 'HAZARD' ? 'bg-rose-950 text-rose-300 font-bold border border-rose-800/50' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Amenazas
-            </button>
-            <button
-              onClick={() => {
-                playSound.uiClick();
-                setFilter('ALL');
-              }}
-              className={`px-2.5 py-1 rounded-lg transition-colors ${
-                filter === 'ALL' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Todos ({logs.length})
-            </button>
-          </div>
-
-          {/* Timeline Scrollable Feed */}
-          <div className="py-2 overflow-y-auto space-y-2.5 flex-1 pr-1">
-            {filteredLogs.length > 0 ? (
-              filteredLogs.map(log => {
-                const badge = getActionBadge(log.cooperativeAction);
-                const isCoop = log.category === 'COOPERATIVE' || log.cooperativeAction;
-
-                return (
-                  <div
-                    key={log.id}
-                    className={`p-3 rounded-2xl border transition-all text-xs ${
-                      isCoop
-                        ? 'bg-slate-950/80 border-teal-900/60 hover:border-teal-700/80'
-                        : log.type === 'HAZARD'
-                        ? 'bg-rose-950/20 border-rose-900/40'
-                        : 'bg-slate-950/40 border-slate-800/60'
-                    }`}
-                  >
-                    {/* Top row: Actor and Badge */}
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {log.actorColor && (
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: log.actorColor }}
-                          />
-                        )}
-                        <span className="font-bold text-white truncate text-[11px]">
-                          {log.actor}
-                        </span>
-                      </div>
-
-                      {log.cooperativeAction ? (
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${badge.color}`}>
-                          {badge.icon}
-                          <span>{badge.label}</span>
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 tabular-nums">
-                          Ronda {log.round}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Message content */}
-                    <p className="text-slate-200 text-xs leading-relaxed">
-                      {log.message}
-                    </p>
-
-                    {/* Footer metadata */}
-                    <div className="flex items-center justify-between pt-1.5 text-[10px] text-slate-400">
-                      <span>{log.timestamp}</span>
-                      {log.target && (
-                        <span className="text-teal-400/90 font-medium">
-                          Objetivo: {log.target}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="p-8 text-center text-xs text-slate-400">
-                Aún no hay eventos registrados en esta categoría.
-              </div>
-            )}
-          </div>
-
-          {/* Footer Quote */}
-          <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-400 italic text-center shrink-0">
-            &quot;La cooperación mutua es la base de la felicidad radical.&quot;
-          </div>
+          {renderBitacoraBody()}
         </HudPanelMotion>
       )}
       </AnimatePresence>

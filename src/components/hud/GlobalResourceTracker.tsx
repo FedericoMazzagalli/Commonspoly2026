@@ -194,7 +194,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                   playSound.uiToggle(!isCollectiveImpactOpen);
                   onToggleCollectiveImpact();
                 }}
-                className={`min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg transition-colors ${
+                className={`min-w-[40px] min-h-[40px] md:min-w-[28px] md:min-h-[28px] flex items-center justify-center rounded-lg transition-colors ${
                   isCollectiveImpactOpen
                     ? 'bg-emerald-600 text-white'
                     : 'text-emerald-300 hover:text-white hover:bg-slate-800'
@@ -213,7 +213,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                   playSound.uiToggle(!isEvolutionOpen);
                   onToggleEvolution();
                 }}
-                className={`min-w-[36px] min-h-[36px] sm:min-w-[28px] sm:min-h-[28px] flex items-center justify-center rounded-lg transition-colors ${
+                className={`min-w-[40px] min-h-[40px] md:min-w-[28px] md:min-h-[28px] flex items-center justify-center rounded-lg transition-colors ${
                   isEvolutionOpen
                     ? 'bg-teal-600 text-white'
                     : 'text-teal-300 hover:text-white hover:bg-slate-800'
@@ -231,7 +231,7 @@ export const GlobalResourceTracker: React.FC<GlobalResourceTrackerProps> = ({
                 playSound.uiToggle(!isExpanded);
                 setIsExpanded(!isExpanded);
               }}
-              className="min-w-[36px] min-h-[36px] sm:min-w-[26px] sm:min-h-[26px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="min-w-[40px] min-h-[40px] md:min-w-[26px] md:min-h-[26px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               title={isExpanded ? t.hud.dockCollapse : t.hud.dockExpand}
               aria-label={isExpanded ? t.hud.dockCollapse : t.hud.dockExpand}
               aria-expanded={isExpanded}

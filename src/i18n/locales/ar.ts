@@ -86,7 +86,7 @@ export const ar: TranslationDict = {
     localAchievements: 'الإنجازات المحلية',
     configWeather3d: 'إعدادات الطقس ثلاثي الأبعاد',
     hintBar:
-      'Space / Enter بدء · كاميرا ثلاثية الأبعاد · شرح صوتي (مفتاح T) · سباق 20 جولة',
+      'Space / Enter بدء · كاميرا ثلاثية الأبعاد · جولة تفاعلية (مفتاح T) · سباق 20 جولة',
     muteAudio: 'كتم الصوت',
     enableAudio: 'تفعيل الصوت',
     accessibilityBtn: 'إمكانية الوصول',
@@ -142,10 +142,10 @@ export const ar: TranslationDict = {
     diffDescComunlandia:
       'على أعتاب يوتوبيا المشاع، لكن 3 مضاربين يهاجمون بشراسة!',
     speculatorsTitle: 'المضاربون',
-    voiceTutorialTitle: 'جولة تعليمية صوتية عند البدء',
+    voiceTutorialTitle: 'جولة تعليمية تفاعلية عند البدء',
     recommended: 'موصى به',
     voiceTutorialDesc:
-      'فعّل السرد الصوتي التفاعلي لتعلم الآليات الأساسية خطوة بخطوة.',
+      'فعّل الدليل المرئي التفاعلي لتعلم الآليات الأساسية خطوة بخطوة.',
     narrativeVoiceLabel: 'صوت الراوي التعليمي (8 شخصيات + الأغورا):',
     weatherCardTitle: 'الطقس الديناميكي والتأثير البصري ثلاثي الأبعاد',
     weatherCardDesc:

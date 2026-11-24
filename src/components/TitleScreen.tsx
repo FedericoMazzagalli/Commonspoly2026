@@ -95,8 +95,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   const savedTimeText = savedGameMeta ? formatSavedTimestamp(savedGameMeta.savedAt) : '';
 
   return (
-    <div className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden select-none bg-gradient-to-b from-slate-950/80 via-slate-900/60 to-slate-950/90 pointer-events-auto">
-      <div className="min-h-full w-full flex flex-col items-center justify-between gap-6 p-4 sm:p-6 md:p-10 text-center text-slate-100">
+    <div className="absolute inset-0 z-20 overflow-y-auto overflow-x-hidden overscroll-contain-y select-none bg-gradient-to-b from-slate-950/80 via-slate-900/60 to-slate-950/90 pointer-events-auto">
+      <div className="min-h-full w-full flex flex-col items-center justify-between gap-6 p-4 sm:p-6 md:p-10 pt-safe pb-safe px-safe text-center text-slate-100">
       
       {/* Top Tagline & Audio / PWA / Accessibility Toggles */}
       <div className="w-full flex items-center justify-between gap-2 pt-1 flex-wrap">

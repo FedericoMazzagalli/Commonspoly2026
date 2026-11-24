@@ -86,7 +86,7 @@ export const eu: TranslationDict = {
     localAchievements: 'Tokiko Lorpenak',
     configWeather3d: '3D Klima Konfiguratu',
     hintBar:
-      'Zuriunea / Enter Hasi · 3D Kamera · Ahots Tutoretza (T Tekla) · 20 Txandako Lasterketa',
+      'Zuriunea / Enter Hasi · 3D Kamera · Tutoretza Interaktiboa (T Tekla) · 20 Txandako Lasterketa',
     muteAudio: 'Audioa isildu',
     enableAudio: 'Audioa gaitu',
     accessibilityBtn: 'Irisgarritasuna',
@@ -142,10 +142,10 @@ export const eu: TranslationDict = {
     diffDescComunlandia:
       'Ia utopia komunala, baina 3 Espekulatzaile gogor ari dira erasoka!',
     speculatorsTitle: 'Espekulatzaileak',
-    voiceTutorialTitle: 'Ahots Bidezko Tutoretza Hasieran',
+    voiceTutorialTitle: 'Tutoretza Interaktiboa Hasieran',
     recommended: 'Gomendatua',
     voiceTutorialDesc:
-      'Gaitu ahots-narrazio interaktiboa mekanika nagusiak urratsez urrats ikasteko.',
+      'Gaitu gida bisual interaktiboa mekanika nagusiak urratsez urrats ikasteko.',
     narrativeVoiceLabel: 'Tutoretzako ahots narratiboa (8 pertsonaia + Agora):',
     weatherCardTitle: 'Klima Dinamikoa eta 3D Ikusizko Eragina',
     weatherCardDesc:

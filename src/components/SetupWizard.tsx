@@ -17,7 +17,7 @@ import {
   ChevronDown,
   CheckCircle2, 
   RefreshCw,
-  Volume2,
+  GraduationCap,
   Award,
   Box,
   CloudSun
@@ -25,7 +25,6 @@ import {
 import { OFFICIAL_CHARACTERS } from '../data/characters';
 import { SetupInitialRolls, DifficultyLevel, RulesetMode } from '../types/game';
 import { playSound } from '../utils/audio';
-import { useVoiceNarrator, NARRATIVE_PROFILES } from '../utils/voiceNarrator';
 import { Avatar3DPreview } from './Avatar3DPreview';
 import { useI18n } from '../i18n';
 import { LanguageSelector } from './hud/LanguageSelector';
@@ -49,7 +48,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const [rulesetMode, setRulesetMode] = useState<RulesetMode>('EXPANDED');
   const [enableTutorialOnStart, setEnableTutorialOnStart] = useState<boolean>(true);
   const [expandedCharId, setExpandedCharId] = useState<string | null>('carolina');
-  const voice = useVoiceNarrator();
 
   // Paso 1: Selección de jugadores
   const [selectedChars, setSelectedChars] = useState<
@@ -176,8 +174,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 bg-slate-950/90 overflow-y-auto">
-      <div className="hud-surface w-full max-w-5xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-4 sm:p-5 md:p-7 text-slate-100 my-auto">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-2.5 sm:p-4 pt-safe pb-safe bg-slate-950/90 overflow-y-auto overscroll-contain-y">
+      <div className="hud-surface w-full max-w-5xl bg-slate-900 border border-teal-800/80 rounded-2xl shadow-2xl p-4 sm:p-5 md:p-7 text-slate-100 sm:my-auto">
         
         {/* Header con pasos */}
         <div className="flex flex-col md:flex-row md:items-center justify-between pb-5 border-b border-slate-800 gap-4">
@@ -701,7 +699,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     setRulesetMode('EXPANDED');
                   }}
                   aria-pressed={rulesetMode === 'EXPANDED'}
-                  className={`p-3.5 rounded-xl border text-left transition-all space-y-1 ${
+                  className={`min-h-[44px] p-3.5 rounded-xl border text-left transition-all space-y-1 ${
                     rulesetMode === 'EXPANDED'
                       ? 'bg-teal-950/60 border-teal-500 text-white shadow-md'
                       : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:border-slate-600'
@@ -723,12 +721,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               </div>
             </div>
 
-            {/* Checkbox para activar tutorial de onboarding con voz al iniciar */}
+            {/* Checkbox para activar tutorial interactivo al iniciar */}
             <div className="p-3.5 rounded-xl bg-teal-950/40 border border-teal-800/60 flex flex-col gap-3 shadow-md">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-teal-900/60 border border-teal-700/50 text-teal-300 shrink-0">
-                    <Volume2 className="w-4 h-4" />
+                    <GraduationCap className="w-4 h-4" />
                   </div>
                   <div>
                     <div className="text-xs font-bold text-white flex items-center gap-2">
@@ -751,50 +749,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   />
                 </label>
               </div>
-
-              {enableTutorialOnStart && (
-                <div className="pt-2.5 border-t border-teal-800/40 flex flex-col gap-2 text-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <span className="text-[11px] text-teal-300/90 font-semibold">
-                      {t.setup.narrativeVoiceLabel}
-                    </span>
-                    <span className="text-[10px] text-slate-400">
-                      <strong className="text-white">{voice.currentProfile.name}</strong> · {voice.currentProfile.tagline}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {NARRATIVE_PROFILES.map((p) => {
-                      const isSelected = voice.currentProfileId === p.id;
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => {
-                            playSound.uiClick();
-                            voice.setProfile(p.id);
-                          }}
-                          style={{
-                            borderColor: isSelected ? p.colorHex : undefined,
-                            boxShadow: isSelected ? `0 0 10px ${p.colorHex}45` : undefined
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
-                            isSelected
-                              ? 'bg-slate-900 text-white'
-                              : 'bg-slate-900/70 text-slate-300 border-slate-700 hover:text-white hover:border-slate-500'
-                          }`}
-                          title={`${p.characterArchetype} — ${p.tagline}`}
-                        >
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: p.colorHex }}
-                          />
-                          <span>{p.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
             {onOpenWeatherSettings && (
               <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-3">

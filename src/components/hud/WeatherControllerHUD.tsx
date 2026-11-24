@@ -154,11 +154,11 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
         </button>
 
         {/* Acceso rápido a modos climáticos en barra compacta */}
-        <div className="flex items-center gap-1 pl-1">
+        <div className="flex items-center gap-1 pl-1 shrink-0">
           <button
             type="button"
             onClick={() => handleSelectMode('AUTO')}
-            className={`p-1 rounded-lg transition-colors ${
+            className={`min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center p-1.5 md:p-1 rounded-lg transition-colors ${
               condition.mode === 'AUTO'
                 ? 'bg-teal-700 text-white shadow-sm'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -172,7 +172,7 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
           <button
             type="button"
             onClick={() => handleSelectMode('RAIN')}
-            className={`p-1 rounded-lg transition-colors ${
+            className={`min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center p-1.5 md:p-1 rounded-lg transition-colors ${
               condition.mode === 'RAIN'
                 ? 'bg-cyan-700 text-white shadow-sm'
                 : 'text-slate-400 hover:text-cyan-300 hover:bg-slate-800'
@@ -186,7 +186,7 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
           <button
             type="button"
             onClick={() => handleSelectMode('SNOW')}
-            className={`p-1 rounded-lg transition-colors ${
+            className={`min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center p-1.5 md:p-1 rounded-lg transition-colors ${
               condition.mode === 'SNOW'
                 ? 'bg-sky-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-sky-200 hover:bg-slate-800'
@@ -200,7 +200,7 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
           <button
             type="button"
             onClick={() => handleSelectMode('SUNNY')}
-            className={`p-1 rounded-lg transition-colors ${
+            className={`min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center p-1.5 md:p-1 rounded-lg transition-colors ${
               condition.mode === 'SUNNY'
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-amber-300 hover:bg-slate-800'
@@ -218,7 +218,7 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
                 playSound.uiToggle(!isMeteorologicalInsightOpen);
                 onToggleMeteorologicalInsight();
               }}
-              className={`p-1 rounded-lg transition-colors ${
+              className={`min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center p-1.5 md:p-1 rounded-lg transition-colors ${
                 isMeteorologicalInsightOpen
                   ? 'bg-cyan-600 text-white shadow-sm'
                   : 'text-cyan-300 hover:text-white hover:bg-slate-800'
@@ -238,7 +238,7 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
               playSound.uiToggle(!isExpanded);
               setIsExpanded(!isExpanded);
             }}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-0.5"
+            className="min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 flex items-center justify-center p-1.5 md:p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-0.5"
             title={isExpanded ? 'Ocultar opciones climáticas' : 'Detalles del clima'}
             aria-label={isExpanded ? 'Ocultar opciones climáticas' : 'Detalles del clima'}
           >
@@ -451,7 +451,7 @@ export const WeatherControllerHUD: React.FC<WeatherControllerHUDProps> = ({
                   playSound.modalOpen();
                   onOpenAdvancedWeatherSettings();
                 }}
-                className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                className="w-full min-h-[44px] md:min-h-[34px] py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
                 <span>Configuración Avanzada de Clima</span>

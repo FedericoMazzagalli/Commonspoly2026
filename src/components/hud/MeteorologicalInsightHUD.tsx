@@ -300,7 +300,7 @@ export const MeteorologicalInsightHUD: React.FC<MeteorologicalInsightHUDProps> =
             onClose();
           }}
           ariaLabel="Meteorological Insight - Análisis Climático Estratégico"
-          className="pointer-events-auto fixed top-16 right-3 md:right-6 z-30 w-[26rem] sm:w-[32rem] max-w-[94vw] max-h-[calc(100vh-10rem)] overflow-y-auto bg-slate-900/95 border border-cyan-700/70 rounded-2xl shadow-2xl p-4 text-slate-100 select-none space-y-3.5"
+          className="pointer-events-auto fixed inset-x-0 bottom-0 top-auto md:inset-x-auto md:top-16 md:right-6 md:bottom-auto z-40 w-full md:w-[32rem] max-w-full md:max-w-[94vw] max-h-[84dvh] md:max-h-[calc(100dvh-10rem)] overflow-y-auto overscroll-contain-y bg-slate-900/95 border border-cyan-700/70 rounded-t-3xl md:rounded-2xl shadow-2xl p-4 pb-safe text-slate-100 select-none space-y-3.5"
         >
           {/* Cabecera */}
           <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800">

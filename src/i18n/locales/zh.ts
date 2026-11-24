@@ -86,7 +86,7 @@ export const zh: TranslationDict = {
     localAchievements: '本地成就',
     configWeather3d: '3D 天气设置',
     hintBar:
-      '空格 / Enter 开始 · 3D 视角 · 语音教程 (T 键) · 20 回合限时合作',
+      '空格 / Enter 开始 · 3D 视角 · 交互式教程 (T 键) · 20 回合限时合作',
     muteAudio: '静音',
     enableAudio: '开启音频',
     accessibilityBtn: '无障碍',
@@ -142,10 +142,10 @@ export const zh: TranslationDict = {
     diffDescComunlandia:
       '接近共享理想国，但 3 名投机者正疯狂反扑！',
     speculatorsTitle: '投机者',
-    voiceTutorialTitle: '开局语音引导教程',
+    voiceTutorialTitle: '开局交互式新手教程',
     recommended: '推荐',
     voiceTutorialDesc:
-      '开局启用交互式语音讲解，一步步熟悉核心机制。',
+      '开局启用交互式图文引导，一步步熟悉核心机制。',
     narrativeVoiceLabel: '教程解说音色 (8 位角色 + 广场):',
     weatherCardTitle: '动态天气与 3D 视觉影响',
     weatherCardDesc:

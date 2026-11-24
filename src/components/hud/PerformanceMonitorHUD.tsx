@@ -134,7 +134,7 @@ export const PerformanceMonitorHUD: React.FC<PerformanceMonitorHUDProps> = ({
           onSwipeDismiss={onClose}
           role="region"
           ariaLabel={t.perf.title}
-          className="pointer-events-auto fixed left-3 right-3 sm:left-auto sm:right-6 top-16 sm:top-20 z-40 sm:w-80 bg-slate-950 border border-teal-700/80 rounded-2xl shadow-2xl text-slate-100 overflow-hidden"
+          className="pointer-events-auto fixed inset-x-0 bottom-0 top-auto md:inset-x-auto md:right-6 md:top-20 md:bottom-auto z-40 w-full md:w-80 max-h-[80dvh] overflow-y-auto bg-slate-950 border border-teal-700/80 rounded-t-3xl md:rounded-2xl shadow-2xl text-slate-100 pb-safe"
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-800 bg-slate-900">

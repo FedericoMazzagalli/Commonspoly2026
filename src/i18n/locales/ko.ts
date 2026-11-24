@@ -86,7 +86,7 @@ export const ko: TranslationDict = {
     localAchievements: '로컬 업적',
     configWeather3d: '3D 날씨 설정',
     hintBar:
-      'Space / Enter 시작 · 3D 카메라 · 음성 튜토리얼 (T키) · 20라운드 시간 제한 레이스',
+      'Space / Enter 시작 · 3D 카메라 · 인터랙티브 튜토리얼 (T키) · 20라운드 시간 제한 레이스',
     muteAudio: '오디오 음소거',
     enableAudio: '오디오 켜기',
     accessibilityBtn: '접근성',
@@ -142,10 +142,10 @@ export const ko: TranslationDict = {
     diffDescComunlandia:
       '공유 유토피아에 가까우나, 투기꾼 3명이 거세게 노립니다!',
     speculatorsTitle: '투기꾼',
-    voiceTutorialTitle: '시작 시 음성 가이드 튜토리얼',
+    voiceTutorialTitle: '시작 시 인터랙티브 튜토리얼',
     recommended: '권장',
     voiceTutorialDesc:
-      '시작 시 대화형 음성 내레이션을 켜서 핵심 규칙을 단계별로 배웁니다.',
+      '시작 시 단계별 인터랙티브 가이드를 켜서 핵심 규칙을 배웁니다.',
     narrativeVoiceLabel: '튜토리얼 내레이터 (8캐릭터 + 아고라):',
     weatherCardTitle: '동적 날씨 및 3D 시각 효과',
     weatherCardDesc:

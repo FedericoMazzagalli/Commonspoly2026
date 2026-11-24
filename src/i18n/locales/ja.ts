@@ -86,7 +86,7 @@ export const ja: TranslationDict = {
     localAchievements: 'ローカル実績',
     configWeather3d: '3D天候設定',
     hintBar:
-      'Space / Enter 開始 · 3Dカメラ · 音声チュートリアル (Tキー) · 20ラウンドのタイムアタック',
+      'Space / Enter 開始 · 3Dカメラ · インタラクティブチュートリアル (Tキー) · 20ラウンドのタイムアタック',
     muteAudio: '音声をミュート',
     enableAudio: '音声を有効化',
     accessibilityBtn: 'アクセシビリティ',
@@ -142,10 +142,10 @@ export const ja: TranslationDict = {
     diffDescComunlandia:
       '共生の理想郷目前ですが、投機家3体が激しく妨害！',
     speculatorsTitle: '投機家',
-    voiceTutorialTitle: '開始時の音声ガイドチュートリアル',
+    voiceTutorialTitle: '開始時のインタラクティブチュートリアル',
     recommended: '推奨',
     voiceTutorialDesc:
-      '開始時に対話型の音声ナレーションを有効にして、基本ルールを段階的に学びます。',
+      '開始時にステップ形式のインタラクティブガイドを有効にして、基本ルールを学びます。',
     narrativeVoiceLabel: 'チュートリアル音声 (8キャラ + アゴラ):',
     weatherCardTitle: 'ダイナミック天候と3D演出',
     weatherCardDesc:

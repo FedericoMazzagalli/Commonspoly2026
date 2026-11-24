@@ -86,7 +86,7 @@ export const nl: TranslationDict = {
     localAchievements: 'Lokale Prestaties',
     configWeather3d: '3D Weerinstellingen',
     hintBar:
-      'Spatie / Enter Start · 3D Camera · Spraaktutorial (Toets T) · Race van 20 Ronden',
+      'Spatie / Enter Start · 3D Camera · Interactieve Tutorial (Toets T) · Race van 20 Ronden',
     muteAudio: 'Geluid dempen',
     enableAudio: 'Geluid inschakelen',
     accessibilityBtn: 'Toegankelijkheid',
@@ -142,10 +142,10 @@ export const nl: TranslationDict = {
     diffDescComunlandia:
       'Bijna gemeenschappelijke utopie, maar 3 Speculanten jagen fel!',
     speculatorsTitle: 'Speculanten',
-    voiceTutorialTitle: 'Begeleide Spraaktutorial bij Start',
+    voiceTutorialTitle: 'Interactieve Tutorial bij Start',
     recommended: 'Aanbevolen',
     voiceTutorialDesc:
-      'Schakel interactieve spraakbegeleiding in om de kernmechanieken stap voor stap te leren.',
+      'Schakel de interactieve visuele gids in om de kernmechanieken stap voor stap te leren.',
     narrativeVoiceLabel: 'Tutorial-vertelstem (8 personages + Agora):',
     weatherCardTitle: 'Dynamisch Weer & 3D Visuele Impact',
     weatherCardDesc:

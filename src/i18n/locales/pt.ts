@@ -86,7 +86,7 @@ export const pt: TranslationDict = {
     localAchievements: 'Conquistas Locais',
     configWeather3d: 'Configurar Clima 3D',
     hintBar:
-      'Espaço / Enter Iniciar · Câmara 3D · Tutorial com Voz (Tecla T) · 20 Rondas contra o Tempo',
+      'Espaço / Enter Iniciar · Câmara 3D · Tutorial Interativo (Tecla T) · 20 Rondas contra o Tempo',
     muteAudio: 'Silenciar áudio',
     enableAudio: 'Ativar áudio',
     accessibilityBtn: 'Acessibilidade',
@@ -139,10 +139,10 @@ export const pt: TranslationDict = {
     diffDescTransition: 'Sociedade mista de bens públicos e comuns. 2 Especuladores!',
     diffDescComunlandia: 'Perto da utopia, mas 3 Especuladores à espreita!',
     speculatorsTitle: 'Especuladores',
-    voiceTutorialTitle: 'Tutorial Guiado por Voz',
+    voiceTutorialTitle: 'Tutorial Interativo ao Iniciar',
     recommended: 'Recomendado',
     voiceTutorialDesc:
-      'Ativa a narração por voz interativa ao iniciar para explicar as mecânicas.',
+      'Ativa o guia visual interativo ao iniciar para explicar as mecânicas.',
     narrativeVoiceLabel: 'Voz narrativa do tutorial:',
     weatherCardTitle: 'Clima Dinâmico e Impacto Visual 3D',
     weatherCardDesc: 'Ajusta a frequência dos eventos meteorológicos e intensidade 3D.',

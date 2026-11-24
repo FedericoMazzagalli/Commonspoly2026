@@ -106,7 +106,7 @@ export const TileInspectorHUD: React.FC<TileInspectorHUDProps> = ({
         onSwipeDismiss={onClose}
         role="region"
         ariaLabel={t('tileInspector.ariaPrefix', { name: activeTile.name })}
-        className="pointer-events-auto fixed bottom-28 md:bottom-24 left-1/2 -translate-x-1/2 z-30 w-[92vw] max-w-sm bg-slate-900/95 border border-teal-700/70 rounded-2xl px-4 py-3 text-slate-100"
+        className="pointer-events-auto fixed bottom-48 sm:bottom-40 md:bottom-24 left-1/2 -translate-x-1/2 z-30 w-[92vw] max-w-sm bg-slate-900/95 border border-teal-700/70 rounded-2xl px-4 py-3 text-slate-100"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">

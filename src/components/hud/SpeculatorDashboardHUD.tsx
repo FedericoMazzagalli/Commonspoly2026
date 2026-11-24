@@ -120,7 +120,7 @@ export const SpeculatorDashboardHUD: React.FC<SpeculatorDashboardHUDProps> = ({
           onSwipeDismiss={onClose}
           role="dialog"
           ariaLabel={t.hud.specDashboardTitle ?? 'Balance y Capacidad de Especuladores'}
-          className="pointer-events-auto fixed inset-x-3 sm:inset-x-auto sm:right-6 top-16 sm:top-20 bottom-20 sm:bottom-auto z-40 sm:w-[480px] sm:max-h-[calc(100vh-11rem)] flex flex-col bg-slate-950 border border-rose-700/75 rounded-2xl shadow-2xl text-slate-100 overflow-hidden"
+          className="pointer-events-auto fixed inset-x-0 bottom-0 top-auto md:inset-x-auto md:right-6 md:top-20 md:bottom-auto z-40 w-full md:w-[480px] max-h-[84dvh] md:max-h-[calc(100dvh-11rem)] flex flex-col bg-slate-950 border border-rose-700/75 rounded-t-3xl md:rounded-2xl shadow-2xl text-slate-100 overflow-hidden overscroll-contain-y pb-safe"
         >
           {/* Cabecera */}
           <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900 shrink-0">

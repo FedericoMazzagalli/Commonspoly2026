@@ -1466,7 +1466,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion={accessibilitySettings.reducedMotionOverride ? 'always' : 'user'}>
-    <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans">
+    <div className="relative w-full h-[100dvh] overflow-hidden bg-slate-950 font-sans">
       
       {/* 1. THREE.JS 3D BOARD VIEWPORT (100% full-bleed) */}
       <CommonspolyBoard3D

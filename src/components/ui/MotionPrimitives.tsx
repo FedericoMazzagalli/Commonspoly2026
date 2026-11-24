@@ -5,7 +5,8 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { animate, motion, useMotionValue } from 'motion/react';
+import { AnimatePresence, animate, motion, useMotionValue } from 'motion/react';
+import { X } from 'lucide-react';
 
 export const HUD_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -298,19 +299,37 @@ interface ModalFrameProps {
 }
 
 /**
- * Envuelve un modal completo (telón + tarjeta centrada) con transiciones fluidas
- * únicamente sobre opacity y transform, compatible con AnimatePresence y Reduced Motion.
+ * Envuelve un modal completo (telón + tarjeta) con transiciones fluidas sobre opacity y transform.
+ * En móviles (< 640px) adopta ergonomía de hoja inferior (bottom-sheet) con bordes redondeados arriba
+ * y cierre por deslizamiento cuando `onBackdropClick` está definido.
  */
 export const ModalFrame: React.FC<ModalFrameProps> = ({
   children,
   className = '',
-  backdropClassName = 'fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/82 overflow-y-auto pointer-events-auto',
+  backdropClassName = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/82 overflow-y-auto pointer-events-auto',
   role = 'dialog',
   ariaLabel,
   ariaLabelledBy,
   onBackdropClick
 }) => {
   const reduced = isReducedMotionActive();
+  const { swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
+    direction: 'down',
+    enabled: Boolean(onBackdropClick),
+    resetOnDismiss: true,
+    onDismiss: onBackdropClick
+  });
+
+  const normalizedBackdropClass = backdropClassName
+    .replace(/\bitems-center\b/g, 'items-end sm:items-center')
+    .replace(/\bp-3\b/g, 'p-0 sm:p-4');
+
+  const normalizedCardClass = className
+    .replace(/\brounded-2xl\b/g, 'rounded-t-3xl sm:rounded-2xl')
+    .replace(/\brounded-3xl\b/g, 'rounded-t-3xl sm:rounded-3xl')
+    .replace(/\bmy-auto\b/g, 'sm:my-auto')
+    .replace(/\bmax-h-\[90vh\]\b/g, 'max-h-[90dvh]')
+    .replace(/\bmax-h-\[88vh\]\b/g, 'max-h-[90dvh]');
 
   return (
     <motion.div
@@ -322,7 +341,7 @@ export const ModalFrame: React.FC<ModalFrameProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: reduced ? 0.01 : 0.16, ease: 'easeOut' }}
-      className={backdropClassName}
+      className={normalizedBackdropClass}
       onClick={(e) => {
         if (onBackdropClick && e.target === e.currentTarget) {
           onBackdropClick();
@@ -330,16 +349,170 @@ export const ModalFrame: React.FC<ModalFrameProps> = ({
       }}
     >
       <motion.div
-        initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 10 }}
+        initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 20 }}
         animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-        exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 6 }}
+        exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 16 }}
         transition={{ duration: reduced ? 0.01 : 0.22, ease: HUD_EASE }}
-        className={`hud-surface ${className}`}
+        style={{ y: swipeY }}
+        className={`hud-surface relative max-h-[90dvh] overflow-y-auto overscroll-contain-y pb-safe ${touchActionClass} ${normalizedCardClass}`}
         onClick={(e) => e.stopPropagation()}
+        {...swipeHandlers}
       >
+        {onBackdropClick && (
+          <div
+            aria-hidden="true"
+            data-swipe-handle="true"
+            className="sm:hidden flex justify-center pb-2 -mt-1 cursor-grab active:cursor-grabbing"
+          >
+            <span className="w-10 h-1 rounded-full bg-slate-400/55" />
+          </div>
+        )}
         {children}
       </motion.div>
     </motion.div>
+  );
+};
+
+interface BottomSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  headerExtra?: React.ReactNode;
+  footer?: React.ReactNode;
+  zIndexClass?: string;
+  accentBorderClass?: string;
+  maxHeightClass?: string;
+  ariaLabel?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * Hoja inferior deslizable para móvil y tablet vertical con cierre táctil por swipe,
+ * barra de agarre superior, área central desplazable y safe-area inferior.
+ */
+export const BottomSheet: React.FC<BottomSheetProps> = ({
+  isOpen,
+  onClose,
+  title,
+  subtitle,
+  icon,
+  headerExtra,
+  footer,
+  zIndexClass = 'z-40',
+  accentBorderClass = 'border-teal-700/80',
+  maxHeightClass = 'max-h-[78dvh]',
+  ariaLabel,
+  children
+}) => {
+  const reduced = isReducedMotionActive();
+  const { swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
+    direction: 'down',
+    enabled: isOpen,
+    resetOnDismiss: true,
+    onDismiss: onClose
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label={ariaLabel ?? title}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: reduced ? 0.01 : 0.16, ease: 'easeOut' }}
+          className={`fixed inset-0 ${zIndexClass} bg-slate-950/65 flex items-end justify-center pointer-events-auto`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              onClose();
+            }
+          }}
+        >
+          <motion.section
+            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 28 }}
+            animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, y: 24 }}
+            transition={{ duration: reduced ? 0.01 : 0.22, ease: HUD_EASE }}
+            style={{ y: swipeY }}
+            onClick={(e) => e.stopPropagation()}
+            className={`hud-surface w-full max-w-2xl bg-slate-900 border-t border-x ${accentBorderClass} rounded-t-3xl shadow-2xl flex flex-col overflow-hidden text-slate-100 ${maxHeightClass} pb-safe ${touchActionClass}`}
+            {...swipeHandlers}
+          >
+            {/* Barra de agarre táctil */}
+            <div
+              aria-hidden="true"
+              data-swipe-handle="true"
+              className="w-full flex justify-center pt-2.5 pb-1.5 cursor-grab active:cursor-grabbing shrink-0"
+            >
+              <span className="w-10 h-1 rounded-full bg-slate-400/55" />
+            </div>
+
+            {/* Cabecera */}
+            <div
+              data-swipe-handle="true"
+              className="px-4 pb-2.5 border-b border-slate-800/90 flex items-center justify-between gap-2 shrink-0"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                {icon && (
+                  <div className="p-2 rounded-xl bg-slate-950 border border-slate-800 shrink-0">
+                    {icon}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="hud-heading text-sm font-extrabold text-white truncate">
+                    {title}
+                  </h3>
+                  {subtitle && (
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {subtitle}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {headerExtra}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                  aria-label="Cerrar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido desplazable */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain-y px-4 py-3">
+              {children}
+            </div>
+
+            {/* Pie opcional fijo */}
+            {footer && (
+              <div className="px-4 py-2.5 border-t border-slate-800/90 bg-slate-950/80 shrink-0">
+                {footer}
+              </div>
+            )}
+          </motion.section>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 
@@ -413,9 +586,10 @@ export const HudPanelMotion: React.FC<HudPanelMotionProps> = ({
       {onSwipeDismiss && showMobileSwipeHandle && (
         <div
           aria-hidden="true"
-          className="sm:hidden pointer-events-none absolute top-1 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center"
+          data-swipe-handle="true"
+          className="md:hidden pointer-events-none absolute top-1.5 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center"
         >
-          <span className="w-9 h-1 rounded-full bg-slate-400/55" />
+          <span className="w-10 h-1 rounded-full bg-slate-400/55" />
         </div>
       )}
       {children}

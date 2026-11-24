@@ -86,7 +86,7 @@ export const en: TranslationDict = {
     localAchievements: 'Local Achievements',
     configWeather3d: '3D Weather Settings',
     hintBar:
-      'Space / Enter Start · 3D Camera · Voice Tutorial (Key T) · 20-Round Race Against Time',
+      'Space / Enter Start · 3D Camera · Interactive Tutorial (Key T) · 20-Round Race Against Time',
     muteAudio: 'Mute audio',
     enableAudio: 'Enable audio',
     accessibilityBtn: 'Accessibility',
@@ -142,10 +142,10 @@ export const en: TranslationDict = {
     diffDescComunlandia:
       'Near communal utopia, yet 3 Speculators are fiercely prowling!',
     speculatorsTitle: 'Speculators',
-    voiceTutorialTitle: 'Guided Voice Onboarding Tutorial',
+    voiceTutorialTitle: 'Interactive Onboarding Tutorial',
     recommended: 'Recommended',
     voiceTutorialDesc:
-      'Enable interactive voice narration on start to learn core mechanics step by step.',
+      'Enable the interactive step-by-step visual guide on start to learn core mechanics.',
     narrativeVoiceLabel: 'Tutorial narrator voice (8 characters + Agora):',
     weatherCardTitle: 'Dynamic Weather & 3D Visual Impact',
     weatherCardDesc:

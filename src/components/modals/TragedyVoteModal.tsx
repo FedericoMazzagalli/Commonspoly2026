@@ -82,7 +82,7 @@ export const TragedyVoteModal: React.FC<TragedyVoteModalProps> = ({ tiles, onCon
                   <button
                     key={tile.id}
                     onClick={() => toggleSelect(tile.id)}
-                    className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between text-xs transition-all ${
+                    className={`w-full min-h-[44px] p-2.5 rounded-xl border text-left flex items-center justify-between text-xs transition-all ${
                       isSelected
                         ? 'border-red-500 bg-red-950/40 text-red-200 ring-1 ring-red-500'
                         : 'border-slate-800 bg-slate-800/50 text-slate-300 hover:bg-slate-800'

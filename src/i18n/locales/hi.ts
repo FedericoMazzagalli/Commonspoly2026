@@ -86,7 +86,7 @@ export const hi: TranslationDict = {
     localAchievements: 'स्थानीय उपलब्धियाँ',
     configWeather3d: '3D मौसम सेटिंग्स',
     hintBar:
-      'Space / Enter शुरू · 3D कैमरा · वॉइस ट्यूटोरियल (T कुंजी) · 20-राउंड की समय दौड़',
+      'Space / Enter शुरू · 3D कैमरा · इंटरैक्टिव ट्यूटोरियल (T कुंजी) · 20-राउंड की समय दौड़',
     muteAudio: 'ऑडियो म्यूट करें',
     enableAudio: 'ऑडियो चालू करें',
     accessibilityBtn: 'सुगम्यता',
@@ -142,10 +142,10 @@ export const hi: TranslationDict = {
     diffDescComunlandia:
       'साझा यूटोपिया के करीब, लेकिन 3 सट्टेबाज आक्रामक हैं!',
     speculatorsTitle: 'सट्टेबाज',
-    voiceTutorialTitle: 'शुरुआत में निर्देशित वॉइस ट्यूटोरियल',
+    voiceTutorialTitle: 'शुरुआत में इंटरैक्टिव ट्यूटोरियल',
     recommended: 'अनुशंसित',
     voiceTutorialDesc:
-      'मुख्य नियमों को चरण-दर-चरण सीखने के लिए इंटरैक्टिव वॉइस नरेशन सक्षम करें।',
+      'मुख्य नियमों को चरण-दर-चरण सीखने के लिए इंटरैक्टिव विज़ुअल गाइड सक्षम करें।',
     narrativeVoiceLabel: 'ट्यूटोरियल कथावाचक (8 पात्र + अगोरा):',
     weatherCardTitle: 'गतिशील मौसम और 3D दृश्य प्रभाव',
     weatherCardDesc:

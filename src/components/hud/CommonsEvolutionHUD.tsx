@@ -34,7 +34,7 @@ export const CommonsEvolutionHUD: React.FC<CommonsEvolutionHUDProps> = ({
             onClose();
           }}
           ariaLabel="Evolución D3 de Bienes Comunes vs Privatizados"
-          className="pointer-events-auto fixed top-16 right-3 md:right-6 z-30 w-[24rem] sm:w-[32rem] max-w-[94vw] bg-slate-900/95 border border-teal-700/70 rounded-2xl shadow-2xl p-4 text-slate-100 select-none"
+          className="pointer-events-auto fixed inset-x-0 bottom-0 top-auto md:inset-x-auto md:top-16 md:right-6 md:bottom-auto z-40 w-full md:w-[32rem] max-w-full md:max-w-[94vw] max-h-[84dvh] overflow-y-auto overscroll-contain-y bg-slate-900/95 border border-teal-700/70 rounded-t-3xl md:rounded-2xl shadow-2xl p-4 pb-safe text-slate-100 select-none"
         >
           <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-800">
             <div className="flex items-center gap-2 min-w-0">

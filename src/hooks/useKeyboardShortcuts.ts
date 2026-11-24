@@ -74,8 +74,8 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcutItem[] = [
   },
   {
     keys: ['T'],
-    label: 'Tutorial con Voz',
-    description: 'Abre o cierra el tutorial interactivo de onboarding narrado con voz.',
+    label: 'Tutorial Interactivo',
+    description: 'Abre o cierra el tutorial interactivo de onboarding.',
     category: 'MODALS'
   },
   {

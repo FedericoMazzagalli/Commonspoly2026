@@ -30,6 +30,7 @@ export interface GameChatLogProps {
   className?: string;
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
+  variant?: 'floating' | 'sheet';
 }
 
 export interface UnifiedLogItem {
@@ -54,10 +55,12 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
   state,
   className = '',
   isMinimized: controlledMinimized,
-  onToggleMinimize
+  onToggleMinimize,
+  variant = 'floating'
 }) => {
+  const isSheet = variant === 'sheet';
   const [internalMinimized, setInternalMinimized] = useState(true);
-  const isMinimized = controlledMinimized ?? internalMinimized;
+  const isMinimized = isSheet ? false : (controlledMinimized ?? internalMinimized);
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [modalViewMode, setModalViewMode] = useState<'LOGS' | 'TIMELINE'>('LOGS');
@@ -204,7 +207,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
 
   const { swipeX, swipeY, touchActionClass, swipeHandlers } = useSwipeToDismiss({
     direction: 'left',
-    enabled: !isMinimized,
+    enabled: !isSheet && !isMinimized,
     resetOnDismiss: true,
     onDismiss: () => {
       playSound.uiToggle(false);
@@ -216,15 +219,27 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
     }
   });
 
+  const shownMessages = isSheet ? filteredItems.slice(0, 25) : last5Messages;
+
   return (
     <>
       <motion.div
-        style={{ x: swipeX, y: swipeY }}
-        className={`pointer-events-auto w-full max-w-lg md:max-w-xl transition-all duration-200 select-none ${touchActionClass} ${className}`}
+        style={isSheet ? undefined : { x: swipeX, y: swipeY }}
+        className={
+          isSheet
+            ? `pointer-events-auto w-full select-none ${className}`
+            : `pointer-events-auto w-full max-w-lg md:max-w-xl transition-all duration-200 select-none ${touchActionClass} ${className}`
+        }
         aria-label="Registro de Chat y Acciones de Partida"
-        {...swipeHandlers}
+        {...(isSheet ? {} : swipeHandlers)}
       >
-        <div className="hud-surface bg-slate-900/90 border border-teal-800/60 hover:border-teal-600/70 rounded-2xl shadow-xl overflow-hidden backdrop-blur-none transition-colors">
+        <div
+          className={
+            isSheet
+              ? 'bg-slate-950/60 border border-teal-800/50 rounded-2xl overflow-hidden'
+              : 'hud-surface bg-slate-900/90 border border-teal-800/60 hover:border-teal-600/70 rounded-2xl shadow-xl overflow-hidden backdrop-blur-none transition-colors'
+          }
+        >
           
           {/* BARRA SUPERIOR / CABECERA */}
           <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950/70 border-b border-teal-900/40 gap-2">
@@ -256,11 +271,11 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                   setModalViewMode('LOGS');
                   setIsHistoryModalOpen(true);
                 }}
-                className="px-2 py-1 rounded-lg bg-teal-950/60 hover:bg-teal-900/80 text-teal-300 hover:text-white border border-teal-800/60 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                className={`${isSheet ? 'min-h-[38px] px-2.5' : 'px-2 py-1'} rounded-lg bg-teal-950/60 hover:bg-teal-900/80 text-teal-300 hover:text-white border border-teal-800/60 text-[11px] font-medium flex items-center gap-1 transition-colors`}
                 title="Abrir historial completo de la partida"
               >
                 <History className="w-3 h-3 text-teal-400" />
-                <span className="hidden xs:inline">Historial</span>
+                <span className={isSheet ? 'inline' : 'hidden xs:inline'}>Historial</span>
               </button>
 
               {/* Botón para abrir Timeline de Hitos */}
@@ -271,35 +286,37 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                   setModalViewMode('TIMELINE');
                   setIsHistoryModalOpen(true);
                 }}
-                className="px-2 py-1 rounded-lg bg-teal-950/60 hover:bg-teal-900/80 text-amber-300 hover:text-white border border-amber-800/60 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                className={`${isSheet ? 'min-h-[38px] px-2.5' : 'px-2 py-1'} rounded-lg bg-teal-950/60 hover:bg-teal-900/80 text-amber-300 hover:text-white border border-amber-800/60 text-[11px] font-medium flex items-center gap-1 transition-colors`}
                 title="Abrir Timeline de la partida con hitos clave"
               >
                 <Milestone className="w-3 h-3 text-amber-400" />
-                <span className="hidden xs:inline">Timeline</span>
+                <span className={isSheet ? 'inline' : 'hidden xs:inline'}>Timeline</span>
               </button>
 
               {/* Botón de Colapsar / Expandir */}
-              <button
-                type="button"
-                onClick={() => {
-                  playSound.uiToggle(isMinimized);
-                  if (onToggleMinimize) {
-                    onToggleMinimize();
-                  } else {
-                    setInternalMinimized(prev => !prev);
-                  }
-                }}
-                aria-expanded={!isMinimized}
-                className="min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                title={isMinimized ? 'Expandir últimos 5 mensajes' : 'Minimizar registro'}
-                aria-label={isMinimized ? 'Expandir últimos 5 mensajes' : 'Minimizar registro'}
-              >
-                {isMinimized ? (
-                  <ChevronDown className="w-4 h-4" />
-                ) : (
-                  <ChevronUp className="w-4 h-4" />
-                )}
-              </button>
+              {!isSheet && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSound.uiToggle(isMinimized);
+                    if (onToggleMinimize) {
+                      onToggleMinimize();
+                    } else {
+                      setInternalMinimized(prev => !prev);
+                    }
+                  }}
+                  aria-expanded={!isMinimized}
+                  className="min-w-[44px] min-h-[44px] sm:min-w-[32px] sm:min-h-[32px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title={isMinimized ? 'Expandir últimos 5 mensajes' : 'Minimizar registro'}
+                  aria-label={isMinimized ? 'Expandir últimos 5 mensajes' : 'Minimizar registro'}
+                >
+                  {isMinimized ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronUp className="w-4 h-4" />
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -315,7 +332,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                     playSound.uiClick();
                     setFilter('ALL');
                   }}
-                  className={`px-2 py-0.5 rounded-md font-medium transition-colors shrink-0 ${
+                  className={`${isSheet ? 'min-h-[38px] px-2.5' : 'px-2 py-0.5'} rounded-md font-medium transition-colors shrink-0 ${
                     filter === 'ALL'
                       ? 'bg-teal-700 text-white font-bold'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
@@ -330,7 +347,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                     playSound.uiClick();
                     setFilter('BOTS');
                   }}
-                  className={`px-2 py-0.5 rounded-md font-medium transition-colors flex items-center gap-1 shrink-0 ${
+                  className={`${isSheet ? 'min-h-[38px] px-2.5' : 'px-2 py-0.5'} rounded-md font-medium transition-colors flex items-center gap-1 shrink-0 ${
                     filter === 'BOTS'
                       ? 'bg-purple-700 text-white font-bold'
                       : 'text-purple-300/80 hover:text-purple-200 hover:bg-purple-950/40'
@@ -346,7 +363,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                     playSound.uiClick();
                     setFilter('PLAYERS');
                   }}
-                  className={`px-2 py-0.5 rounded-md font-medium transition-colors flex items-center gap-1 shrink-0 ${
+                  className={`${isSheet ? 'min-h-[38px] px-2.5' : 'px-2 py-0.5'} rounded-md font-medium transition-colors flex items-center gap-1 shrink-0 ${
                     filter === 'PLAYERS'
                       ? 'bg-emerald-700 text-white font-bold'
                       : 'text-emerald-300/80 hover:text-emerald-200 hover:bg-emerald-950/40'
@@ -362,7 +379,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                     playSound.uiClick();
                     setFilter('CHAT');
                   }}
-                  className={`px-2 py-0.5 rounded-md font-medium transition-colors flex items-center gap-1 shrink-0 ${
+                  className={`${isSheet ? 'min-h-[38px] px-2.5' : 'px-2 py-0.5'} rounded-md font-medium transition-colors flex items-center gap-1 shrink-0 ${
                     filter === 'CHAT'
                       ? 'bg-sky-700 text-white font-bold'
                       : 'text-sky-300/80 hover:text-sky-200 hover:bg-sky-950/40'
@@ -373,14 +390,14 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                 </button>
               </div>
 
-              {/* LISTA DE LOS ÚLTIMOS 5 MENSAJES */}
-              <div className="flex flex-col gap-1.5">
-                {last5Messages.length === 0 ? (
+              {/* LISTA DE LOS ÚLTIMOS MENSAJES */}
+              <div className={`flex flex-col gap-1.5 ${isSheet ? 'max-h-[42dvh] overflow-y-auto overscroll-contain-y pr-0.5' : ''}`}>
+                {shownMessages.length === 0 ? (
                   <div className="py-3 px-3 rounded-xl bg-slate-950/40 border border-slate-800/60 text-center text-xs text-slate-400 italic">
                     Sin eventos recientes para este filtro.
                   </div>
                 ) : (
-                  last5Messages.map((item, index) => (
+                  shownMessages.map((item, index) => (
                     <div
                       key={item.id}
                       className={`group flex items-start gap-2 px-2.5 py-1.5 rounded-xl border text-xs transition-all ${
@@ -455,24 +472,32 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
 
       {/* MODAL / DRAWER: HISTORIAL COMPLETO DE ACCIONES DE BOTS Y JUGADORES */}
       {isHistoryModalOpen && (
-        <div className="fixed inset-0 z-50 pointer-events-auto flex items-center justify-center p-3 sm:p-4 bg-slate-950/88 animate-fadeIn">
-          <div className="relative w-full max-w-2xl bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden text-slate-100">
+        <div
+          className="fixed inset-0 z-[85] pointer-events-auto flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/88 animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              playSound.modalClose();
+              setIsHistoryModalOpen(false);
+            }
+          }}
+        >
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-teal-700/80 rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden text-slate-100 pb-safe">
             
             {/* Cabecera del modal */}
             <div className="flex flex-col gap-2.5 px-4 py-3 bg-slate-950/90 border-b border-teal-800/60">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-xl bg-teal-950 border border-teal-800 text-teal-400">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-1.5 rounded-xl bg-teal-950 border border-teal-800 text-teal-400 shrink-0">
                     <History className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
-                      Historial y Timeline de la Partida
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-800 font-mono tabular-nums">
+                  <div className="min-w-0">
+                    <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2 flex-wrap">
+                      <span className="truncate">Historial y Timeline de la Partida</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-800 font-mono tabular-nums shrink-0">
                         {unifiedItems.length} registros
                       </span>
                     </h2>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] text-slate-400 truncate">
                       Registro cronológico de hitos clave, chat cooperativo y acciones
                     </p>
                   </div>
@@ -484,8 +509,9 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                     playSound.modalClose();
                     setIsHistoryModalOpen(false);
                   }}
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  className="min-w-[44px] min-h-[44px] sm:min-w-[34px] sm:min-h-[34px] flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
                   title="Cerrar historial"
+                  aria-label="Cerrar historial"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -727,7 +753,7 @@ export const GameChatLog: React.FC<GameChatLogProps> = ({
                   playSound.modalClose();
                   setIsHistoryModalOpen(false);
                 }}
-                className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs transition-colors"
+                className="min-h-[44px] sm:min-h-[34px] px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs transition-colors"
               >
                 Cerrar
               </button>

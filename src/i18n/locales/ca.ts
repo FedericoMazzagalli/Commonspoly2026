@@ -86,7 +86,7 @@ export const ca: TranslationDict = {
     localAchievements: 'Assoliments Locals',
     configWeather3d: 'Configurar Clima 3D',
     hintBar:
-      'Espai / Enter Iniciar · Càmera 3D · Tutorial amb Veu (Tecla T) · Cursa de 20 Rondes',
+      'Espai / Enter Iniciar · Càmera 3D · Tutorial Interactiu (Tecla T) · Cursa de 20 Rondes',
     muteAudio: 'Silenciar àudio',
     enableAudio: 'Activar àudio',
     accessibilityBtn: 'Accessibilitat',
@@ -142,10 +142,10 @@ export const ca: TranslationDict = {
     diffDescComunlandia:
       'Gairebé utopia comunal, però 3 Especuladors assetgen amb força!',
     speculatorsTitle: 'Especuladors',
-    voiceTutorialTitle: 'Tutorial Guiat per Veu en Començar',
+    voiceTutorialTitle: 'Tutorial Interactiu en Començar',
     recommended: 'Recomanat',
     voiceTutorialDesc:
-      'Activa la narració interactiva per aprendre les mecàniques clau pas a pas.',
+      'Activa la guia visual interactiva per aprendre les mecàniques clau pas a pas.',
     narrativeVoiceLabel: 'Veu narrativa del tutorial (8 personatges + Àgora):',
     weatherCardTitle: 'Clima Dinàmic i Impacte Visual 3D',
     weatherCardDesc:

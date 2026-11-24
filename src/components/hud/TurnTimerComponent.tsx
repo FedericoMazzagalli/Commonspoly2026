@@ -20,6 +20,7 @@ interface TurnTimerComponentProps {
   phase: GamePhase;
   isPausedByOverlay: boolean;
   durationSeconds?: number;
+  compact?: boolean;
   onTimeout: () => void;
 }
 
@@ -30,6 +31,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
   phase,
   isPausedByOverlay,
   durationSeconds = 60,
+  compact = false,
   onTimeout
 }) => {
   const { t } = useTranslation();
@@ -146,7 +148,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
           ? { duration: isCritical ? 0.85 : 1.4, repeat: Infinity, ease: 'easeInOut' }
           : { duration: 0.2 }
       }
-      className={`pointer-events-auto flex items-center gap-2.5 px-3 py-1.5 rounded-2xl border text-xs transition-colors ${
+      className={`pointer-events-auto flex items-center ${compact ? 'gap-2 px-2.5 py-1 min-h-[44px]' : 'gap-2.5 px-3 py-1.5'} rounded-2xl border text-xs transition-colors ${
         isCritical
           ? 'bg-rose-950/90 border-rose-500/80 text-rose-100'
           : isWarning
@@ -155,8 +157,8 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
       }`}
     >
       {/* Anillo SVG de cuenta regresiva */}
-      <div className="relative w-9 h-9 flex items-center justify-center shrink-0">
-        <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
+      <div className="relative w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center shrink-0">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36" aria-hidden="true">
           <circle
             cx="18"
             cy="18"
@@ -191,7 +193,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
       </div>
 
       {/* Etiqueta y barra de progreso */}
-      <div className="flex flex-col min-w-[96px] gap-1">
+      <div className={`flex flex-col gap-1 ${compact ? 'min-w-[74px]' : 'min-w-[96px]'}`}>
         <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold leading-none whitespace-nowrap">
           <span className="flex items-center gap-1">
             {isCritical || isWarning ? (
@@ -236,7 +238,7 @@ export const TurnTimerComponent: React.FC<TurnTimerComponentProps> = ({
             playSound.uiToggle(isManualPaused);
             setIsManualPaused(p => !p);
           }}
-          className="p-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors shrink-0"
+          className="min-w-[36px] min-h-[36px] sm:min-w-[30px] sm:min-h-[30px] flex items-center justify-center rounded-xl bg-slate-950/70 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors shrink-0"
           title={isManualPaused ? t('turnTimer.resumeTimer') : t('turnTimer.pauseTimer')}
           aria-label={isManualPaused ? t('turnTimer.resumeAria') : t('turnTimer.pauseAria')}
         >

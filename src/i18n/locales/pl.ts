@@ -86,7 +86,7 @@ export const pl: TranslationDict = {
     localAchievements: 'Lokalne Osiągnięcia',
     configWeather3d: 'Ustawienia Pogody 3D',
     hintBar:
-      'Spacja / Enter Start · Kamera 3D · Samouczek Głosowy (Klawisz T) · Wyścig 20 Rund',
+      'Spacja / Enter Start · Kamera 3D · Interaktywny Samouczek (Klawisz T) · Wyścig 20 Rund',
     muteAudio: 'Wycisz dźwięk',
     enableAudio: 'Włącz dźwięk',
     accessibilityBtn: 'Dostępność',
@@ -142,10 +142,10 @@ export const pl: TranslationDict = {
     diffDescComunlandia:
       'Blisko komunalnej utopii, ale 3 Spekulantów agresywnie poluje!',
     speculatorsTitle: 'Spekulanci',
-    voiceTutorialTitle: 'Samouczek Głosowy na Starcie',
+    voiceTutorialTitle: 'Interaktywny Samouczek na Starcie',
     recommended: 'Zalecane',
     voiceTutorialDesc:
-      'Włącz interaktywną narrację na starcie, aby krok po kroku poznać mechaniki gry.',
+      'Włącz interaktywny przewodnik na starcie, aby krok po kroku poznać mechaniki gry.',
     narrativeVoiceLabel: 'Głos narratora (8 postaci + Agora):',
     weatherCardTitle: 'Dynamiczna Pogoda i Efekt 3D',
     weatherCardDesc:

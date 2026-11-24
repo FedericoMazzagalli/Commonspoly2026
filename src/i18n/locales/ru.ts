@@ -86,7 +86,7 @@ export const ru: TranslationDict = {
     localAchievements: 'Локальные Достижения',
     configWeather3d: 'Настройки 3D-погоды',
     hintBar:
-      'Пробел / Enter Старт · 3D-камера · Голосовой туториал (Клавиша T) · Гонка на 20 раундов',
+      'Пробел / Enter Старт · 3D-камера · Интерактивный туториал (Клавиша T) · Гонка на 20 раундов',
     muteAudio: 'Выключить звук',
     enableAudio: 'Включить звук',
     accessibilityBtn: 'Доступность',
@@ -142,10 +142,10 @@ export const ru: TranslationDict = {
     diffDescComunlandia:
       'Почти общинная утопия, но 3 Спекулянта яростно атакуют!',
     speculatorsTitle: 'Спекулянты',
-    voiceTutorialTitle: 'Голосовое обучение при старте',
+    voiceTutorialTitle: 'Интерактивное обучение при старте',
     recommended: 'Рекомендуется',
     voiceTutorialDesc:
-      'Включите интерактивную озвучку при запуске, чтобы шаг за шагом освоить механику игры.',
+      'Включите интерактивное пошаговое руководство при запуске, чтобы освоить механику игры.',
     narrativeVoiceLabel: 'Голос рассказчика (8 персонажей + Агора):',
     weatherCardTitle: 'Динамическая погода и 3D-эффекты',
     weatherCardDesc:

@@ -50,7 +50,12 @@ import {
   Accessibility,
   MessageSquare,
   Bot,
-  Landmark
+  Landmark,
+  ScrollText,
+  MoreHorizontal,
+  Users,
+  Lock,
+  Compass
 } from 'lucide-react';
 import { GameEngineState, AmbientMode, WeatherMode, TimeOfDayMode, TutorialBoardFocus } from '../../types/game';
 import { BitacoraHUD } from './BitacoraHUD';
@@ -61,6 +66,7 @@ import { CooperativeChatComponent } from './CooperativeChatComponent';
 import { TurnTimerComponent } from './TurnTimerComponent';
 import { WeatherControllerHUD } from './WeatherControllerHUD';
 import { TutorialOverlay } from './TutorialOverlay';
+import { QuickStartHUDGuide } from './QuickStartHUDGuide';
 import { GameChatLog } from './GameChatLog';
 import { GameHistorySidebar } from './GameHistorySidebar';
 import { SavedGameMetadata, formatSavedTimestamp } from '../../utils/gameStorage';
@@ -78,6 +84,7 @@ import { SpeculatorDashboardHUD } from './SpeculatorDashboardHUD';
 import { OfflineIndicator } from './OfflineIndicator';
 import { LanguageSelector } from './LanguageSelector';
 import { useI18n } from '../../i18n';
+import { useResponsiveViewport } from '../../hooks/useResponsiveViewport';
 import type { BoardPerformanceTelemetry } from '../../utils/performanceTelemetry';
 import {
   DEFAULT_ACCESSIBILITY_SETTINGS,
@@ -85,7 +92,7 @@ import {
   type AccessibilitySettings
 } from '../../utils/accessibility';
 import type { SandboxMutation } from '../../store/gameEngine';
-import { HUD_EASE, isReducedMotionActive, useSwipeToDismiss } from '../ui/MotionPrimitives';
+import { BottomSheet, HUD_EASE, isReducedMotionActive, useSwipeToDismiss } from '../ui/MotionPrimitives';
 import { playSound, audioManager } from '../../utils/audio';
 import { resolveWeather } from '../../utils/weather';
 import { hapticsManager } from '../../utils/haptics';
@@ -236,6 +243,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   remoteTurnOwnerName = null
 }) => {
   const { t } = useI18n();
+  const { isMobile, isTabletLandscape, isCompactSheetLayout } = useResponsiveViewport();
   const [internalDockCollapsed, setInternalDockCollapsed] = useState(false);
   const [internalHistoryOpen, setInternalHistoryOpen] = useState(false);
   const [internalEvolutionOpen, setInternalEvolutionOpen] = useState(false);
@@ -243,6 +251,11 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const [internalTutorialVisible, setInternalTutorialVisible] = useState(false);
   const [isAudioMixerOpen, setIsAudioMixerOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isTabletMoreMenuOpen, setIsTabletMoreMenuOpen] = useState(false);
+  const [activeMobileSheet, setActiveMobileSheet] = useState<'CHAT' | 'LOG' | 'PLAYERS' | 'RESOURCES' | null>(null);
+  const [mobileLogTab, setMobileLogTab] = useState<'COOP' | 'BITACORA' | 'FEED'>('COOP');
+  const [mobileChatUnread, setMobileChatUnread] = useState(0);
+  const [mobileLogUnread, setMobileLogUnread] = useState(0);
   const [isMeteorologicalInsightOpen, setIsMeteorologicalInsightOpen] = useState(false);
   const [isCollectiveImpactOpen, setIsCollectiveImpactOpen] = useState(false);
   const [isSpeculatorDashboardOpen, setIsSpeculatorDashboardOpen] = useState(false);
@@ -254,8 +267,53 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
   const [isRecentChatCollapsed, setIsRecentChatCollapsed] = useState(true);
   const [isChatLogMinimized, setIsChatLogMinimized] = useState(true);
   const [isCoopLogMinimized, setIsCoopLogMinimized] = useState(true);
+  const [isQuickStartGuideOpen, setIsQuickStartGuideOpen] = useState(false);
   const prevAutosaveCountRef = useRef<number>(savedGameMeta?.autosaveCount ?? 0);
+  const prevMobileChatCountRef = useRef<number>(state.chatMessages.length);
+  const prevMobileLogCountRef = useRef<number>(state.logs.length);
   const recentChatMessages = state.chatMessages.slice(-4);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+      if (e.key === 'q' || e.key === 'Q') {
+        if (!state.activeModal && !isRulesOpen && !isShortcutsOpen && !isAchievementsOpen) {
+          e.preventDefault();
+          playSound.uiToggle(true);
+          setIsQuickStartGuideOpen(prev => !prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state.activeModal, isRulesOpen, isShortcutsOpen, isAchievementsOpen]);
+
+  useEffect(() => {
+    const count = state.chatMessages.length;
+    if (count > prevMobileChatCountRef.current && activeMobileSheet !== 'CHAT') {
+      setMobileChatUnread(prev => prev + (count - prevMobileChatCountRef.current));
+    }
+    prevMobileChatCountRef.current = count;
+  }, [state.chatMessages.length, activeMobileSheet]);
+
+  useEffect(() => {
+    const count = state.logs.length;
+    if (count > prevMobileLogCountRef.current && activeMobileSheet !== 'LOG') {
+      setMobileLogUnread(prev => prev + (count - prevMobileLogCountRef.current));
+    }
+    prevMobileLogCountRef.current = count;
+  }, [state.logs.length, activeMobileSheet]);
+
+  useEffect(() => {
+    if (!isCompactSheetLayout) {
+      setActiveMobileSheet(null);
+      setIsMobileMenuOpen(false);
+    } else {
+      setIsTabletMoreMenuOpen(false);
+    }
+  }, [isCompactSheetLayout]);
 
   const {
     swipeX: mobileMenuSwipeX,
@@ -311,8 +369,24 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     if (except !== 'impact') setIsCollectiveImpactOpen(false);
     if (except !== 'speculator') setIsSpeculatorDashboardOpen(false);
     if (except !== 'coopLog') setIsCoopLogMinimized(true);
+    setActiveMobileSheet(null);
+    setIsTabletMoreMenuOpen(false);
     if (isPerformanceMonitorOpen && onClosePerformanceMonitor) onClosePerformanceMonitor();
     if (isEconomyDebugOpen && onCloseEconomyDebug) onCloseEconomyDebug();
+  };
+
+  const handleOpenMobileSheet = (sheet: Exclude<typeof activeMobileSheet, null>) => {
+    const willOpen = activeMobileSheet !== sheet;
+    playSound.uiToggle(willOpen);
+    setIsMobileMenuOpen(false);
+    if (willOpen) {
+      closeAllOtherPanels();
+      setActiveMobileSheet(sheet);
+      if (sheet === 'CHAT') setMobileChatUnread(0);
+      if (sheet === 'LOG') setMobileLogUnread(0);
+    } else {
+      setActiveMobileSheet(null);
+    }
   };
 
   const handleToggleChatLog = () => {
@@ -468,6 +542,16 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     state.activeWeatherEvent,
     state.rulesetMode
   );
+  const resourceTiles = state.tiles.filter(
+    tile => tile.category === 'RESOURCE' || tile.category === 'AGORA_ENTRY'
+  );
+  const commonTilesCount = resourceTiles.filter(tile => tile.state === 'COMMON').length;
+  const commonPercent = Math.round((commonTilesCount / Math.max(1, resourceTiles.length)) * 100);
+  const isVotingModalActive =
+    state.activeModal === 'AGORA_INSURRECTION' ||
+    state.activeModal === 'TRAGEDY_VOTE' ||
+    state.activeModal === 'DETENTION_RESCUE';
+
   const canUnlockCurrentTile =
     currentTile &&
     (currentTile.category === 'RESOURCE' || currentTile.category === 'AGORA_ENTRY') &&
@@ -477,10 +561,10 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
     state.phase === 'TILE_ACTION_DECISION';
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 md:p-6 select-none z-10 overflow-hidden">
+    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-2.5 sm:p-4 lg:p-6 pt-safe pb-safe px-safe select-none z-10 overflow-hidden">
       
       {/* TOP PERIMETER CLUSTER: Status Bar + Players Strip (Top-Left) + GlobalResourceTracker (Top-Right) */}
-      <div className="w-full flex flex-col gap-2.5">
+      <div className="w-full flex flex-col gap-2">
         {/* 1. TOP STATUS BAR */}
         <div className="w-full flex items-center justify-between gap-3 pointer-events-auto">
           
@@ -534,8 +618,9 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             <OfflineIndicator inline />
           </div>
 
-          {/* Mobile Compact Utility Controls (< md) */}
-          <div className="flex md:hidden items-center gap-1.5 bg-slate-900/90 border border-slate-800 px-1.5 py-1 rounded-2xl shadow-xl shrink-0">
+          {/* Mobile & Tablet-Portrait Compact Utility Controls */}
+          {isCompactSheetLayout ? (
+          <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 px-1.5 py-1 rounded-2xl shadow-xl shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -587,9 +672,9 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               <span>{t.hud.menuBtn}</span>
             </button>
           </div>
-
-          {/* Right Utility Actions (Desktop md+) */}
-          <div className="hidden md:flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-2xl shadow-xl">
+          ) : (
+          /* Right Utility Actions (Tablet-Landscape + Desktop) */
+          <div className="flex items-center gap-1.5 lg:gap-2 bg-slate-900/90 border border-slate-800 px-2.5 lg:px-3 py-1.5 rounded-2xl shadow-xl relative">
             <LanguageSelector variant="compact" />
             {/* Camera switcher */}
             <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl text-xs">
@@ -916,6 +1001,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               </AnimatePresence>
             </div>
 
+            {!isTabletLandscape && (
+            <>
             <button
               type="button"
               onClick={handleToggleCollectiveImpact}
@@ -1005,6 +1092,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 <span className="hidden xl:inline">{t.hud.economyDebug}</span>
               </button>
             )}
+            </>
+            )}
 
             <button
               onClick={() => {
@@ -1026,8 +1115,27 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               </kbd>
             </button>
 
+            {/* Botón de Guía de Inicio Rápido (Tour HUD para novatas/os) */}
             <button
               type="button"
+              onClick={() => {
+                playSound.uiToggle(true);
+                setIsQuickStartGuideOpen(prev => !prev);
+              }}
+              className="px-2.5 py-1.5 rounded-xl text-amber-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+              title="Guía Rápida del HUD (Q)"
+              aria-label="Guía de Inicio Rápido"
+            >
+              <Compass className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="hidden lg:inline">Guía Rápida</span>
+              <kbd className="hidden xl:inline-block px-1 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-400 border border-slate-700">
+                Q
+              </kbd>
+            </button>
+
+            <button
+              type="button"
+              data-tour-target="history-btn"
               onClick={handleToggleHistory}
               className={`px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                 isGameHistoryOpen
@@ -1043,6 +1151,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               <span className="text-[11px] opacity-80 tabular-nums">({state.logs.length + state.chatMessages.length})</span>
             </button>
 
+            {!isTabletLandscape ? (
+            <>
             {onOpenCinemaMode && (
               <button
                 type="button"
@@ -1119,8 +1229,188 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 <Accessibility className="w-4 h-4 text-teal-300" />
               </button>
             )}
+            </>
+            ) : (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  playSound.uiToggle(!isTabletMoreMenuOpen);
+                  setIsTabletMoreMenuOpen(prev => !prev);
+                }}
+                className={`min-h-[38px] px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                  isTabletMoreMenuOpen
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200'
+                }`}
+                aria-expanded={isTabletMoreMenuOpen}
+                aria-label="Más herramientas"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+                <span>Más</span>
+              </button>
+
+              <AnimatePresence>
+                {isTabletMoreMenuOpen && (
+                  <motion.div
+                    initial={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
+                    animate={isReducedMotionActive() ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                    exit={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+                    transition={{ duration: isReducedMotionActive() ? 0.01 : 0.16, ease: HUD_EASE }}
+                    className="hud-surface absolute right-0 top-full mt-2 w-72 max-h-[75dvh] overflow-y-auto overscroll-contain-y bg-slate-900/95 border border-slate-700 rounded-2xl shadow-2xl p-2.5 z-40 text-slate-100 space-y-1.5"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsTabletMoreMenuOpen(false);
+                        handleToggleCollectiveImpact();
+                      }}
+                      className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-emerald-300 text-xs font-semibold flex items-center gap-2"
+                    >
+                      <BarChart3 className="w-4 h-4 shrink-0" />
+                      <span>{t.hud.collectiveImpact}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsTabletMoreMenuOpen(false);
+                        handleToggleSpeculatorDashboard();
+                      }}
+                      className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-rose-300 text-xs font-semibold flex items-center gap-2"
+                    >
+                      <Landmark className="w-4 h-4 shrink-0" />
+                      <span>{t.hud.specDashboardBtn ?? 'Activos Espec.'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsTabletMoreMenuOpen(false);
+                        handleToggleMeteorologicalInsight();
+                      }}
+                      className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-cyan-300 text-xs font-semibold flex items-center gap-2"
+                    >
+                      <Radar className="w-4 h-4 shrink-0" />
+                      <span>{t.hud.weatherCtrl}</span>
+                    </button>
+
+                    {onTogglePerformanceMonitor && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTabletMoreMenuOpen(false);
+                          playSound.uiToggle(!isPerformanceMonitorOpen);
+                          onTogglePerformanceMonitor();
+                        }}
+                        className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-teal-300 text-xs font-semibold flex items-center gap-2"
+                      >
+                        <Activity className="w-4 h-4 shrink-0" />
+                        <span>{t.hud.perfMonitor}</span>
+                      </button>
+                    )}
+
+                    {onToggleEconomyDebug && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTabletMoreMenuOpen(false);
+                          playSound.uiToggle(!isEconomyDebugOpen);
+                          onToggleEconomyDebug();
+                        }}
+                        className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-amber-300 text-xs font-semibold flex items-center gap-2"
+                      >
+                        <Bug className="w-4 h-4 shrink-0" />
+                        <span>{t.hud.economyDebug}</span>
+                      </button>
+                    )}
+
+                    {onOpenCinemaMode && (
+                      <button
+                        type="button"
+                        disabled={replayFramesCount === 0}
+                        onClick={() => {
+                          setIsTabletMoreMenuOpen(false);
+                          playSound.modalOpen();
+                          onOpenCinemaMode();
+                        }}
+                        className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-amber-300 text-xs font-semibold flex items-center gap-2 disabled:opacity-40"
+                      >
+                        <Film className="w-4 h-4 shrink-0" />
+                        <span>{t.hud.cinemaMode} ({replayFramesCount})</span>
+                      </button>
+                    )}
+
+                    {onOpenAchievements && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTabletMoreMenuOpen(false);
+                          playSound.modalOpen();
+                          onOpenAchievements();
+                        }}
+                        className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-amber-300 text-xs font-semibold flex items-center gap-2"
+                      >
+                        <Trophy className="w-4 h-4 shrink-0" />
+                        <span>{t.title.localAchievements} ({unlockedAchievementsCount}/{achievementsList.length})</span>
+                      </button>
+                    )}
+
+                    {onOpenShortcuts && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTabletMoreMenuOpen(false);
+                          playSound.modalOpen();
+                          onOpenShortcuts();
+                        }}
+                        className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold flex items-center gap-2"
+                      >
+                        <Keyboard className="w-4 h-4 shrink-0 text-teal-300" />
+                        <span>{t.hud.shortcuts}</span>
+                      </button>
+                    )}
+
+                    {onOpenAccessibility && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTabletMoreMenuOpen(false);
+                          playSound.modalOpen();
+                          onOpenAccessibility();
+                        }}
+                        className="w-full min-h-[42px] px-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-teal-300 text-xs font-semibold flex items-center gap-2"
+                      >
+                        <Accessibility className="w-4 h-4 shrink-0" />
+                        <span>{t.hud.accessibility}</span>
+                      </button>
+                    )}
+
+                    <div className="pt-1 border-t border-slate-800 grid grid-cols-3 gap-1">
+                      {(['AUTO', 'NATURE', 'URBAN'] as const).map(amb => (
+                        <button
+                          key={amb}
+                          type="button"
+                          onClick={() => onSetAmbientMode(amb)}
+                          className={`min-h-[38px] rounded-lg text-[11px] font-bold border ${
+                            state.ambientMode === amb
+                              ? 'bg-teal-700 border-teal-500 text-white'
+                              : 'bg-slate-950 border-slate-800 text-slate-300'
+                          }`}
+                        >
+                          {amb === 'AUTO' ? 'Auto' : amb === 'NATURE' ? 'Natura' : 'Urbano'}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            )}
 
             <button
+              type="button"
+              data-tour-target="rules-btn"
               onClick={() => {
                 playSound.modalOpen();
                 onOpenRules();
@@ -1181,12 +1471,13 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               </button>
             )}
           </div>
+          )}
 
         </div>
 
-        {/* MOBILE DRAWER MENU (< md) */}
+        {/* MOBILE & TABLET-PORTRAIT TACTICAL DRAWER MENU */}
         <AnimatePresence>
-          {isMobileMenuOpen && (
+          {isCompactSheetLayout && isMobileMenuOpen && (
             <motion.div
               role="dialog"
               aria-modal="true"
@@ -1196,10 +1487,14 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               exit={isReducedMotionActive() ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
               transition={{ duration: isReducedMotionActive() ? 0.01 : 0.2, ease: HUD_EASE }}
               style={{ x: mobileMenuSwipeX }}
-              className={`hud-surface md:hidden fixed inset-x-3 top-16 bottom-4 z-50 bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl p-4 overflow-y-auto pointer-events-auto space-y-4 text-slate-100 ${mobileMenuTouchAction}`}
+              className={`hud-surface fixed inset-x-3 top-16 bottom-4 pt-safe pb-safe z-50 bg-slate-900 border border-teal-700/80 rounded-2xl shadow-2xl p-4 overflow-y-auto overscroll-contain-y pointer-events-auto space-y-4 text-slate-100 ${mobileMenuTouchAction}`}
               {...mobileMenuSwipeHandlers}
             >
-              <div aria-hidden="true" className="pointer-events-none flex justify-center -mt-1.5 -mb-2">
+              <div
+                aria-hidden="true"
+                data-swipe-handle="true"
+                className="flex justify-center -mt-1.5 -mb-2 py-1"
+              >
                 <span className="w-9 h-1 rounded-full bg-slate-400/55" />
               </div>
               <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800">
@@ -1446,6 +1741,19 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 <span>{t.hud.tutorialBtn}</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  playSound.uiToggle(true);
+                  setIsQuickStartGuideOpen(true);
+                }}
+                className="min-h-[44px] px-3 rounded-xl bg-slate-950 border border-slate-800 text-amber-300 text-xs font-bold flex items-center gap-2 cursor-pointer"
+              >
+                <Compass className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>Guía Rápida (Tour HUD)</span>
+              </button>
+
               {onSaveGame && (
                 <button
                   type="button"
@@ -1480,9 +1788,79 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
           )}
         </AnimatePresence>
 
-        {/* 2. SUB-ROW: PlayerTurnIndicator (Top-Left) & GlobalResourceTracker (Top-Right) */}
+        {/* 2. SUB-ROW: Compact Mini-Pills (Mobile/Tablet-Portrait) vs Full Perimeter (Tablet-Landscape/Desktop) */}
+        {isCompactSheetLayout ? (
+          <div className="w-full flex flex-col gap-1.5">
+            <div className="w-full flex items-center justify-between gap-2">
+              {/* Active Player Mini-Pill -> abre BottomSheet 'PLAYERS' */}
+              <button
+                type="button"
+                data-tutorial-target="player-indicator"
+                onClick={() => handleOpenMobileSheet('PLAYERS')}
+                className={`hud-surface pointer-events-auto min-h-[44px] flex-1 min-w-0 px-2.5 py-1.5 rounded-2xl bg-slate-900/90 border shadow-lg flex items-center gap-2 text-left transition-colors ${
+                  activeMobileSheet === 'PLAYERS'
+                    ? 'border-teal-400 bg-slate-800/95'
+                    : 'border-slate-800 hover:border-slate-700'
+                }`}
+                aria-expanded={activeMobileSheet === 'PLAYERS'}
+                aria-label="Ver turnos y jugadoras"
+              >
+                <span
+                  className="w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black text-white shrink-0 shadow-sm"
+                  style={{ backgroundColor: activePlayer?.color || '#0d9488' }}
+                >
+                  {activePlayer?.name.charAt(0)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-white leading-tight">
+                    <span className="truncate">{activePlayer?.name}</span>
+                    {activePlayer?.controller === 'BOT' && (
+                      <Bot className="w-3 h-3 text-indigo-400 shrink-0" />
+                    )}
+                    {activePlayer?.isDetained && (
+                      <Lock className="w-3 h-3 text-rose-400 shrink-0" />
+                    )}
+                    {activePlayer?.inAgora && (
+                      <Flame className="w-3 h-3 text-pink-400 shrink-0" />
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-300 tabular-nums flex items-center gap-1.5 leading-tight">
+                    <span className="text-rose-300 font-semibold">♥{activePlayer?.wellness}</span>
+                    <span className="text-slate-600" aria-hidden="true">·</span>
+                    <span className="text-amber-300 font-semibold">★{activePlayer?.legitimacy}</span>
+                  </div>
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              </button>
+
+              {/* Quick Commons & Weather Mini-Pill -> abre BottomSheet 'RESOURCES' */}
+              <button
+                type="button"
+                data-tutorial-target="resources-tracker"
+                onClick={() => handleOpenMobileSheet('RESOURCES')}
+                className={`hud-surface pointer-events-auto min-h-[44px] px-3 py-1.5 rounded-2xl bg-slate-900/90 border shadow-lg flex items-center gap-2 shrink-0 transition-colors ${
+                  activeMobileSheet === 'RESOURCES'
+                    ? 'border-emerald-400 bg-slate-800/95'
+                    : 'border-teal-800/70 hover:border-teal-600'
+                }`}
+                aria-expanded={activeMobileSheet === 'RESOURCES'}
+                aria-label={t.hud.globalCommons}
+              >
+                <Trees className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div className="flex flex-col items-start leading-tight tabular-nums">
+                  <span className="text-xs font-black text-white">
+                    {commonTilesCount}/{resourceTiles.length}
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-300">
+                    {commonPercent}% · {activeWeather.label}
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="w-full flex flex-col md:flex-row items-start justify-between gap-2.5">
-          <div className="max-w-full md:max-w-[calc(100%-21rem)] flex flex-col gap-2">
+          <div className="max-w-full md:max-w-[calc(100%-19.5rem)] lg:max-w-[calc(100%-22rem)] flex flex-col gap-2">
             <div data-tutorial-target="player-indicator" className="w-fit max-w-full">
               <PlayerTurnIndicator
                 players={state.players}
@@ -1491,8 +1869,8 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                 currentDiceRoll={state.currentDiceRoll}
               />
             </div>
-            {/* REGISTRO DE CHAT Y ACCIONES: oculto en móviles muy estrechos para liberar tablero */}
-            <div className="hidden sm:block">
+            {/* REGISTRO DE CHAT Y ACCIONES */}
+            <div>
               <GameChatLog
                 state={state}
                 isMinimized={isChatLogMinimized}
@@ -1626,8 +2004,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               </div>
             )}
 
-            {/* ALERTA DE EVENTO METEOROLÓGICO DINÁMICO ACTIVO */}
-            {state.activeWeatherEvent && (
+            {!isCompactSheetLayout && state.activeWeatherEvent && (
               <div
                 role="status"
                 aria-label="Alerta meteorológica dinámica activa"
@@ -1668,7 +2045,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             )}
           </div>
 
-          {/* Top-Right Cluster: Weather Controller, Global Resource Tracker & Critical Event Feed (Desktop md+) */}
+          {/* Top-Right Cluster: Weather Controller, Global Resource Tracker & Critical Event Feed (Desktop & Tablet-Landscape) */}
           <div className="hidden md:flex self-end md:self-start shrink-0 flex-col items-end gap-2">
             <div className="flex flex-col sm:flex-row items-end sm:items-start gap-2">
               <WeatherControllerHUD
@@ -1698,10 +2075,55 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             />
           </div>
         </div>
+        )}
+
+        {/* Active Crisis / Weather Event compact banners in compact sheet layout */}
+        {isCompactSheetLayout && state.activeCrisis && (
+          <div
+            role="status"
+            aria-label="Crisis inesperada activa"
+            className={`pointer-events-auto w-full rounded-xl border px-3 py-1.5 shadow-lg text-[11px] flex items-center gap-2 ${
+              state.activeCrisis.severity === 'OPPORTUNITY'
+                ? 'bg-emerald-950/90 border-emerald-600/70 text-emerald-100'
+                : state.activeCrisis.severity === 'WARNING'
+                ? 'bg-amber-950/90 border-amber-600/70 text-amber-100'
+                : 'bg-rose-950/90 border-rose-600/70 text-rose-100'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-bold truncate flex-1">{state.activeCrisis.title}</span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-950/70 text-[10px] font-bold tabular-nums shrink-0">
+              {state.activeCrisis.turnsRemaining}t
+            </span>
+          </div>
+        )}
+        {isCompactSheetLayout && state.activeWeatherEvent && (
+          <div
+            role="status"
+            aria-label="Alerta meteorológica dinámica activa"
+            className={`pointer-events-auto w-full rounded-xl border px-3 py-1.5 shadow-lg text-[11px] flex items-center gap-2 ${
+              state.activeWeatherEvent.severity === 'BENEFICIAL'
+                ? 'bg-emerald-950/90 border-emerald-500/70 text-emerald-100'
+                : state.activeWeatherEvent.severity === 'WARNING'
+                ? 'bg-cyan-950/90 border-cyan-500/70 text-cyan-100'
+                : 'bg-orange-950/90 border-orange-500/70 text-orange-100'
+            }`}
+          >
+            <CloudRain className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-bold truncate flex-1">
+              {state.activeWeatherEvent.title} · {formatWeatherImpactSummary(state.activeWeatherEvent)}
+            </span>
+            <span className="text-[10px] font-bold tabular-nums shrink-0">
+              {state.activeWeatherEvent.turnsRemaining}t
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* 3. BITÁCORA DE JUEGO (Superposición sutil y narrativa colaborativa) */}
-      <BitacoraHUD logs={state.logs} round={state.round} />
+      {/* 3. CORNER HUD PANELS (Desktop & Tablet-Landscape only) */}
+      {!isCompactSheetLayout && (
+        <BitacoraHUD logs={state.logs} round={state.round} />
+      )}
 
       {/* 3A. NOTIFICACIÓN DE LOGRO LOCAL DESBLOQUEADO EN LA PARTE SUPERIOR DEL HUD */}
       <AchievementNotificationHUD
@@ -1713,7 +2135,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
       {/* 3B. SISTEMA DE NOTIFICACIONES TOAST NO INTRUSIVO */}
       <GameToastHUD
         state={state}
-        topOffsetClass={state.recentAchievement ? 'top-36' : 'top-16'}
+        topOffsetClass={state.recentAchievement ? 'top-36' : isCompactSheetLayout ? 'top-28' : 'top-16'}
         onOpenHistory={() => {
           if (!isGameHistoryOpen) {
             handleToggleHistory();
@@ -1721,20 +2143,200 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
         }}
       />
 
-      {/* 4. CHAT RÁPIDO COOPERATIVO INFERIOR DERECHO */}
-      <CooperativeChatComponent
-        state={state}
-        onSendMessage={onSendCooperativeChat}
-        isDockCollapsed={isDockCollapsed}
-      />
+      {/* 4. CHAT RÁPIDO COOPERATIVO & HISTORIAL COLABORATIVO (Desktop & Tablet-Landscape only) */}
+      {!isCompactSheetLayout && (
+        <>
+          <CooperativeChatComponent
+            state={state}
+            onSendMessage={onSendCooperativeChat}
+            isDockCollapsed={isDockCollapsed}
+          />
+          <GameLogComponent
+            state={state}
+            isDockCollapsed={isDockCollapsed}
+            isMinimized={isCoopLogMinimized}
+            onToggleMinimize={handleToggleCoopLog}
+          />
+        </>
+      )}
 
-      {/* 5. HISTORIAL COLABORATIVO INFERIOR IZQUIERDO (GameLogComponent con auto-scroll, colapsado por defecto) */}
-      <GameLogComponent
-        state={state}
-        isDockCollapsed={isDockCollapsed}
-        isMinimized={isCoopLogMinimized}
-        onToggleMinimize={handleToggleCoopLog}
-      />
+      {/* ACCESO RÁPIDO AL CHAT SOBRE MODALES DE VOTACIÓN EN MÓVIL / TABLET VERTICAL */}
+      {isCompactSheetLayout && isVotingModalActive && activeMobileSheet !== 'CHAT' && (
+        <button
+          type="button"
+          onClick={() => handleOpenMobileSheet('CHAT')}
+          className="pointer-events-auto fixed bottom-4 right-4 z-[65] min-h-[44px] px-4 py-2 rounded-full bg-pink-600 hover:bg-pink-500 text-white border border-pink-300/60 shadow-2xl text-xs font-extrabold flex items-center gap-2 pb-safe"
+          aria-label="Abrir chat cooperativo durante votación"
+        >
+          <MessageSquare className="w-4 h-4 shrink-0" />
+          <span>Chat</span>
+          {mobileChatUnread > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-slate-950 text-pink-200 text-[10px] tabular-nums">
+              {mobileChatUnread}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* HOJAS DESLIZABLES INFERIORES PARA MÓVIL Y TABLET VERTICAL */}
+      {isCompactSheetLayout && (
+        <>
+          <BottomSheet
+            isOpen={activeMobileSheet === 'CHAT'}
+            onClose={() => setActiveMobileSheet(null)}
+            title="Chat Cooperativo"
+            subtitle={
+              isVotingModalActive
+                ? 'Votación colectiva activa · Coordina el consenso'
+                : `Ronda ${state.round}/20 · ${state.chatMessages.length} mensajes`
+            }
+            icon={<MessageSquare className="w-4 h-4 text-teal-400" />}
+            zIndexClass="z-[75]"
+            accentBorderClass={isVotingModalActive ? 'border-pink-500/80' : 'border-teal-700/80'}
+          >
+            <CooperativeChatComponent
+              state={state}
+              onSendMessage={onSendCooperativeChat}
+              variant="sheet"
+            />
+          </BottomSheet>
+
+          <BottomSheet
+            isOpen={activeMobileSheet === 'LOG'}
+            onClose={() => setActiveMobileSheet(null)}
+            title="Acciones y Bitácora"
+            subtitle={`Ronda ${state.round}/20 · ${state.logs.length + state.chatMessages.length} eventos`}
+            icon={<ScrollText className="w-4 h-4 text-teal-400" />}
+            zIndexClass="z-[70]"
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+                {(
+                  [
+                    { id: 'COOP', label: 'Acciones' },
+                    { id: 'BITACORA', label: 'Bitácora' },
+                    { id: 'FEED', label: 'Todo' }
+                  ] as const
+                ).map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      playSound.uiClick();
+                      setMobileLogTab(tab.id);
+                    }}
+                    className={`min-h-[40px] rounded-lg font-bold transition-colors ${
+                      mobileLogTab === tab.id
+                        ? 'bg-teal-600 text-white'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {mobileLogTab === 'COOP' && (
+                <GameLogComponent state={state} variant="sheet" />
+              )}
+              {mobileLogTab === 'BITACORA' && (
+                <BitacoraHUD logs={state.logs} round={state.round} variant="embedded" />
+              )}
+              {mobileLogTab === 'FEED' && (
+                <GameChatLog state={state} variant="sheet" />
+              )}
+            </div>
+          </BottomSheet>
+
+          <BottomSheet
+            isOpen={activeMobileSheet === 'PLAYERS'}
+            onClose={() => setActiveMobileSheet(null)}
+            title="Jugadoras y Turno"
+            subtitle={`Turno de ${activePlayer?.name ?? ''} · Legitimidad ${totalLegitimacy}/${requiredLegitimacyForAgora}`}
+            icon={<Users className="w-4 h-4 text-teal-400" />}
+            zIndexClass="z-[70]"
+          >
+            <div className="space-y-3">
+              <PlayerTurnIndicator
+                players={state.players}
+                activePlayerIndex={state.activePlayerIndex}
+                phase={state.phase}
+                currentDiceRoll={state.currentDiceRoll}
+              />
+
+              {recentChatMessages.length > 0 && (
+                <div className="p-3 rounded-xl bg-slate-950/75 border border-slate-800 space-y-2">
+                  <div className="text-[11px] font-bold text-teal-300 uppercase tracking-wider">
+                    {t.hud.recentChatTitle || 'Decisiones Recientes · Chat'}
+                  </div>
+                  <div className="space-y-1.5">
+                    {recentChatMessages.map(msg => (
+                      <div key={msg.id} className="text-[11px] text-slate-200 flex items-baseline gap-1.5">
+                        <span className="font-bold shrink-0" style={{ color: msg.senderColor }}>
+                          {msg.senderName}:
+                        </span>
+                        <span className="text-slate-300 break-words">{msg.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </BottomSheet>
+
+          <BottomSheet
+            isOpen={activeMobileSheet === 'RESOURCES'}
+            onClose={() => setActiveMobileSheet(null)}
+            title={t.hud.globalCommons}
+            subtitle={`${commonTilesCount}/${resourceTiles.length} Comunes (${commonPercent}%) · ${activeWeather.label}`}
+            icon={<Trees className="w-4 h-4 text-emerald-400" />}
+            zIndexClass="z-[70]"
+          >
+            <div className="space-y-3">
+              <GlobalResourceTracker
+                state={state}
+                isEvolutionOpen={isEvolutionOpen}
+                onToggleEvolution={() => {
+                  setActiveMobileSheet(null);
+                  handleToggleEvolution();
+                }}
+                isCollectiveImpactOpen={isCollectiveImpactOpen}
+                onToggleCollectiveImpact={() => {
+                  setActiveMobileSheet(null);
+                  handleToggleCollectiveImpact();
+                }}
+                accessibilitySettings={resolvedA11y}
+              />
+              <WeatherControllerHUD
+                state={state}
+                onSetWeatherMode={onSetWeatherMode}
+                onSetWeatherIntensity={onSetWeatherIntensity}
+                onSetTimeOfDayMode={onSetTimeOfDayMode}
+                isMeteorologicalInsightOpen={isMeteorologicalInsightOpen}
+                onToggleMeteorologicalInsight={() => {
+                  setActiveMobileSheet(null);
+                  handleToggleMeteorologicalInsight();
+                }}
+                onOpenAdvancedWeatherSettings={() => {
+                  setActiveMobileSheet(null);
+                  onOpenWeatherSettings?.();
+                }}
+              />
+              <EventFeedHUD
+                state={state}
+                onOpenHistory={() => {
+                  setActiveMobileSheet(null);
+                  handleToggleHistory();
+                }}
+                onSelectTile={(tileId) => {
+                  setActiveMobileSheet(null);
+                  onSelectTileFromDebug?.(tileId);
+                }}
+              />
+            </div>
+          </BottomSheet>
+        </>
+      )}
 
       {/* 5B. GAME HISTORY SIDEBAR (Registro cronológico completo de toda la partida) */}
       <GameHistorySidebar
@@ -1824,19 +2426,21 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
       <div className="w-full flex flex-col items-center pointer-events-auto">
         
         {/* Turn Timer + Collapse toggle strip */}
-        <div className="mb-1.5 flex items-center gap-2.5 flex-wrap justify-center">
+        <div className="mb-1.5 flex items-center gap-2 flex-wrap justify-center">
           <TurnTimerComponent
             activePlayer={activePlayer}
             activePlayerIndex={state.activePlayerIndex}
             round={state.round}
             phase={state.phase}
+            compact={isMobile}
             isPausedByOverlay={
               Boolean(state.activeModal) ||
               isRulesOpen ||
               isShortcutsOpen ||
               isAchievementsOpen ||
               Boolean(showTutorial) ||
-              internalTutorialVisible
+              internalTutorialVisible ||
+              isQuickStartGuideOpen
             }
             durationSeconds={60}
             onTimeout={() => {
@@ -1850,7 +2454,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
 
           <button
             onClick={handleToggleDock}
-            className="hud-surface min-h-[44px] sm:min-h-[34px] px-4 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-semibold text-slate-300 hover:text-white flex items-center gap-1 transition-colors shadow-lg"
+            className="hud-surface min-h-[44px] sm:min-h-[34px] px-3.5 sm:px-4 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-semibold text-slate-300 hover:text-white flex items-center gap-1 transition-colors shadow-lg"
             title={`${isDockCollapsed ? t.hud.dockExpand : t.hud.dockCollapse} (H)`}
           >
             {isDockCollapsed ? (
@@ -1867,14 +2471,88 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
           </button>
         </div>
 
+        {/* Sheet Trigger Strip (solo Móvil y Tablet Vertical) */}
+        {isCompactSheetLayout && (
+          <div className="mb-1.5 w-full max-w-2xl grid grid-cols-4 gap-1.5">
+            <button
+              type="button"
+              data-tour-target="sheet-chat"
+              onClick={() => handleOpenMobileSheet('CHAT')}
+              className={`hud-surface min-h-[44px] px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors relative ${
+                activeMobileSheet === 'CHAT'
+                  ? 'bg-teal-600 border-teal-400 text-white'
+                  : isVotingModalActive
+                  ? 'bg-pink-950/90 border-pink-500/75 text-pink-100'
+                  : 'bg-slate-900/90 border-slate-800 text-slate-200 hover:border-slate-700'
+              }`}
+              aria-expanded={activeMobileSheet === 'CHAT'}
+            >
+              <MessageSquare className="w-3.5 h-3.5 shrink-0 text-teal-300" />
+              <span className="truncate">Chat</span>
+              {mobileChatUnread > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-teal-500 text-slate-950 text-[10px] font-black tabular-nums">
+                  {mobileChatUnread}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleOpenMobileSheet('LOG')}
+              className={`hud-surface min-h-[44px] px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                activeMobileSheet === 'LOG'
+                  ? 'bg-teal-600 border-teal-400 text-white'
+                  : 'bg-slate-900/90 border-slate-800 text-slate-200 hover:border-slate-700'
+              }`}
+              aria-expanded={activeMobileSheet === 'LOG'}
+            >
+              <ScrollText className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+              <span className="truncate">Acciones</span>
+              {mobileLogUnread > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black tabular-nums">
+                  {mobileLogUnread}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleOpenMobileSheet('RESOURCES')}
+              className={`hud-surface min-h-[44px] px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors tabular-nums ${
+                activeMobileSheet === 'RESOURCES'
+                  ? 'bg-emerald-600 border-emerald-400 text-white'
+                  : 'bg-slate-900/90 border-slate-800 text-emerald-200 hover:border-slate-700'
+              }`}
+              aria-expanded={activeMobileSheet === 'RESOURCES'}
+            >
+              <Trees className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+              <span className="truncate">{commonPercent}%</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleToggleHistory}
+              className={`hud-surface min-h-[44px] px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                isGameHistoryOpen
+                  ? 'bg-teal-600 border-teal-400 text-white'
+                  : 'bg-slate-900/90 border-slate-800 text-slate-200 hover:border-slate-700'
+              }`}
+              aria-expanded={isGameHistoryOpen}
+            >
+              <History className="w-3.5 h-3.5 shrink-0 text-teal-300" />
+              <span className="truncate">Historial</span>
+            </button>
+          </div>
+        )}
+
         {!isDockCollapsed && (
           <div
             data-tutorial-target="bottom-dock"
-            className="hud-surface w-full max-w-4xl bg-slate-900/95 border border-teal-800/80 rounded-2xl shadow-2xl p-3 sm:p-4 md:p-5 text-slate-100 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4"
+            className="hud-surface w-full max-w-4xl bg-slate-900/95 border border-teal-800/80 rounded-2xl shadow-2xl p-2.5 sm:p-4 md:p-5 text-slate-100 flex flex-col md:flex-row items-center justify-between gap-2.5 sm:gap-3 md:gap-4"
           >
             
             {/* Active Turn Persona & Current Tile Info */}
-            <div className="flex items-center gap-3 sm:gap-3.5 w-full md:w-auto">
+            <div className="flex items-center gap-2.5 sm:gap-3.5 w-full md:w-auto">
               <div
                 className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-white font-black text-base sm:text-lg shadow-md shrink-0"
                 style={{ backgroundColor: activePlayer?.color || '#0d9488' }}
@@ -1912,13 +2590,13 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   )}
                 </div>
 
-                <div className="text-[11px] text-slate-400 flex items-center flex-wrap gap-x-2.5 gap-y-0.5 pt-0.5 tabular-nums">
+                <div className="text-[11px] text-slate-400 flex items-center flex-wrap gap-x-2 sm:gap-x-2.5 gap-y-0.5 pt-0.5 tabular-nums">
                   <span className="text-rose-400 font-medium">{t.common.wellness}: {activePlayer?.wellness}</span>
                   <span className="text-slate-600" aria-hidden="true">·</span>
                   <span className="text-amber-400 font-medium">{t.common.legitimacy}: {activePlayer?.legitimacy}</span>
-                  <span className="text-slate-600" aria-hidden="true">·</span>
+                  <span className="text-slate-600 hidden sm:inline" aria-hidden="true">·</span>
                   <span
-                    className={`font-semibold inline-flex items-center gap-1 ${
+                    className={`hidden sm:inline-flex font-semibold items-center gap-1 ${
                       activeRep.tone === 'POSITIVE'
                         ? 'text-emerald-300'
                         : activeRep.tone === 'NEGATIVE'
@@ -1960,9 +2638,10 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
                   )}
 
                   <button
+                    data-tour-target="roll-dice-btn"
                     onClick={onRollDice}
                     title={`${t.hud.rollDice} (R)`}
-                    className="min-h-[44px] px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-sm flex items-center gap-2 shadow-lg active:scale-95 transition-all whitespace-nowrap shrink-0"
+                    className="min-h-[48px] sm:min-h-[44px] flex-1 sm:flex-initial justify-center px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-black text-sm flex items-center gap-2 shadow-lg active:scale-95 transition-all whitespace-nowrap shrink-0"
                   >
                     <Dices className="w-5 h-5" />
                     <span>{t.hud.rollDice}</span>
@@ -1991,6 +2670,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               {/* Botón Desbloquear Bien (10 pts ± crisis) */}
               {!isRemoteMultiplayerTurn && state.phase === 'TILE_ACTION_DECISION' && canUnlockCurrentTile && (
                 <button
+                  data-tour-target="unlock-tile-btn"
                   onClick={onUnlockTile}
                   title={`${t.hud.unlockTile} (D)`}
                   className="min-h-[44px] px-4 sm:px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all"
@@ -2022,6 +2702,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               {/* Botón Pasar / Ganar puntos */}
               {!isRemoteMultiplayerTurn && state.phase === 'TILE_ACTION_DECISION' && (
                 <button
+                  data-tour-target="pass-turn-btn"
                   onClick={onPassTile}
                   title={`${t.hud.passTurn} (P)`}
                   className="min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-2 transition-colors"
@@ -2042,6 +2723,7 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
               {/* Botón Entrar al Ágora Central */}
               {!isRemoteMultiplayerTurn && (canEnterAgora || showAgoraColumnLockedHint) && state.phase === 'PLAYER_TURN_READY' && (
                 <button
+                  data-tour-target="agora-btn"
                   onClick={onTryEnterAgora}
                   disabled={!canEnterAgora}
                   title={
@@ -2122,10 +2804,21 @@ export const GameOverlayHUD: React.FC<GameOverlayHUDProps> = ({
             setIsSpeculatorDashboardOpen(false);
             setIsCoopLogMinimized(true);
             setIsRecentChatCollapsed(true);
+            setActiveMobileSheet(null);
+            setIsMobileMenuOpen(false);
+            setIsTabletMoreMenuOpen(false);
           }
           onTutorialVisibilityChange?.(visible);
         }}
         onBoardFocusChange={onTutorialBoardFocusChange}
+      />
+
+      {/* 6b. GUÍA DE INICIO RÁPIDO CON FOCO TEMPORAL (Tour Interactivo de Botones para Novatos) */}
+      <QuickStartHUDGuide
+        isOpen={isQuickStartGuideOpen}
+        onClose={() => setIsQuickStartGuideOpen(false)}
+        onOpenRules={onOpenRules}
+        stepDurationSeconds={6}
       />
 
       {/* 7. CAPA ATMOSFÉRICA CSS SUPERPUESTA SOBRE EL HUD SEGÚN weatherMode */}

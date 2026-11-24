@@ -86,7 +86,7 @@ export const fr: TranslationDict = {
     localAchievements: 'Succès Locaux',
     configWeather3d: 'Météo 3D',
     hintBar:
-      'Espace / Entrée Démarrer · Caméra 3D · Tutoriel Vocal (T) · 20 Manches contre la Montre',
+      'Espace / Entrée Démarrer · Caméra 3D · Tutoriel Interactif (T) · 20 Manches contre la Montre',
     muteAudio: 'Couper le son',
     enableAudio: 'Activer le son',
     accessibilityBtn: 'Accessibilité',
@@ -139,10 +139,10 @@ export const fr: TranslationDict = {
     diffDescTransition: 'Société mixte publique et commune. 2 Spéculateurs !',
     diffDescComunlandia: 'Proche de l’utopie, mais 3 Spéculateurs rôdent !',
     speculatorsTitle: 'Spéculateurs',
-    voiceTutorialTitle: 'Tutoriel Guidé par Voix',
+    voiceTutorialTitle: 'Tutoriel Interactif au Démarrage',
     recommended: 'Recommandé',
     voiceTutorialDesc:
-      'Active la narration vocale interactive au démarrage pour découvrir les mécaniques.',
+      'Active le guide visuel interactif au démarrage pour découvrir les mécaniques.',
     narrativeVoiceLabel: 'Voix narrative du tutoriel :',
     weatherCardTitle: 'Météo Dynamique & Impact Visuel 3D',
     weatherCardDesc: 'Réglez la fréquence des événements météo et leur intensité 3D.',

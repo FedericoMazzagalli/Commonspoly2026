@@ -86,7 +86,7 @@ export const gl: TranslationDict = {
     localAchievements: 'Logros Locais',
     configWeather3d: 'Configurar Clima 3D',
     hintBar:
-      'Espazo / Enter Iniciar · Cámara 3D · Titorial con Voz (Tecla T) · Carreira de 20 Roldas',
+      'Espazo / Enter Iniciar · Cámara 3D · Titorial Interactivo (Tecla T) · Carreira de 20 Roldas',
     muteAudio: 'Silenciar son',
     enableAudio: 'Activar son',
     accessibilityBtn: 'Accesibilidade',
@@ -142,10 +142,10 @@ export const gl: TranslationDict = {
     diffDescComunlandia:
       'Case utopía comunal, pero 3 Especuladores axexan con forza!',
     speculatorsTitle: 'Especuladores',
-    voiceTutorialTitle: 'Titorial Guiado por Voz ao Comezar',
+    voiceTutorialTitle: 'Titorial Interactivo ao Comezar',
     recommended: 'Recomendado',
     voiceTutorialDesc:
-      'Activa a narración interactiva ao comezar para aprender as mecánicas paso a paso.',
+      'Activa a guía visual interactiva ao comezar para aprender as mecánicas paso a paso.',
     narrativeVoiceLabel: 'Voz narrativa do titorial (8 personaxes + Ágora):',
     weatherCardTitle: 'Clima Dinámico e Impacto Visual 3D',
     weatherCardDesc:
